@@ -34,6 +34,6 @@ void print_uint64_hex(uint64_t value);
 void print_uint64_bin(uint64_t value);
 void backspace();
 void get_str(char comando);
-//void shell_disable_cursor();
-//void outportb(uint16_t port, uint8_t val);
+void shell_disable_cursor();
+void outportb(uint16_t port, uint8_t val);
 
