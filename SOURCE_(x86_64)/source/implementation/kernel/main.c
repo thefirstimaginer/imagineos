@@ -2,9 +2,33 @@
 #include "keyboard.h"
 #include "x86_64/rtc.h"
 #include "comandos.h"
+#include "framebuffer.h"
 
-char to_ascii(uint16_t code, bool shift_active){
+char to_ascii(uint16_t code, bool shift_active, bool caps_active, bool num_lock_active){
     char base_char;
+    // Handle numpad when Num Lock is active. Map PS/2 scancodes for keypad
+    // (set 1): 0x47..0x53 are 7,8,9,4,5,6,1,2,3,0 and 0x52=0,0x53=., 0x4A=-,0x4E=+
+    // Also accept extended (0xE0<<8 | scancode) forms produced by keyboard.c.
+    switch (code) {
+        case 0x47: case (0xE000 | 0x47): return num_lock_active ? '7' : '?';
+        case 0x48: case (0xE000 | 0x48): return num_lock_active ? '8' : '?';
+        case 0x49: case (0xE000 | 0x49): return num_lock_active ? '9' : '?';
+        case 0x4B: case (0xE000 | 0x4B): return num_lock_active ? '4' : '?';
+        case 0x4C: case (0xE000 | 0x4C): return num_lock_active ? '5' : '?';
+        case 0x4D: case (0xE000 | 0x4D): return num_lock_active ? '6' : '?';
+        case 0x4F: case (0xE000 | 0x4F): return num_lock_active ? '1' : '?';
+        case 0x50: case (0xE000 | 0x50): return num_lock_active ? '2' : '?';
+        case 0x51: case (0xE000 | 0x51): return num_lock_active ? '3' : '?';
+        case 0x52: case (0xE000 | 0x52): return num_lock_active ? '0' : '?';
+        case 0x53: case (0xE000 | 0x53): return num_lock_active ? '.' : '?';
+        case 0x35: case KEY_CODE_NUMPAD_SLASH: return '/';
+        case KEY_CODE_NUMPAD_ENTER: return '\n';
+        case 0x37: case (0xE000 | 0x37): return num_lock_active ? '*' : '?';
+        case 0x4E: case (0xE000 | 0x4E): return num_lock_active ? '+' : '?';
+        case 0x4A: case (0xE000 | 0x4A): return num_lock_active ? '-' : '?';
+    }
+
+    
     switch (code) {
         case 
             KEY_CODE_A: base_char = 'A';
@@ -143,6 +167,15 @@ char to_ascii(uint16_t code, bool shift_active){
     }
 
     // Se o Shift estiver pressionado, convertemos o caractere base
+    // For letters, CapsLock toggles case: uppercase when (shift_active XOR caps_active) is true
+    if (base_char >= 'A' && base_char <= 'Z') {
+        bool make_upper = shift_active ^ caps_active;
+        if (!make_upper) {
+            return base_char + 32; // lowercase
+        }
+        return base_char; // uppercase
+    }
+
     if (shift_active) {
         switch (base_char) {
             // Números -> Símbolos
@@ -182,11 +215,6 @@ char to_ascii(uint16_t code, bool shift_active){
         }
     }
 
-    if (base_char >= 'A' && base_char <= 'Z' && !shift_active) {
-        // Converte para minúscula (ASCII 'A' + 32 = 'a')
-        return base_char + 32;
-    }
-
     return base_char;
 }
 
@@ -194,7 +222,7 @@ void handle_input(struct KeyboardEvent event) {
     if (event.type == KEYBOARD_EVENT_TYPE_MAKE) {
         
         // Converte o código da tecla para um caractere
-       char c = to_ascii(event.code,event.shift_active);
+    char c = to_ascii(event.code,event.shift_active, event.caps_active, event.num_lock_active);
         
         // Decide o que fazer
         if (c == '\b') {
@@ -202,11 +230,9 @@ void handle_input(struct KeyboardEvent event) {
             backspace(); 
         } 
         else if (c == '\n') {
-            // Tratar o ENTER (pular linha) também é bom
+            // Tratar o ENTER (pular linha) e processar comandos
             print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-            print_char(c);
-            print_str("shell:$ ");
-            //get_str("%c", &comando); //Pega os comandos e armazena na variável "comando"
+            shell_handle_enter();
         }
         else if (c != '?') { // Ignora teclas não mapeadas
             // É um caractere normal (A, B, C...)
@@ -219,10 +245,12 @@ void handle_input(struct KeyboardEvent event) {
     }
 }
 
-void kernel_main() { // É onde o sistema roda
+void kernel_main(uint64_t mb_info) { // É onde o sistema roda
     
     //char comando;
 
+    // Initialize framebuffer if GRUB provided one
+    framebuffer_init_from_multiboot(mb_info);
     print_clear();
     print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
     /*

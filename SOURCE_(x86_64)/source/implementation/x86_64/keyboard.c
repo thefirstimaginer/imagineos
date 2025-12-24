@@ -6,9 +6,13 @@
 #include "print.h"
 
 #define KEYBOARD_EXTENDED_SCAN_CODE 0xE0
+// Set to 1 to enable debug print of received scancodes (fat_code)
+#define KEYBOARD_DEBUG 0
 
 static bool is_shift_active = false;
 static bool is_num_lock_active = false;
+static bool is_caps_lock_active = false;
+static bool is_scroll_lock_active = false;
 
 void (*keyboard_handler_user)(struct KeyboardEvent event);
 
@@ -25,6 +29,24 @@ void keyboard_handler() {
 	if (keyboard_handler_user == NULL) {
 		return;
 	}
+
+#if KEYBOARD_DEBUG
+	// Debug: print fat_code in hex to help mapping scancodes from VM
+	{
+		uint16_t preview_code = (uint16_t) (scan_code & 0xFF);
+		print_str("scan: 0x");
+		print_uint64_hex(preview_code);
+		print_str(" fat: 0x");
+		// fat_code not yet set for extended case; compute preview fat_code
+		uint16_t fat_preview = (uint16_t)(scan_code & 0x7F);
+		// if extended flag is set earlier, show that as well
+		if (is_extended) {
+			fat_preview |= (KEYBOARD_EXTENDED_SCAN_CODE << 8);
+		}
+		print_uint64_hex(fat_preview);
+		print_str("\n");
+	}
+#endif
 	
 	uint16_t fat_code = scan_code & 0x7F;
 	
@@ -51,13 +73,26 @@ void keyboard_handler() {
 
 	if (fat_code == KEY_CODE_NUM_LOCK) {
 		if ((scan_code & 0x80) == 0) { // Verifica se é evento MAKE
-			// Inverte o estado atual do Num Lock
 			is_num_lock_active = !is_num_lock_active;
+			// Atualiza LEDs
+			uint8_t ledmask = (is_scroll_lock_active ? 0x01 : 0x00) | (is_num_lock_active ? 0x02 : 0x00) | (is_caps_lock_active ? 0x04 : 0x00);
+			ps2_set_leds(ledmask);
+		}
+	}
 
-			print_str("Num Lock state: %d\n, !is_num_lock_active");
+	if (fat_code == KEY_CODE_CAPS_LOCK) {
+		if ((scan_code & 0x80) == 0) { // MAKE
+			is_caps_lock_active = !is_caps_lock_active;
+			uint8_t ledmask = (is_scroll_lock_active ? 0x01 : 0x00) | (is_num_lock_active ? 0x02 : 0x00) | (is_caps_lock_active ? 0x04 : 0x00);
+			ps2_set_leds(ledmask);
+		}
+	}
 
-			// Opcional: Você pode enviar um comando para o controlador PS/2
-			// para acender o LED do Num Lock se quiser, mas isso é mais avançado.
+	if (fat_code == KEY_CODE_SCROLL_LOCK) {
+		if ((scan_code & 0x80) == 0) { // MAKE
+			is_scroll_lock_active = !is_scroll_lock_active;
+			uint8_t ledmask = (is_scroll_lock_active ? 0x01 : 0x00) | (is_num_lock_active ? 0x02 : 0x00) | (is_caps_lock_active ? 0x04 : 0x00);
+			ps2_set_leds(ledmask);
 		}
 	}
 
@@ -73,6 +108,7 @@ void keyboard_handler() {
 
 	event.shift_active = is_shift_active;
 	event.num_lock_active = is_num_lock_active;
+	event.caps_active = is_caps_lock_active;
 	
 	keyboard_handler_user(event);
 }

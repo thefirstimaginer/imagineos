@@ -63,6 +63,8 @@
 #define KEY_CODE_LSHIFT 0x2A
 #define KEY_CODE_RSHIFT 0x36
 #define KEY_CODE_NUM_LOCK 0x45
+#define KEY_CODE_CAPS_LOCK 0x3A
+#define KEY_CODE_SCROLL_LOCK 0x46
 // Onde estão as definições dos KEY_CODEs
 #define KEY_CODE_MINUS 0x0C
 #define KEY_CODE_EQUALS 0x0D
@@ -86,6 +88,7 @@ struct KeyboardEvent {
 	uint16_t code;
 	bool shift_active;
 	bool num_lock_active;
+	bool caps_active;
 };
 
 void keyboard_init();
