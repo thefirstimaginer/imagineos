@@ -118,15 +118,6 @@ void print_str(char* str) {
     }
 }
 
-/*
-void get_str(char comando) { //verifica os comandos na variável "comando"
-    if (comando == "ver") {
-        print_char("versao 1.0");
-        return;
-    }
-}
-*/
-
 void print_set_color(uint8_t foreground, uint8_t background) {
     color = foreground + (background << 4);
     // map VGA 16-color palette to simple 32-bit RGB values for framebuffer
@@ -254,127 +245,132 @@ void backspace() {
     }
 
     // Apaga o último caractere da linha anterior
-    buffer[col + NUM_COLS * row] = (struct Char) {
-        character: ' ',
-        color: color,
+    buffer[col + NUM_COLS * row] = (struct Char) {      // sobrescreve com espaço
+        character: ' ',                                 // caractere espaço
+        color: color,                                   // cor de fundo atual
     };
-    set_cursor(col, row);
+    set_cursor(col, row);                               // Atualiza o cursor
 }
 
-void shell_print_prompt() {
+void shell_print_prompt() {                             // print shell prompt and set editable area
     // Imprime o prompt e só então registra o início da área editável
-    print_str("shell:$ ");
-    shell_prompt_col = col;
-    shell_prompt_row = row;
-    enable_cursor(14, 15);
-    set_cursor(col, row);
+    print_str("shell:$ ");                              // imprime o prompt
+    shell_prompt_col = col;                             // registra a coluna do prompt
+    shell_prompt_row = row;                             // registra a linha do prompt
+    enable_cursor(14, 15);                              // cursor block
+    set_cursor(col, row);                               // garante que o cursor está na posição correta
 }
 
-void shell_handle_enter() {
+void shell_handle_enter() {                             // process command entered at prompt
     // Read the typed command from the screen buffer (from prompt start to current cursor)
-    size_t start = shell_prompt_row * NUM_COLS + shell_prompt_col;
-    size_t end = row * NUM_COLS + col;
-    size_t len = 0;
+    size_t start = shell_prompt_row * NUM_COLS + 
+    shell_prompt_col;                                   // start of editable area
+    size_t end = row * NUM_COLS + col;                  // current cursor position
+    size_t len = 0;                                     // length of command
 
-    if (end > start) len = end - start;
-    if (len > 127) len = 127;
+    if (end > start) len = end - start;                 // compute length
+    if (len > 127) len = 127;                           // limit length to buffer size
 
-    char cmd[128];
-    for (size_t i = 0; i < len; i++) {
-        cmd[i] = (char) buffer[start + i].character;
+    char cmd[128];                                      // command buffer (+1 for null terminator)
+    for (size_t i = 0; i < len; i++) {                  // copy characters
+        cmd[i] = (char) buffer[start + i].character;// copy character
     }
-    cmd[len] = '\0';
+    cmd[len] = '\0';// null-terminate string
 
     // handle commands (compare manually to avoid relying on <string.h>)
-    if (len == 5) {
-        const char want[5] = {'c','l','e','a','r'};
-        int match = 1;
-        for (size_t i = 0; i < 5; i++) {
-            if (cmd[i] != want[i]) { match = 0; break; }
+    // clear command
+    if (len == 5) {                                     // length 5
+        const char want[5] = {'c','l','e','a','r'};     // clear
+        int match = 1;                                  // assume match
+        for (size_t i = 0; i < 5; i++) {                // compare each char
+            if (cmd[i] != want[i]) { match = 0; break; }// no match
         }
-        if (match) {
+        if (match) {                                    // if matched
             // Clear whole screen and reset cursor
-            print_clear();
-            row = 0;
-            col = 0;
-            shell_print_prompt();
-            return;
+            print_clear();                              // clear screen
+            row = 0;                                    // reset row
+            col = 0;                                    // reset col
+            shell_print_prompt();                       // print new prompt
+            return;                                     // done
         }
     }
 
     // reboot command
-    if (len == 6) {
-        const char wantr[6] = {'r','e','b','o','o','t'};
-        int matchr = 1;
-        for (size_t i = 0; i < 6; i++) {
-            if (cmd[i] != wantr[i]) { matchr = 0; break; }
+    if (len == 6) {                                     // length 6
+        const char wantr[6] = {'r','e','b','o','o','t'};// reboot
+        int matchr = 1;                                 // assume match
+        for (size_t i = 0; i < 6; i++) {                // compare each char
+            if (cmd[i] != wantr[i]) {                   // no match
+                matchr = 0; break;                      // no match
+            }
         }
-        if (matchr) {
-            print_str("Rebooting...\n");
-            reboot_system();
+        if (matchr) {                                   // if matched
+            print_str("Rebooting...\n");                // feedback
+            reboot_system();                            // reboot system
             // if reboot fails, loop
-            for(;;);
+            for(;;);                                    // hang
         }
     }
 
     // default behaviour: print newline and new prompt
-    print_char('\n');
-    shell_print_prompt();
+    print_char('\n');                                   // move to next line
+    shell_print_prompt();                               // print new prompt
 }
 
-void shell_disable_cursor() {
-    outportb(0x3D4, 10);
-    outportb(0x3D5, 32);
+void shell_disable_cursor() {                           // disable hardware text cursor
+    outportb(0x3D4, 10);                                // cursor start register
+    outportb(0x3D5, 32);                                // set bit 5 to disable cursor
 }
 
-void set_cursor(size_t c, size_t r) {
-    uint16_t pos = (uint16_t)(r * NUM_COLS + c);
-    outportb(0x3D4, 0x0E);
-    outportb(0x3D5, (pos >> 8) & 0xFF);
-    outportb(0x3D4, 0x0F);
-    outportb(0x3D5, pos & 0xFF);
+void set_cursor(size_t c, size_t r) {                   // set hardware text cursor position
+    uint16_t pos = (uint16_t)(r * NUM_COLS + c);        // compute position
+    outportb(0x3D4, 0x0E);                              // cursor high byte register
+    outportb(0x3D5, (pos >> 8) & 0xFF);                 // send high byte
+    outportb(0x3D4, 0x0F);                              // cursor low byte register
+    outportb(0x3D5, pos & 0xFF);                        // send low byte
 }
 
-void enable_cursor(uint8_t start_scanline, uint8_t end_scanline) {
+void enable_cursor(uint8_t start_scanline, 
+    uint8_t end_scanline) {                             // enable hardware text cursor
     // ensure bit 5 is clear
-    outportb(0x3D4, 0x0A);
-    outportb(0x3D5, start_scanline & 0x1F);
-    outportb(0x3D4, 0x0B);
-    outportb(0x3D5, end_scanline & 0x1F);
+    outportb(0x3D4, 0x0A);                              // cursor start register
+    outportb(0x3D5, start_scanline & 0x1F);             // set start scanline
+    outportb(0x3D4, 0x0B);                              // cursor end register
+    outportb(0x3D5, end_scanline & 0x1F);               // set end scanline
 }
 
-void disable_cursor(void) {
+void disable_cursor(void) {                             // disable hardware text cursor
     // set bit 5 to disable cursor
-    outportb(0x3D4, 0x0A);
-    uint8_t val = port_inb(0x3D5);
-    outportb(0x3D4, 0x0A);
-    outportb(0x3D5, val | 0x20);
+    outportb(0x3D4, 0x0A);                              // cursor start register
+    uint8_t val = port_inb(0x3D5);                      // read current value
+    outportb(0x3D4, 0x0A);                              // cursor start register
+    outportb(0x3D5, val | 0x20);                        // set bit 5 to disable cursor
 }
 
-void toggle_cursor_visibility(void) {
-    outportb(0x3D4, 0x0A);
-    uint8_t val = port_inb(0x3D5);
-    outportb(0x3D4, 0x0A);
-    if (val & 0x20) {
-        outportb(0x3D5, val & ~0x20);
-    } else {
-        outportb(0x3D5, val | 0x20);
+void toggle_cursor_visibility(void) {                   // toggle hardware text cursor visibility
+    outportb(0x3D4, 0x0A);                              // cursor start register
+    uint8_t val = port_inb(0x3D5);                      // read current value
+    outportb(0x3D4, 0x0A);                              // cursor start register
+    if (val & 0x20) {                                   // if bit 5 is set, cursor is disabled
+        outportb(0x3D5, val & ~0x20);                   // enable cursor
+    } else {                                            // else cursor is enabled
+        outportb(0x3D5, val | 0x20);                    // disable cursor
     }
 }
 
-void reboot_system(void) {
+void reboot_system(void) {                              // reboot the system using keyboard controller
     // Try keyboard controller reset: wait input buffer empty, then send 0xFE
-    for (int i = 0; i < 100; i++) {
-        uint8_t status = port_inb(0x64);
-        if ((status & 0x02) == 0) break; // input buffer empty
+    for (int i = 0; i < 100; i++) {                     // wait up to some time
+        uint8_t status = port_inb(0x64);                // keyboard controller status
+        if ((status & 0x02) == 0) break;                // input buffer empty
     }
-    port_outb(0x64, 0xFE);
+    port_outb(0x64, 0xFE);                              // pulse CPU reset line
 
     // Try the port 0x92 method as fallback
-    uint8_t v = port_inb(0x92);
-    port_outb(0x92, v | 0x01);
+    uint8_t v = port_inb(0x92);                         // read port 0x92
+    port_outb(0x92, v | 0x01);                          // set bit 0 to request reset
 
     // If still running, halt
-    for (;;) { asm volatile("hlt"); }
+    for (;;) { asm volatile("hlt"); }                   // halt CPU
 }
 

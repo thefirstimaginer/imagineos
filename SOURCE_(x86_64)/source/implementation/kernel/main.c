@@ -3,6 +3,7 @@
 #include "x86_64/rtc.h"
 #include "comandos.h"
 #include "framebuffer.h"
+#include "bool.h"
 
 char to_ascii(uint16_t code, bool shift_active, bool caps_active, bool num_lock_active){
     char base_char;
@@ -246,8 +247,6 @@ void handle_input(struct KeyboardEvent event) {
 }
 
 void kernel_main(uint64_t mb_info) { // É onde o sistema roda
-    
-    //char comando;
 
     // Initialize framebuffer if GRUB provided one
     framebuffer_init_from_multiboot(mb_info);
@@ -257,46 +256,21 @@ void kernel_main(uint64_t mb_info) { // É onde o sistema roda
     Essa coisa aqui serve como régua pra eu não me perder nas medidas
     print_str("12341234123412341234123412341234123412341234123412341234123412341234123412341234\n");
     */
-    print_str("+------------------------------------------------------------------------------+\n");
-    print_str("|                                                                              |\n");
-    print_str("|                       Imagine Operating System Shell                         |\n");
-    print_str("|      Copyright (C) 2024-2025 Imagine Technologies, All Rights Reserved.      |\n");
-    print_str("|                              Version 0.0.1                                   |\n");
-    print_str("|                                                                              |\n");
-    print_str("+------------------------------------------------------------------------------+\n");
-    print_str("|                            DEVELOPMENT PREVIEW                               |\n");
-    print_str("+------------------------------------------------------------------------------+\n");
+    print_str("+-------------------------------------------------+\n");
+    print_str("|                                                 |\n");
+    print_str("|         Imagine Operating System Shell          |\n");
+    print_str("|      (C)2025 Imagine, All Rights Reserved.      |\n");
+    print_str("|                 BUILD 20251224                  |\n");
+    print_str("|                                                 |\n");
+    print_str("+-------------------------------------------------+\n");
+    print_str("|               DEVELOPMENT PREVIEW               |\n");
+    print_str("+-------------------------------------------------+\n");
     print_str(" \n");
     
+    
+    print_str("Press [ENTER] to start using the shell.\n");
     keyboard_init();
     keyboard_set_handler(handle_input);
-    
-    /*
-    uint8_t prev_seconds = 0;
-    
-    
-    for (uint8_t int_numbers = 0; int_numbers < 1;) { // uint unsigned integer, inteiro sem sinal
-                                  // 8 armazena 8bits na memoria
-                                  // _t indica que é um tipo de "largura exata" definida no
-                                  // cabeçalho <stdint.h>, pra garantir o tamanho, independente do sistema
-
-        uint8_t seconds = rtc_seconds();
-        
-        if (seconds != prev_seconds) {
-            int_numbers = int_numbers + 1;
-            // or int_numbers++
-            
-            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-            print_str("%d - Seconds: \n", );
-            print_uint64_dec(seconds);
-            
-        }
-        
-        prev_seconds = seconds;
-    }
-    */
-    print_str("READY! - Press [ENTER]");
-    print_str(" \n");
     
     while (1);
 }
