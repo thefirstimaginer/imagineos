@@ -20,7 +20,7 @@ static uint32_t fb_bg = 0x00000000;
 // If framebuffer is available, compute rows/cols from its size (assume 8x16 glyph cell)
 static void recompute_size_from_fb() {
     if (!fb_enabled) return;
-    const size_t gw = 8;
+    const size_t gw = 10;
     const size_t gh = 16;
     NUM_COLS = fb_width / gw;
     NUM_ROWS = fb_height / gh;
@@ -297,7 +297,43 @@ void shell_handle_enter() {                             // process command enter
 
     // handle commands (compare manually to avoid relying on <string.h>)
 
-    //calc command v2
+    //listapp command
+    if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == 's' && cmd[3] == 't' && cmd[4] == 'a' && cmd[5] == 'p' && cmd[6] == 'p') {
+        char* args = &cmd[8]; // Pula "calc "
+
+
+        if (args[0] == ' ' || args[1] == ' ') {
+            print_str("\nUSAGE: listapp (command)!");
+        }
+
+        if (args[0] == 'v' && args[1] == 'e' && args[2] == 'r') {
+            print_str("\nImagineOS ListApp V1.0");
+        }
+
+        if (args[0] == 'h' && args[1] == 'e' && args[2] == 'l' && args[3] == 'p') {
+            print_str("\n");
+            print_str("+----------------------------------------+\n");
+            print_str("|      ImagineOS ListApp Help Guide      |\n");
+            print_str("+----------------------------------------+\n");
+            print_str("| [listapp apps] - Show all listapp apps |\n");
+            print_str("| [listapp ver]  - Show listapp version  |\n");
+            print_str("+----------------------------------------+\n");
+        }
+
+        if (args[0] == 'a' && args[1] == 'p' && args[2] == 'p' && args[3] == 's') {
+            print_str("\n");
+            print_str("+----------------------------------------+\n");
+            print_str("|         ImagineOS Applications         |\n");
+            print_str("+----------------------------------------+\n");
+            print_str("| [calc] - Imagine Calculator            |\n");
+            print_str("| [listapp ver]  - Show listapp version  |\n");
+            print_str("+----------------------------------------+\n");
+        }
+
+        int pos = 0;
+    }
+
+
     // Comando da Calculadora
     if (cmd[0] == 'c' && cmd[1] == 'a' && cmd[2] == 'l' && cmd[3] == 'c') {
         char* args = &cmd[5]; // Pula "calc "
@@ -334,7 +370,7 @@ void shell_handle_enter() {                             // process command enter
         }
 
         // 5. Exibe o resultado usando sua função de imprimir números
-        print_str("\nResultado: ");
+        print_str("\nResult: ");
         print_uint64_dec(resultado);
 
     end_calc:
@@ -388,20 +424,22 @@ void shell_handle_enter() {                             // process command enter
             }
         }
         if (match_ver){
-            print_str("\n\nImagineOS BUILD_20251224 - Development Preview\n");
+            print_str("\n");
+            print_str("ImagineOS Alpha BUILD_20251225 - Development Preview\n");
             print_str("Copyright (C) 2025 The Imagine OS Project\n");
             print_str("Developed by: Adryan Alcantara <thenyxiecreator@yahoo.com>\n\n");
-            print_set_color(PRINT_COLOR_GREEN, PRINT_COLOR_RED);
-            print_str("Merry Christmas!\n");
+            print_set_color(PRINT_COLOR_BLACK, PRINT_COLOR_YELLOW);
+            print_str("UNDER CONSTRUCTION!");
             print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+            print_str("\n");
         }
     }
 
     // shutdown command
-    if (len == 8) {
-        const char want_shutdown[8] = {'s','h','u','t','d','o','w','n'};
+    if (len == 4) {
+        const char want_shutdown[4] = {'e','x','i','t'};
         int match_shutdown = 1;// assume match
-        for (size_t i = 0; i < 8; i++/* compare each char */) {
+        for (size_t i = 0; i < 4; i++/* compare each char */) {
             if (cmd[i] != want_shutdown[i]) {
                 match_shutdown = 0; break;
             }
@@ -427,6 +465,25 @@ void shell_handle_enter() {                             // process command enter
         }
     }
 
+    if (len == 4){
+        const char want_main[4] = {'m','a','i','n'};
+        int match_main = 1;
+        for (size_t i = 0; i < 4; i++) {
+            if (cmd[i] != want_main[i]){
+                match_main = 0;
+                break;
+            }
+        }
+        if (match_main){
+            print_str("\n");
+            print_str("ImagineOS Maintener Alpha 1.0\n");
+            print_set_color(PRINT_COLOR_BLACK, PRINT_COLOR_YELLOW);
+            print_str("This feature still not completed yet!");
+            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+            print_str("\n");
+        }
+    }
+
     //help command
     if (len == 4) {
         const char want_help[4] = {'h','e','l','p'};
@@ -437,15 +494,19 @@ void shell_handle_enter() {                             // process command enter
             }
         }
         if (match_help){
-            print_str("\nImagineOS Help Scripts V1.0\n");
+            print_str("\n");
+            print_str("+--------------------------------------------+\n");
+            print_str("|         ImagineOS Help Guide V1.0          |\n");
             print_str("+--------------------------------------------+\n");
             print_str("| [help] - Display this screen.              |\n");
+            print_str("| [hello] - Say hello!                       |\n");
             print_str("| [reboot] - Reboot the System.              |\n");
             print_str("| [clear] - Clear the Display.               |\n");
             print_str("| [ver] - Show the current version.          |\n");
-            print_str("| [shutdown] - Turn off the system.          |\n");
-            print_str("| [calc] - The Imagine Calculator.           |\n");
-            print_str("| [(PROG) show] - Show the program version.  |\n");
+            print_str("| [exit] - Turn off the system.              |\n");
+            print_str("| [listapp] - ListApp Program List.          |\n");
+            print_str("| [(PROG) ver] - Show the program version.   |\n");
+            print_str("| [(PROG) help] - Show the program help.     |\n");
             print_str("+--------------------------------------------+");
         }
     }
