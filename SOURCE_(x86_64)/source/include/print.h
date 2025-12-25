@@ -38,6 +38,7 @@ void shell_disable_cursor();
 void shell_print_prompt();
 void shell_handle_enter();
 void reboot_system(void);
+void shutdown_system(void);
 void set_cursor(size_t col, size_t row);
 void enable_cursor(uint8_t start_scanline, uint8_t end_scanline);
 void disable_cursor(void);

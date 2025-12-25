@@ -1,6 +1,5 @@
 //ILLUSION OS FILE
 #include "print.h"
-#include "comandos.h"
 #include "x86_64/port.h"
 
 static size_t NUM_COLS = 80;
@@ -172,36 +171,36 @@ void print_uint64_hex(uint64_t value) {
         return;
     }
     
-    char buffer[16];
-    int i = 0;
+    char buffer[16];                       // temporary buffer
+    int i = 0;                             // index for buffer
     
     while (value > 0) {
-        uint8_t digit = value & 0xF;
+        uint8_t digit = value & 0xF;       // get last 4 bits
         
-        if (digit < 10) {
-            buffer[i++] = digit + '0';
-        } else {
-            buffer[i++] = digit - 10 + 'A';
+        if (digit < 10) {                  // 0-9
+            buffer[i++] = digit + '0';     // convert to '0'-'9'
+        } else {                           // A-F
+            buffer[i++] = digit - 10 + 'A';// convert to 'A'-'F'
         }
         
-        value >>= 4;
+        value >>= 4;// shift right by 4 bits
     }
     
-    while (i-- > 0) {
+    while (i-- > 0) {// print in reverse order
         print_char(buffer[i]);
     }
 }
 
-void print_uint64_bin(uint64_t value) {
-    char buffer[64];
+void print_uint64_bin(uint64_t value) { // print 64-bit value in binary
+    char buffer[64];                    // temporary buffer
     
-    for (size_t i = 0; i < 64; i++) {
-        buffer[i] = (value & 1) + '0';
-        value >>= 1;
+    for (size_t i = 0; i < 64; i++) {   // extract bits
+        buffer[i] = (value & 1) + '0';  // get least significant bit
+        value >>= 1;                    // shift right
     }
     
-    for (size_t i = 64; i > 0; i--) {
-        print_char(buffer[i - 1]);
+    for (size_t i = 64; i > 0; i--) {   // print in reverse order
+        print_char(buffer[i - 1]);      //
     }
 }
 
@@ -273,19 +272,86 @@ void shell_handle_enter() {                             // process command enter
 
     char cmd[128];                                      // command buffer (+1 for null terminator)
     for (size_t i = 0; i < len; i++) {                  // copy characters
-        cmd[i] = (char) buffer[start + i].character;// copy character
+        cmd[i] = (char) buffer[start + i].character;    // copy character
     }
     cmd[len] = '\0';// null-terminate string
 
-    // handle commands (compare manually to avoid relying on <string.h>)
-    // clear command
-    if (len == 5) {                                     // length 5
-        const char want[5] = {'c','l','e','a','r'};     // clear
-        int match = 1;                                  // assume match
-        for (size_t i = 0; i < 5; i++) {                // compare each char
-            if (cmd[i] != want[i]) { match = 0; break; }// no match
+    // Function to convert string to integer
+
+    int string_to_int(char* str, int* next_pos) {
+        int res = 0;
+        int i = 0;
+
+        // Pula espaços se houver
+        while (str[i] == ' ') i++;
+
+        // Converte os caracteres '0'-'9' em valor numérico
+        while (str[i] >= '0' && str[i] <= '9') {
+            res = res * 10 + (str[i] - '0');
+            i++;
         }
-        if (match) {                                    // if matched
+
+        if (next_pos) *next_pos = i; 
+        return res;
+    }
+
+    // handle commands (compare manually to avoid relying on <string.h>)
+
+    //calc command v2
+    // Comando da Calculadora
+    if (cmd[0] == 'c' && cmd[1] == 'a' && cmd[2] == 'l' && cmd[3] == 'c') {
+        char* args = &cmd[5]; // Pula "calc "
+
+        if (args[0] == 'v' && args[1] == 'e' && args[2] == 'r') {
+            print_str("\nImagineOS Calculator V1.0");
+            goto end_calc;
+        }
+
+        int pos = 0;
+
+        // 1. Pega o primeiro número
+        int n1 = string_to_int(args, &pos);
+        
+        // 2. O sinal está logo após o primeiro número
+        char op = args[pos];
+        
+        // 3. Pega o segundo número (começando 1 posição após o sinal)
+        int pos2 = 0;
+        int n2 = string_to_int(&args[pos + 1], &pos2);
+
+        int resultado = 0;
+
+        // 4. Decide a conta baseada no sinal
+        if (op == '+') resultado = n1 + n2;
+        else if (op == '-') resultado = n1 - n2;
+        else if (op == '*') resultado = n1 * n2;
+        else if (op == '/') {
+            if (n2 != 0) resultado = n1 / n2;
+            else {
+                print_str("\nErro: Divisao por zero!");
+                goto end_calc;
+            }
+        }
+
+        // 5. Exibe o resultado usando sua função de imprimir números
+        print_str("\nResultado: ");
+        print_uint64_dec(resultado);
+
+    end_calc:
+        print_char('\n');
+        shell_print_prompt();
+        return;
+    }
+
+    if (len == 5) {                                     // length 5
+        const char want_clear[5] = {'c','l','e','a','r'};     // clear
+        int match_clear = 1;                                  // assume match
+        for (size_t i = 0; i < 5; i++) {                // compare each char
+            if (cmd[i] != want_clear[i]) { 
+                match_clear = 0; break; 
+            }// no match
+        }
+        if (match_clear) {                                    // if matched
             // Clear whole screen and reset cursor
             print_clear();                              // clear screen
             row = 0;                                    // reset row
@@ -297,18 +363,90 @@ void shell_handle_enter() {                             // process command enter
 
     // reboot command
     if (len == 6) {                                     // length 6
-        const char wantr[6] = {'r','e','b','o','o','t'};// reboot
-        int matchr = 1;                                 // assume match
-        for (size_t i = 0; i < 6; i++) {                // compare each char
-            if (cmd[i] != wantr[i]) {                   // no match
-                matchr = 0; break;                      // no match
+        const char want_reboot[6] = {'r','e','b','o','o','t'};// reboot
+        int match_reboot = 1;                                 // assume match
+        for (size_t i = 0; i < 6; i++) {                      // compare each char
+            if (cmd[i] != want_reboot[i]) {                   // no match
+                match_reboot = 0; break;                      // no match
             }
         }
-        if (matchr) {                                   // if matched
+        if (match_reboot) {                             // if matched
             print_str("Rebooting...\n");                // feedback
             reboot_system();                            // reboot system
             // if reboot fails, loop
             for(;;);                                    // hang
+        }
+    }
+
+    // Version Command
+    if (len == 3){
+        const char want_ver[3] = {'v','e','r'};
+        int match_ver = 1;
+        for (size_t i = 0; i < 3; i++) {
+            if (cmd[i] != want_ver[i]){
+                match_ver = 0; break;
+            }
+        }
+        if (match_ver){
+            print_str("\n\nImagineOS BUILD_20251224 - Development Preview\n");
+            print_str("Copyright (C) 2025 The Imagine OS Project\n");
+            print_str("Developed by: Adryan Alcantara <thenyxiecreator@yahoo.com>\n\n");
+            print_set_color(PRINT_COLOR_GREEN, PRINT_COLOR_RED);
+            print_str("Merry Christmas!\n");
+            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+        }
+    }
+
+    // shutdown command
+    if (len == 8) {
+        const char want_shutdown[8] = {'s','h','u','t','d','o','w','n'};
+        int match_shutdown = 1;// assume match
+        for (size_t i = 0; i < 8; i++/* compare each char */) {
+            if (cmd[i] != want_shutdown[i]) {
+                match_shutdown = 0; break;
+            }
+        }
+        if (match_shutdown){
+            print_str("Shutting down...\n");
+            shutdown_system();
+            for(;;); // hang if shutdown fails
+        }
+    }
+
+    if (len == 5){
+        const char want_hello[5] = {'h','e','l','l','o'};
+        int match_hello = 1;
+        for (size_t i = 0; i < 5; i++) {
+            if (cmd[i] != want_hello[i]){
+                match_hello = 0;
+                break;
+            }
+        }
+        if (match_hello){
+            print_str("\nHello World!");
+        }
+    }
+
+    //help command
+    if (len == 4) {
+        const char want_help[4] = {'h','e','l','p'};
+        int match_help = 1;// assume match
+        for (size_t i = 0; i < 4; i++/* compare each char */) {
+            if (cmd[i] != want_help[i]) {
+                match_help = 0; break;
+            }
+        }
+        if (match_help){
+            print_str("\nImagineOS Help Scripts V1.0\n");
+            print_str("+--------------------------------------------+\n");
+            print_str("| [help] - Display this screen.              |\n");
+            print_str("| [reboot] - Reboot the System.              |\n");
+            print_str("| [clear] - Clear the Display.               |\n");
+            print_str("| [ver] - Show the current version.          |\n");
+            print_str("| [shutdown] - Turn off the system.          |\n");
+            print_str("| [calc] - The Imagine Calculator.           |\n");
+            print_str("| [(PROG) show] - Show the program version.  |\n");
+            print_str("+--------------------------------------------+");
         }
     }
 
@@ -371,6 +509,24 @@ void reboot_system(void) {                              // reboot the system usi
     port_outb(0x92, v | 0x01);                          // set bit 0 to request reset
 
     // If still running, halt
+    for (;;) { asm volatile("hlt"); }                   // halt CPU
+}
+
+void shutdown_system(void) {                            // shutdown the system using ACPI
+    // Write to the ACPI PM1a control block to initiate shutdown
+    // This is a simplified example and may not work on all hardware
+    uint16_t pm1a_control_block = 0xB004;               // typical address, may vary
+    uint16_t slp_typa = 0x2000;                         // SLP_TYP for S5 (soft off)
+    uint16_t slp_en = 0x2000;                           // SLP_EN bit
+
+    // Write the sleep type and enable bits to the PM1a control block
+    port_outb(pm1a_control_block, (slp_typa | slp_en) & 0xFF);
+    port_outb(pm1a_control_block + 1, ((slp_typa | slp_en) >> 8) & 0xFF);
+
+    // If still running, halt
+    print_clear(); // Just to avoid compiler warnings about unused functions
+    print_str("You can turn off the computer now.\n");
+    return;
     for (;;) { asm volatile("hlt"); }                   // halt CPU
 }
 
