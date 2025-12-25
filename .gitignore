@@ -1,2 +1,4 @@
 /SOURCE_(x86_64)/build
 /SOURCE_(x86_64)/distro
+/SOURCE_(x86_64)/targets
+SOURCE_(x86_64)/targets/x86_64/iso/boot/kernel.bin

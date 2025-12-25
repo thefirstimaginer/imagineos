@@ -44,4 +44,5 @@ void enable_cursor(uint8_t start_scanline, uint8_t end_scanline);
 void disable_cursor(void);
 void toggle_cursor_visibility(void);
 void outportb(uint16_t port, uint8_t val);
+void keyboard_keys_init();
 
