@@ -1,5 +1,5 @@
 #include "print.h"
-#include "print_command.h"
+#include "shell.h"
 #include "x86_64/rtc.h"
 
 #include "sys_includes/string.h"
@@ -15,10 +15,32 @@ extern size_t row;
 extern struct Char* buffer;
 struct Char {uint8_t character; uint8_t color; };
 extern size_t NUM_COLS;
-//extern size_t NUM_ROWS;
+extern size_t NUM_ROWS;
 
-static size_t shell_prompt_col = 0; // Variável para armazenar a coluna do prompt do shell
-static size_t shell_prompt_row = 0;
+extern size_t shell_prompt_col; // Variável para armazenar a coluna do prompt do shell
+extern size_t shell_prompt_row;
+
+void shell_init() {
+    print_clear(); // Limpa qualquer mensagem de debug do boot
+    row = 0;
+    col = 0;
+    
+    print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK); // Uma cor diferente para o título
+print_str("  __________________________________________________________  \n");
+    print_str("   ___                       _             ___  ____  \n");
+    print_str("  |_ _|_ __ ___   __ _  __ _(_)_ __   ___ / _ \\/ ___| \n");
+    print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
+    print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
+    print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
+    print_str("                       |___/                           \n");
+    print_str("  __________________________________________________________  \n\n");
+    
+    print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+    print_str(" Build: 20251228 | Dev Preview | Kernel: x86_64\n");
+    print_str(" Type 'help' to see available commands.\n\n");
+    
+    shell_print_prompt();
+}
 
 // Variáveis para armazenar a posição do prompt do shell
 void shell_print_prompt() {                             // print shell prompt and set editable area

@@ -1,6 +1,6 @@
 // SOURCE_(x86_64)/source/implementation/x86_64/print.c
 #include "print.h"
-#include "print_command.h"
+#include "shell.h"
 #include "x86_64/port.h"
 #include "x86_64/rtc.h"
 
@@ -37,8 +37,8 @@ size_t row = 0;
 // Current color attribute for text mode
 uint8_t color = PRINT_COLOR_WHITE | PRINT_COLOR_BLACK << 4;
 // Shell prompt tracking: start column and row of the editable area after the prompt
-static size_t shell_prompt_col = 0;
-static size_t shell_prompt_row = 0;
+size_t shell_prompt_col = 0;
+size_t shell_prompt_row = 0;
 
 // Clear a specific row in text mode
 void clear_row(size_t row) {                        // clear a specific row
