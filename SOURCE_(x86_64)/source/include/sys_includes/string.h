@@ -9,3 +9,4 @@ size_t strlen(const char* s);
 char* strchr(const char* s, int c);
 char* strncpy(char* dest, const char* src, size_t n);
 int is_empty(char* s);
+char* skip_spaces(char* s);

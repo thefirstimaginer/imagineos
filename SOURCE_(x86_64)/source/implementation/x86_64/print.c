@@ -336,8 +336,11 @@ void shutdown_system(void) {                            // shutdown the system u
     for (;;) { asm volatile("hlt"); }                   // halt CPU
 }
 
+/*
 void set_shell_color(uint8_t color) {
     // Se o seu sistema usa uma variável global para cor, atualize ela aqui
     // Exemplo: terminal_color = color;
     // Isso fará com que os próximos print_str usem a nova cor
+    uint8_t color = PRINT_COLOR_WHITE | PRINT_COLOR_BLUE << 4;
 }
+*/

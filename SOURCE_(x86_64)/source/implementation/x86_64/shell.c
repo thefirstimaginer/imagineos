@@ -5,6 +5,8 @@
 #include "sys_includes/string.h"
 #include "sys_includes/math.h"
 
+char last_command[128] = {0};// Buffer para armazenar o último comando digitado
+
 // Note que agora as variáveis 'buffer', 'color', 'col', 'row' 
 // precisam ser acessadas. Como elas estão no print.c, 
 // usamos 'extern' para avisar o compilador.
@@ -45,7 +47,7 @@ void shell_init() {
 // Variáveis para armazenar a posição do prompt do shell
 void shell_print_prompt() {                             // print shell prompt and set editable area
     // Imprime o prompt e só então registra o início da área editável
-    //print_set_color(PRINT_COLOR_LIGHT_GREEN, PRINT_COLOR_BLACK); // cor verde para o prompt
+    print_set_color(PRINT_COLOR_LIGHT_GREEN, PRINT_COLOR_BLACK); // cor verde para o prompt
     print_str("shell:$ ");                              // imprime o prompt
     shell_prompt_col = col;                             // registra a coluna do prompt
     shell_prompt_row = row;                             // registra a linha do prompt
@@ -69,6 +71,7 @@ void shell_handle_enter(void) {                             // process command e
         cmd[i] = (char) buffer[start + i].character;    // copy character
     }
     cmd[len] = '\0';// null-terminate string
+
 
     // Function to convert string to integer
     int string_to_int(char* str, int* next_pos) {
@@ -116,10 +119,19 @@ void shell_handle_enter(void) {                             // process command e
     print_char('\n');
     shell_print_prompt();
     return;
-}
+    }
+
+    // Handle empty command
+    if (cmd_name[0] == '\0') {
+        print_char('\n');
+        shell_print_prompt();
+        return;
+    }
+
+    // GUARDA NO HISTÓRICO: Antes de processar, copiamos para o last_command
+    strncpy(last_command, cmd, 127);
 
     // handle commands (compare manually to avoid relying on <string.h>)
-
     if (strcmp(cmd, "help") == 0)
     {
         print_str("\n");
@@ -137,6 +149,26 @@ void shell_handle_enter(void) {                             // process command e
         print_str("| [(PROG) ver] - Show the program version.   |\n");
         print_str("| [(PROG) help] - Show the program help.     |\n");
         print_str("+--------------------------------------------+");
+    }
+    else if (strcmp(cmd_name, "history") == 0) {
+        if (last_command[0] == '\0') {
+            print_str("\nNo history found.");
+        } else {
+            print_str("\nLast command: ");
+            print_str(last_command);
+        }
+    }
+    else if (strcmp(cmd_name, "call") == 0) {
+        if (strcmp(args, ".err_screen") == 0)
+        {
+            print_clear();
+            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLUE);
+            print_str("ERROR!, This is a joke!");
+            color = PRINT_COLOR_WHITE | PRINT_COLOR_BLUE << 4;
+        }
+        else {
+            print_str("\nLast command: ");
+        }
     }
     else if (strcmp(cmd, "clear") == 0)
     {
@@ -218,13 +250,14 @@ void shell_handle_enter(void) {                             // process command e
         print_str("+----------------------------------------+\n");
     }
     else if (strcmp(cmd_name, "calc") == 0) {
+
         int pos = 0;
         
         // 1. Converte o primeiro número
         int n1 = string_to_int(args, &pos);
         
         // 2. O operador está na posição onde o string_to_int parou
-        char op = args[pos];
+        char operator = args[pos];
         
         // 3. Converte o segundo número (pulando o operador)
         int n2 = string_to_int(&args[pos + 1], NULL);
@@ -232,11 +265,16 @@ void shell_handle_enter(void) {                             // process command e
         int resultado = 0;
         int erro = 0;
 
+        if (strcmp(args, "ver") == 0)
+        {
+        print_str("\nCalculator Module v1.0 - ImagineOS\n");
+        }
+
         // 4. Lógica de cálculo
-        if (op == '+') resultado = n1 + n2;
-        else if (op == '-') resultado = n1 - n2;
-        else if (op == '*') resultado = n1 * n2;
-        else if (op == '/') {
+        if (operator == '+') resultado = n1 + n2;
+        else if (operator == '-') resultado = n1 - n2;
+        else if (operator == '*') resultado = n1 * n2;
+        else if (operator == '/') {
             if (n2 != 0) resultado = n1 / n2;
             else {
                 print_str("\nError: Division by zero!");

@@ -61,27 +61,34 @@ check_long_mode:
 	jmp error
 
 setup_page_tables:
-	mov eax, page_table_l3
-	or eax, 0b11 ; present, writable
-	mov [page_table_l4], eax
-	
-	mov eax, page_table_l2
-	or eax, 0b11 ; present, writable
-	mov [page_table_l3], eax
+    mov eax, page_table_l3
+    or eax, 0b11
+    mov [page_table_l4], eax
+    
+    ; Aponta L3 para as 4 tabelas L2 (cada entrada na L3 mapeia 1GB)
+    mov eax, page_table_l2
+    or eax, 0b11
+    mov [page_table_l3], eax         ; 0-1GB
+    add eax, 4096
+    mov [page_table_l3 + 8], eax     ; 1-2GB
+    add eax, 4096
+    mov [page_table_l3 + 16], eax    ; 2-3GB
+    add eax, 4096
+    mov [page_table_l3 + 24], eax    ; 3-4GB
 
-	mov ecx, 0 ; counter
+    ; Loop para mapear 2048 entradas (512 * 4) de 2MB cada
+    mov ecx, 0
+
 .loop:
+    mov eax, 0x200000
+    mul ecx
+    or eax, 0b10000011
+    mov [page_table_l2 + ecx * 8], eax
 
-	mov eax, 0x200000 ; 2MiB
-	mul ecx
-	or eax, 0b10000011 ; present, writable, huge page
-	mov [page_table_l2 + ecx * 8], eax
-
-	inc ecx ; increment counter
-	cmp ecx, 512 ; checks if the whole table is mapped
-	jne .loop ; if not, continue
-
-	ret
+    inc ecx
+    cmp ecx, 2048 ; Mapeia total de 4GB
+    jne .loop
+    ret
 
 enable_paging:
 	; pass page table location to cpu
@@ -116,14 +123,10 @@ error:
 
 section .bss
 align 4096
-page_table_l4:
-	resb 4096
-page_table_l3:
-	resb 4096
-page_table_l2:
-	resb 4096
-stack_bottom:
-	resb 4096 * 4
+page_table_l4:resb 4096
+page_table_l3:resb 4096
+page_table_l2:resb 4096 * 4
+stack_bottom: resb 4096 * 4
 stack_top:
 
 section .rodata

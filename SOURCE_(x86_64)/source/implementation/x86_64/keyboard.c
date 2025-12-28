@@ -9,6 +9,12 @@
 // Set to 1 to enable debug print of received scancodes (fat_code)
 #define KEYBOARD_DEBUG 0
 
+extern char last_command[128]; // O comando no print_command.c
+extern size_t col;
+extern size_t row;
+extern size_t shell_prompt_col;
+extern size_t shell_prompt_row;
+
 static bool is_shift_active = false;
 static bool is_num_lock_active = false;
 static bool is_caps_lock_active = false;
@@ -95,6 +101,28 @@ void keyboard_handler() {
 			ps2_set_leds(ledmask);
 		}
 	}
+
+	if (scan_code == KEY_CODE_UP) {
+        // 1. Apaga o que o usuário já começou a digitar
+        // Comparamos com a posição do prompt para não apagar o "shell:$"
+        while (row > shell_prompt_row || (row == shell_prompt_row && col > shell_prompt_col)) {
+            backspace(); 
+        }
+
+        // 2. Escreve o comando do histórico na tela
+        if (last_command[0] != '\0') {
+            print_str(last_command);
+        }
+        return;
+    }
+	// Lógica para Seta para Baixo (Limpar linha/Cancelar histórico)
+    if (scan_code == KEY_CODE_DOWN) {
+        // Simplesmente limpa o que o usuário escreveu
+        while (row > shell_prompt_row || (row == shell_prompt_row && col > shell_prompt_col)) {
+            backspace();
+        }
+        return;
+    }
 
 	struct KeyboardEvent event;
 	

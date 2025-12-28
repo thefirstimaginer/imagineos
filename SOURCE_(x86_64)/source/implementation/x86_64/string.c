@@ -86,3 +86,8 @@ int is_empty(char* s) {
     }
     return 1;
 }
+
+char* skip_spaces(char* s) {
+    while (*s == ' ') s++;
+    return s;
+}

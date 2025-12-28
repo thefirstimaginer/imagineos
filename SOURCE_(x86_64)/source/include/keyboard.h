@@ -77,7 +77,11 @@
 #define KEY_CODE_SLASH 0x35
 #define KEY_CODE_SEMICOLON 0x27
 #define KEY_CODE_COMMA 0x33
-
+// Setas do teclado
+#define KEY_CODE_UP    0x48
+#define KEY_CODE_DOWN  0x50
+#define KEY_CODE_LEFT  0x4B
+#define KEY_CODE_RIGHT 0x4D
 enum {
 	KEYBOARD_EVENT_TYPE_MAKE = 0,
 	KEYBOARD_EVENT_TYPE_BREAK = 1,
