@@ -1,21 +1,22 @@
 //ILLUSION OS FILE
 #include "print.h"
 #include "x86_64/port.h"
+#include "x86_64/rtc.h"
 
-static size_t NUM_COLS = 80;
-static size_t NUM_ROWS = 25;
+static size_t NUM_COLS = 80;// text mode dimensions
+static size_t NUM_ROWS = 25;// text mode dimensions
 
-struct Char {
-    uint8_t character;
-    uint8_t color;
+struct Char {// VGA text mode character structure
+    uint8_t character;// ASCII character
+    uint8_t color;// color attribute
 };
 
-struct Char* buffer = (struct Char*) 0xb8000;
+struct Char* buffer = (struct Char*) 0xb8000;// VGA text mode buffer address
 #include "framebuffer.h"
 
 // framebuffer color used by renderer (RGB 32-bit)
-static uint32_t fb_fg = 0x00FFFFFF;
-static uint32_t fb_bg = 0x00000000;
+static uint32_t fb_fg = 0x00FFFFFF;// default white
+static uint32_t fb_bg = 0x00000000;// default black
 
 // If framebuffer is available, compute rows/cols from its size (assume 8x16 glyph cell)
 static void recompute_size_from_fb() {
@@ -27,6 +28,8 @@ static void recompute_size_from_fb() {
 }
 size_t col = 0;
 size_t row = 0;
+
+// Current color attribute for text mode
 uint8_t color = PRINT_COLOR_WHITE | PRINT_COLOR_BLACK << 4;
 // Shell prompt tracking: start column and row of the editable area after the prompt
 static size_t shell_prompt_col = 0;
@@ -253,6 +256,7 @@ void backspace() {
 
 void shell_print_prompt() {                             // print shell prompt and set editable area
     // Imprime o prompt e só então registra o início da área editável
+    print_set_color(PRINT_COLOR_LIGHT_GREEN, PRINT_COLOR_BLACK); // cor verde para o prompt
     print_str("shell:$ ");                              // imprime o prompt
     shell_prompt_col = col;                             // registra a coluna do prompt
     shell_prompt_row = row;                             // registra a linha do prompt
@@ -296,6 +300,35 @@ void shell_handle_enter() {                             // process command enter
     }
 
     // handle commands (compare manually to avoid relying on <string.h>)
+    // date command
+    if (len == 4 && cmd[0] == 'd' && cmd[1] == 'a' && cmd[2] == 't' && cmd[3] == 'e') {
+        print_char('\n');
+        
+        // Lê os dados do RTC usando a lógica que você já tinha
+        uint8_t day    = rtc_get_value(RTC_REGISTER_DAY);
+        uint8_t month  = rtc_get_value(RTC_REGISTER_MONTH);
+        uint8_t year   = rtc_get_value(RTC_REGISTER_YEAR);
+        uint8_t hour   = rtc_get_value(RTC_REGISTER_HOURS);
+        uint8_t minute = rtc_get_value(RTC_REGISTER_MINUTES);
+
+        print_str("Current Date: ");
+        print_uint64_dec(day);
+        print_char('/');
+        print_uint64_dec(month);
+        print_str("/20"); // O RTC costuma dar o ano com 2 dígitos (ex: 25)
+        print_uint64_dec(year);
+
+        print_str("  Hour: ");
+        if (hour < 10) print_char('0');
+        print_uint64_dec(hour);
+        print_char(':');
+        if (minute < 10) print_char('0');
+        print_uint64_dec(minute);
+        
+        print_char('\n');
+        shell_print_prompt();
+        return;
+    }
 
     //listapp command
     if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == 's' && cmd[3] == 't' && cmd[4] == 'a' && cmd[5] == 'p' && cmd[6] == 'p') {
@@ -379,6 +412,7 @@ void shell_handle_enter() {                             // process command enter
         return;
     }
 
+    // clear command
     if (len == 5) {                                     // length 5
         const char want_clear[5] = {'c','l','e','a','r'};     // clear
         int match_clear = 1;                                  // assume match
@@ -451,6 +485,7 @@ void shell_handle_enter() {                             // process command enter
         }
     }
 
+    // hello command
     if (len == 5){
         const char want_hello[5] = {'h','e','l','l','o'};
         int match_hello = 1;
@@ -465,6 +500,7 @@ void shell_handle_enter() {                             // process command enter
         }
     }
 
+    // main (works like sudo) command
     if (len == 4){
         const char want_main[4] = {'m','a','i','n'};
         int match_main = 1;
@@ -483,6 +519,27 @@ void shell_handle_enter() {                             // process command enter
             print_str("\n");
         }
     }
+
+    /*
+    //color command
+    if (cmd[0] == 'c' && cmd[1] == 'o' && cmd[2] == 'l' && cmd[3] == 'o' && cmd[4] == 'r') {
+        char* args = &cmd[6]; 
+        int pos = 0;
+        int nova_cor = string_to_int(args, &pos);
+
+        if (nova_cor >= 0 && nova_cor <= 15)
+            // Aplicar a cor agora
+            print_set_color(shell_current_fg, PRINT_COLOR_BLACK);
+            print_str("\nCor alterada!");
+        } else {
+            print_str("\nErr: Escolha uma cor de 0 a 15.");
+        }
+
+        print_char('\n');
+        shell_print_prompt();
+        return;
+    }
+    */
 
     //help command
     if (len == 4) {
@@ -503,6 +560,7 @@ void shell_handle_enter() {                             // process command enter
             print_str("| [reboot] - Reboot the System.              |\n");
             print_str("| [clear] - Clear the Display.               |\n");
             print_str("| [ver] - Show the current version.          |\n");
+            print_str("| [date] - Show the current date.            |\n");
             print_str("| [exit] - Turn off the system.              |\n");
             print_str("| [listapp] - ListApp Program List.          |\n");
             print_str("| [(PROG) ver] - Show the program version.   |\n");
@@ -591,3 +649,8 @@ void shutdown_system(void) {                            // shutdown the system u
     for (;;) { asm volatile("hlt"); }                   // halt CPU
 }
 
+void set_shell_color(uint8_t color) {
+    // Se o seu sistema usa uma variável global para cor, atualize ela aqui
+    // Exemplo: terminal_color = color;
+    // Isso fará com que os próximos print_str usem a nova cor
+}

@@ -8,6 +8,12 @@
 #define RTC_UPDATE_IN_PROGRESS 0x80
 #define RTC_DATA_MODE (1 << 2)
 
+#define RTC_REGISTER_MINUTES 0x02
+#define RTC_REGISTER_HOURS   0x04
+#define RTC_REGISTER_DAY     0x07
+#define RTC_REGISTER_MONTH   0x08
+#define RTC_REGISTER_YEAR    0x09
+
 uint8_t rtc_read_register(uint8_t reg) {
     port_outb(PORT_RTC_COMMAND, reg);
     return port_inb(PORT_RTC_DATA);
@@ -38,4 +44,16 @@ uint8_t rtc_seconds() {
     }
     
     return seconds_b;
+}
+
+uint8_t rtc_get_value(uint8_t reg) {
+    uint8_t val;
+    rtc_wait();
+    val = rtc_read_register(reg);
+    
+    // Se for BCD, converte para decimal antes de retornar
+    if (rtc_is_bcd()) {
+        return (val & 0x0F) + ((val & 0xF0) >> 4) * 10;
+    }
+    return val;
 }

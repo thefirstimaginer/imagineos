@@ -33,7 +33,6 @@ void print_uint64_dec(uint64_t value);
 void print_uint64_hex(uint64_t value);
 void print_uint64_bin(uint64_t value);
 void backspace();
-void get_str(char comando);
 void shell_disable_cursor();
 void shell_print_prompt();
 void shell_handle_enter();
