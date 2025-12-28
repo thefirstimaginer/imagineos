@@ -26,7 +26,7 @@ void shell_init() {
     col = 0;
     
     print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK); // Uma cor diferente para o título
-print_str("  __________________________________________________________  \n");
+    print_str("  __________________________________________________________  \n");
     print_str("   ___                       _             ___  ____  \n");
     print_str("  |_ _|_ __ ___   __ _  __ _(_)_ __   ___ / _ \\/ ___| \n");
     print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
@@ -103,6 +103,20 @@ void shell_handle_enter(void) {                             // process command e
         // Se não tem espaço, o comando é a string inteira
         strncpy(cmd_name, cmd, 31);
     }
+    
+    // Handle empty command
+    if (cmd_name[0] == '\0') {
+        print_char('\n');
+        shell_print_prompt();
+        return; // Sai da função sem passar pelos outros else if
+    }
+
+    // If the command is empty, just print a new prompt
+    if (is_empty(cmd_name)) {
+    print_char('\n');
+    shell_print_prompt();
+    return;
+}
 
     // handle commands (compare manually to avoid relying on <string.h>)
 
@@ -164,7 +178,15 @@ void shell_handle_enter(void) {                             // process command e
     else if(strcmp(cmd, "ver") == 0)
     {
         print_str("\n");
-        print_str("ImagineOS Alpha - Development Preview\n");
+        print_str("  __________________________________________________________  \n");
+        print_str("   ___                       _             ___  ____  \n");
+        print_str("  |_ _|_ __ ___   __ _  __ _(_)_ __   ___ / _ \\/ ___| \n");
+        print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
+        print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
+        print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
+        print_str("                       |___/                           \n");
+        print_str("  __________________________________________________________  \n\n");
+        print_str("\nImagineOS Alpha - Development Preview\n");
         print_str("Copyright (C) 2025 The Imagine OS Project\n");
         print_str("Bugs? send a mail to: <nyxieworlduniverse@gmail.com>");
     }
@@ -234,250 +256,11 @@ void shell_handle_enter(void) {                             // process command e
         }
     }
     else {
-        print_str("\nComando desconhecido: ");
+        print_str("\n[SHELL]: Unknown Command: '");
         print_str(cmd_name);
+        print_str("'");
     }
 
-    /*
-    //listapp command
-    if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == 's' && cmd[3] == 't' && cmd[4] == 'a' && cmd[5] == 'p' && cmd[6] == 'p') {
-        char* args = &cmd[8]; // Pula "calc "
-
-
-        if (args[0] == ' ' || args[1] == ' ') {
-            print_str("\nUSAGE: listapp (command)!");
-        }
-
-        if (args[0] == 'v' && args[1] == 'e' && args[2] == 'r') {
-            print_str("\nImagineOS ListApp V1.0");
-        }
-
-        if (strcmp(cmd, "help") == 0) {
-            print_str("\n");
-            print_str("+----------------------------------------+\n");
-            print_str("|      ImagineOS ListApp Help Guide      |\n");
-            print_str("+----------------------------------------+\n");
-            print_str("| [listapp apps] - Show all listapp apps |\n");
-            print_str("| [listapp ver]  - Show listapp version  |\n");
-            print_str("+----------------------------------------+\n");
-        }
-
-        if (args[0] == 'a' && args[1] == 'p' && args[2] == 'p' && args[3] == 's') {
-            print_str("\n");
-            print_str("+----------------------------------------+\n");
-            print_str("|         ImagineOS Applications         |\n");
-            print_str("+----------------------------------------+\n");
-            print_str("| [calc] - Imagine Calculator            |\n");
-            print_str("| [listapp ver]  - Show listapp version  |\n");
-            print_str("+----------------------------------------+\n");
-        }
-
-        int pos = 0;
-    }
-
-
-    // Comando da Calculadora
-    if (cmd[0] == 'c' && cmd[1] == 'a' && cmd[2] == 'l' && cmd[3] == 'c') {
-        char* args = &cmd[5]; // Pula "calc "
-
-        if (args[0] == 'v' && args[1] == 'e' && args[2] == 'r') {
-            print_str("\nImagineOS Calculator V1.0");
-            goto end_calc;
-        }
-
-        int pos = 0;
-
-        // 1. Pega o primeiro número
-        int n1 = string_to_int(args, &pos);
-        
-        // 2. O sinal está logo após o primeiro número
-        char op = args[pos];
-        
-        // 3. Pega o segundo número (começando 1 posição após o sinal)
-        int pos2 = 0;
-        int n2 = string_to_int(&args[pos + 1], &pos2);
-
-        int resultado = 0;
-
-        // 4. Decide a conta baseada no sinal
-        if (op == '+') resultado = n1 + n2;
-        else if (op == '-') resultado = n1 - n2;
-        else if (op == '*') resultado = n1 * n2;
-        else if (op == '/') {
-            if (n2 != 0) resultado = n1 / n2;
-            else {
-                print_str("\nErro: Divisao por zero!");
-                goto end_calc;
-            }
-        }
-
-        // 5. Exibe o resultado usando sua função de imprimir números
-        print_str("\nResult: ");
-        print_uint64_dec(resultado);
-
-    end_calc:
-        print_char('\n');
-        shell_print_prompt();
-        return;
-    }
-
-    // clear command
-    if (len == 5) {                                     // length 5
-        const char want_clear[5] = {'c','l','e','a','r'};     // clear
-        int match_clear = 1;                                  // assume match
-        for (size_t i = 0; i < 5; i++) {                // compare each char
-            if (cmd[i] != want_clear[i]) { 
-                match_clear = 0; break; 
-            }// no match
-        }
-        if (match_clear) {                                    // if matched
-            // Clear whole screen and reset cursor
-            print_clear();                              // clear screen
-            row = 0;                                    // reset row
-            col = 0;                                    // reset col
-            shell_print_prompt();                       // print new prompt
-            return;                                     // done
-        }
-    }
-
-    // reboot command
-    if (len == 6) {                                     // length 6
-        const char want_reboot[6] = {'r','e','b','o','o','t'};// reboot
-        int match_reboot = 1;                                 // assume match
-        for (size_t i = 0; i < 6; i++) {                      // compare each char
-            if (cmd[i] != want_reboot[i]) {                   // no match
-                match_reboot = 0; break;                      // no match
-            }
-        }
-        if (match_reboot) {                             // if matched
-            print_str("Rebooting...\n");                // feedback
-            reboot_system();                            // reboot system
-            // if reboot fails, loop
-            for(;;);                                    // hang
-        }
-    }
-
-    // Version Command
-    if (len == 3){
-        const char want_ver[3] = {'v','e','r'};
-        int match_ver = 1;
-        for (size_t i = 0; i < 3; i++) {
-            if (cmd[i] != want_ver[i]){
-                match_ver = 0; break;
-            }
-        }
-        if (match_ver){
-            print_str("\n");
-            print_str("ImagineOS Alpha - Development Preview\n");
-            print_str("Copyright (C) 2025 The Imagine OS Project\n");
-            print_str("Developed by: Adryan Alcantara <thenyxiecreator@yahoo.com>\n\n");
-            print_set_color(PRINT_COLOR_BLACK, PRINT_COLOR_YELLOW);
-            print_str("UNDER CONSTRUCTION!");
-            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-            print_str("\n");
-        }
-    }
-
-    // shutdown command
-    if (len == 4) {
-        const char want_shutdown[4] = {'e','x','i','t'};
-        int match_shutdown = 1;// assume match
-        for (size_t i = 0; i < 4; i++ // compare each char) {
-            if (cmd[i] != want_shutdown[i]) {
-                match_shutdown = 0; break;
-            }
-        }
-        if (match_shutdown){
-            print_str("Shutting down...\n");
-            shutdown_system();
-            for(;;); // hang if shutdown fails
-        }
-    }
-
-    // hello command
-    if (len == 5){
-        const char want_hello[5] = {'h','e','l','l','o'};
-        int match_hello = 1;
-        for (size_t i = 0; i < 5; i++) {
-            if (cmd[i] != want_hello[i]){
-                match_hello = 0;
-                break;
-            }
-        }
-        if (match_hello){
-            print_str("\nHello World!");
-        }
-    }
-
-    // main (works like sudo) command
-    if (len == 4){
-        const char want_main[4] = {'m','a','i','n'};
-        int match_main = 1;
-        for (size_t i = 0; i < 4; i++) {
-            if (cmd[i] != want_main[i]){
-                match_main = 0;
-                break;
-            }
-        }
-        if (match_main){
-            print_str("\n");
-            print_str("ImagineOS Maintener Alpha 1.0\n");
-            print_set_color(PRINT_COLOR_BLACK, PRINT_COLOR_YELLOW);
-            print_str("This feature still not completed yet!");
-            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-            print_str("\n");
-        }
-    }
-
-    //color command
-    if (cmd[0] == 'c' && cmd[1] == 'o' && cmd[2] == 'l' && cmd[3] == 'o' && cmd[4] == 'r') {
-        char* args = &cmd[6]; 
-        int pos = 0;
-        int new_color = string_to_int(args, &pos);
-
-        if (new_color >= 0 && new_color <= 15){
-            color = (uint8_t) new_color | (PRINT_COLOR_BLACK << 4); // Atualiza a variável de cor global
-            // Aplicar a cor agora
-            print_str("\nColor changed successfully.");
-        } else {
-            print_str("\nErr: Choose a color between 0 and 15!");
-        }
-
-        print_char('\n');
-        shell_print_prompt();
-        return;
-    }
-
-    //help command
-    if (len == 4) {
-        const char want_help[4] = {'h','e','l','p'};
-        int match_help = 1;// assume match
-        for (size_t i = 0; i < 4; i++// compare each char) {
-            if (cmd[i] != want_help[i]) {
-                match_help = 0; break;
-            }
-        }
-        if (match_help){
-            print_str("\n");
-            print_str("+--------------------------------------------+\n");
-            print_str("|         ImagineOS Help Guide V1.0          |\n");
-            print_str("+--------------------------------------------+\n");
-            print_str("| [help] - Display this screen.              |\n");
-            print_str("| [hello] - Say hello!                       |\n");
-            print_str("| [reboot] - Reboot the System.              |\n");
-            print_str("| [clear] - Clear the Display.               |\n");
-            print_str("| [ver] - Show the current version.          |\n");
-            print_str("| [date] - Show the current date.            |\n");
-            print_str("| [exit] - Turn off the system.              |\n");
-            print_str("| [listapp] - ListApp Program List.          |\n");
-            print_str("| [(PROG) ver] - Show the program version.   |\n");
-            print_str("| [(PROG) help] - Show the program help.     |\n");
-            print_str("+--------------------------------------------+");
-        }
-    }
-    */
-
-    // default behaviour: print newline and new prompt
     print_char('\n');                                   // move to next line
     shell_print_prompt();                               // print new prompt
 }

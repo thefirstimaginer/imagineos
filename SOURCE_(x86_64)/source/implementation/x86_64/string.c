@@ -77,3 +77,12 @@ char* strncpy(char* dest, const char* src, size_t n) {
         dest[i] = '\0';
     return dest;
 }
+
+// Verifica se a string é vazia ou contém apenas espaços em branco
+int is_empty(char* s) {
+    while (*s) {
+        if (*s != ' ' && *s != '\n' && *s != '\r') return 0;
+        s++;
+    }
+    return 1;
+}
