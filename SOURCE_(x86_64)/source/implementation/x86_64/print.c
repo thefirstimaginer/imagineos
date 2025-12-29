@@ -16,20 +16,11 @@ struct Char {
 
 // VGA text mode buffer pointer
 struct Char* buffer = (struct Char*) 0xb8000;// VGA text mode buffer address
-#include "framebuffer.h"
 
 // framebuffer color used by renderer (RGB 32-bit)
 static uint32_t fb_fg = 0x00FFFFFF;// default white
 static uint32_t fb_bg = 0x00000000;// default black
 
-// If framebuffer is available, compute rows/cols from its size (assume 8x16 glyph cell)
-static void recompute_size_from_fb() {  // recompute text size from framebuffer
-    if (!fb_enabled) return;            // no framebuffer, do nothing
-    const size_t gw = 10;               // glyph width
-    const size_t gh = 16;               // glyph height
-    NUM_COLS = fb_width / gw;           // number of columns
-    NUM_ROWS = fb_height / gh;          // number of rows
-}
 // Current cursor position
 size_t col = 0;
 size_t row = 0;
@@ -54,11 +45,6 @@ void clear_row(size_t row) {                        // clear a specific row
 
 // Clear the entire screen
 void print_clear() {                        // clear the entire screen
-    if (fb_enabled) {                       // framebuffer mode
-        recompute_size_from_fb();           // recompute size
-        fb_clear(0x00000000);               // clear to black
-        return;
-    }
     for (size_t i = 0; i < NUM_ROWS; i++) {
         clear_row(i);
     }
@@ -66,12 +52,6 @@ void print_clear() {                        // clear the entire screen
 
 void print_newline() {
     col = 0;
-
-    if (fb_enabled) {
-        fb_set_cursor_pos(col, row + 1);
-        row++;
-        return;
-    }
 
     if (row < NUM_ROWS - 1) {
         row++;
@@ -93,12 +73,6 @@ void print_newline() {
 void print_char(char character) {
     if (character == '\n') {
         print_newline();
-        return;
-    }
-
-    if (fb_enabled) {
-        recompute_size_from_fb();
-        fb_putc(character);
         return;
     }
 
@@ -148,12 +122,6 @@ void print_set_color(uint8_t foreground, uint8_t background) {
         0x00FFFF55, // yellow
         0x00FFFFFF, // white
     };
-
-    if (fb_enabled) {
-        fb_fg = palette[foreground & 0x0F];
-        fb_bg = palette[background & 0x0F];
-        fb_set_colors(fb_fg, fb_bg);
-    }
 }
 
 void print_uint64_dec(uint64_t value) {
@@ -335,12 +303,3 @@ void shutdown_system(void) {                            // shutdown the system u
     return;
     for (;;) { asm volatile("hlt"); }                   // halt CPU
 }
-
-/*
-void set_shell_color(uint8_t color) {
-    // Se o seu sistema usa uma variável global para cor, atualize ela aqui
-    // Exemplo: terminal_color = color;
-    // Isso fará com que os próximos print_str usem a nova cor
-    uint8_t color = PRINT_COLOR_WHITE | PRINT_COLOR_BLUE << 4;
-}
-*/

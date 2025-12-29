@@ -34,7 +34,7 @@ void shell_init() {
     print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
     print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
     print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
-    print_str("                       |___/                           \n");
+    print_str("                       |___/                   Alpha Release\n");
     print_str("  __________________________________________________________  \n\n");
     
     print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
@@ -132,32 +132,65 @@ void shell_handle_enter(void) {                             // process command e
     strncpy(last_command, cmd, 127);
 
     // handle commands (compare manually to avoid relying on <string.h>)
+    //Help
     if (strcmp(cmd, "help") == 0)
     {
         print_str("\n");
-        print_str("+--------------------------------------------+\n");
-        print_str("|         ImagineOS Help Guide V1.0          |\n");
-        print_str("+--------------------------------------------+\n");
-        print_str("| [help] - Display this screen.              |\n");
-        print_str("| [hello] - Say hello!                       |\n");
-        print_str("| [reboot] - Reboot the System.              |\n");
-        print_str("| [clear] - Clear the Display.               |\n");
-        print_str("| [ver] - Show the current version.          |\n");
-        print_str("| [date] - Show the current date.            |\n");
-        print_str("| [exit] - Turn off the system.              |\n");
-        print_str("| [listapp] - ListApp Program List.          |\n");
-        print_str("| [(PROG) ver] - Show the program version.   |\n");
-        print_str("| [(PROG) help] - Show the program help.     |\n");
-        print_str("+--------------------------------------------+");
+        print_str("+---------------------------------------------+\n");
+        print_str("|");
+        print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK);
+        print_str("        ImagineOS Help Guide V1.0.1          ");
+        print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+        print_str("|\n");
+        print_str("+---------------------------------------------+\n");
+        print_str("|              [SYSTEM COMMANDS]              |\n");
+        print_str("| [help] - Display this screen.               |\n");
+        print_str("| [date] - Show the current time.             |\n");
+        print_str("| [clear] - Clear the shell.                  |\n");
+        print_str("| [history] - Command history, only the last  |\n");
+        print_str("| command.                                    |\n");
+        print_str("| [ver] - Show your OS version.               |\n");
+        print_str("| [reboot] - Reboot the System.               |\n");
+        print_str("| [exit] - Turn off the system.               |\n");
+        print_str("|                                             |\n");
+        print_str("|              [SYSTEM FEATURES]              |\n");
+        print_str("| [calc] - Basic operations (2 NUMBERS ONLY!) |\n");
+        print_str("| [hello] - Hello World!                      |\n");
+        print_str("| [(PROG) ver] - Show the program version.    |\n");
+        print_str("| [(PROG) help] - Show the program help.      |\n");
+        print_str("+---------------------------------------------+");
     }
+
+    //Version
+    else if(strcmp(cmd, "ver") == 0)
+    {
+        print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK);
+        print_str("\n");
+        print_str("  __________________________________________________________  \n");
+        print_str("   ___                       _             ___  ____  \n");
+        print_str("  |_ _|_ __ ___   __ _  __ _(_)_ __   ___ / _ \\/ ___| \n");
+        print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
+        print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
+        print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
+        print_str("                       |___/    Alpha Release, December 2025\n");
+        print_str("\n ImagineOS Alpha | Development Preview | December 2025 Release\n");
+        print_str("           Copyright (C) 2025 The ImagineOS Project\n");
+        print_str("    Bugs? send a mail to: <nyxieworlduniverse@gmail.com>\n");
+        print_str("  __________________________________________________________  ");
+        print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+    }
+
+    //History
     else if (strcmp(cmd_name, "history") == 0) {
         if (last_command[0] == '\0') {
-            print_str("\nNo history found.");
+            print_str("\nNo history.");
         } else {
             print_str("\nLast command: ");
             print_str(last_command);
         }
     }
+
+    //Call
     else if (strcmp(cmd_name, "call") == 0) {
         if (strcmp(args, ".err_screen") == 0)
         {
@@ -166,10 +199,9 @@ void shell_handle_enter(void) {                             // process command e
             print_str("ERROR!, This is a joke!");
             color = PRINT_COLOR_WHITE | PRINT_COLOR_BLUE << 4;
         }
-        else {
-            print_str("\nLast command: ");
-        }
     }
+
+    //Clear
     else if (strcmp(cmd, "clear") == 0)
     {
         print_clear();
@@ -178,6 +210,8 @@ void shell_handle_enter(void) {                             // process command e
         shell_print_prompt();
         return;
     }
+
+    //Date command
     else if (strcmp(cmd, "date") == 0)
     {
         print_char('\n');
@@ -207,25 +241,14 @@ void shell_handle_enter(void) {                             // process command e
         shell_print_prompt();
         return;
     }
-    else if(strcmp(cmd, "ver") == 0)
-    {
-        print_str("\n");
-        print_str("  __________________________________________________________  \n");
-        print_str("   ___                       _             ___  ____  \n");
-        print_str("  |_ _|_ __ ___   __ _  __ _(_)_ __   ___ / _ \\/ ___| \n");
-        print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
-        print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
-        print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
-        print_str("                       |___/                           \n");
-        print_str("  __________________________________________________________  \n\n");
-        print_str("\nImagineOS Alpha - Development Preview\n");
-        print_str("Copyright (C) 2025 The Imagine OS Project\n");
-        print_str("Bugs? send a mail to: <nyxieworlduniverse@gmail.com>");
-    }
+
+    //Hello World!
     else if (strcmp(cmd, "hello") == 0)
     {
         print_str("\nHello World!");
     }
+
+    //Reboot
     else if (strcmp(cmd, "reboot") == 0)
     {
         print_str("Rebooting...\n");                // feedback
@@ -233,22 +256,16 @@ void shell_handle_enter(void) {                             // process command e
         // if reboot fails, loop
         for(;;);                                    // hang
     }
+
+    //Shutdown
     else if (strcmp(cmd, "exit") == 0)
     {
         print_str("Shutting down...\n");
         shutdown_system();
         for(;;); // hang if shutdown fails
     }
-    else if (strcmp(cmd, "listapp") == 0)
-    {
-        print_str("\n");
-        print_str("+----------------------------------------+\n");
-        print_str("|         ImagineOS Applications         |\n");
-        print_str("+----------------------------------------+\n");
-        print_str("| [calc] - Imagine Calculator            |\n");
-        print_str("| [listapp ver]  - Show listapp version  |\n");
-        print_str("+----------------------------------------+\n");
-    }
+
+    //Calculator
     else if (strcmp(cmd_name, "calc") == 0) {
 
         int pos = 0;
@@ -294,7 +311,7 @@ void shell_handle_enter(void) {                             // process command e
         }
     }
     else {
-        print_str("\n[SHELL]: Unknown Command: '");
+        print_str("\n[SYS]: Unknown Command: '");
         print_str(cmd_name);
         print_str("'");
     }

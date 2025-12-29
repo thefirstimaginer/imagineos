@@ -2,17 +2,14 @@
 #include "shell.h"
 #include "keyboard.h"
 #include "x86_64/rtc.h"
-#include "framebuffer.h"
 #include "bool.h"
 #include "keyboard_keys.h"
 
 
 void keyboard_keys_init();           // inicializa as teclas
 
-void kernel_main(uint64_t mb_info) { // É onde o sistema roda
+void kernel_main() { // É onde o sistema roda
 
-    // Initialize framebuffer if GRUB provided one
-    framebuffer_init_from_multiboot(mb_info);
     print_clear();
     shell_init();
 
