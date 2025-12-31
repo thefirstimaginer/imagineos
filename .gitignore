@@ -1,6 +1,5 @@
-/SOURCE_(x86_64)/build
-/SOURCE_(x86_64)/distro
-/SOURCE_(x86_64)/tools
-/SOURCE_(x86_64)/targets/x86_64/iso/boot/kernel.bin
+./OS-SOURCE/build
+./OS-SOURCE/distro
+./OS-SOURCE/tools
+/OS-SOURCE/targets/x86_64/iso/boot/kernel.bin
 *.bin
-/SOURCE_(x86_64)/targets
