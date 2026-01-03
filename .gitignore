@@ -3,3 +3,5 @@
 ./OS-SOURCE/tools
 /OS-SOURCE/targets/x86_64/iso/boot/kernel.bin
 *.bin
+/videodrv
+./OS-SOURCE/distro/x86_64/ImagineOS-READY.iso

@@ -38,7 +38,7 @@ void shell_init() {
     print_str("  __________________________________________________________  \n\n");
     
     print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-    print_str(" Build: 20251231 | Dev Preview | Kernel: x86_64\n");
+    print_str(" Build: 20260101 | Dev Preview | Kernel: x86_64\n");
     print_str(" Type 'help' to see available commands.\n\n");
     
     shell_print_prompt();
@@ -173,9 +173,8 @@ void shell_handle_enter(void) {                             // process command e
         print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
         print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
         print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
-        print_str("                       |___/    Alpha Release, December 2025\n");
-        print_str("\n ImagineOS Alpha | Development Preview | December 2025 Release\n");
-        print_str("           Copyright (C) 2025 The ImagineOS Project\n");
+        print_str("                       |___/    Alpha Release, January 2026\n\n");
+        print_str("           Copyright (C) 2026 The ImagineOS Project\n");
         print_str("    Bugs? send a mail to: <nyxieworlduniverse@gmail.com>\n");
         print_str("  __________________________________________________________  ");
         print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);

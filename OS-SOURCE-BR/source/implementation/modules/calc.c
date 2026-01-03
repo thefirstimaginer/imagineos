@@ -1,31 +1,16 @@
 #include "modules.h"
-#include "print.h"
-#include "shell.h"
 #include "libraries/math.h"
 #include "libraries/string.h"
+#include "libraries/libimagine.h"
+#include "print.h"
 
 extern char* args = "";
 
 void init_calc(void){
 
-    int string_to_int(char* str, int* next_pos) {
-        int res = 0;
-        int i = 0;
-
-        // Pula espaços se houver
-        while (str[i] == ' ') i++;
-
-        // Converte os caracteres '0'-'9' em valor numérico
-        while (str[i] >= '0' && str[i] <= '9') {
-            res = res * 10 + (str[i] - '0');
-            i++;
-        }
-
-        if (next_pos) *next_pos = i; 
-        return res;
-    }
-
     int pos = 0;
+
+    extern int string_to_int(char str, int next_pos);
     
     // 1. Converte o primeiro número
     int n1 = string_to_int(args, &pos);
