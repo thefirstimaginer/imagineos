@@ -5,3 +5,5 @@
 *.bin
 /videodrv
 ./OS-SOURCE/distro/x86_64/ImagineOS-READY.iso
+OS-SOURCE/distro/x86_64/ImagineOS-READY.iso
+*.o

@@ -22,6 +22,8 @@ extern size_t NUM_ROWS;
 extern size_t shell_prompt_col; // Variável para armazenar a coluna do prompt do shell
 extern size_t shell_prompt_row;
 
+extern void init_calc(void);
+
 void shell_init() {
     print_clear(); // Limpa qualquer mensagem de debug do boot
     row = 0;
@@ -278,6 +280,20 @@ void shell_handle_enter(void) {                             // process command e
         print_str("\nUNDER CONSTRUCTION");
     }
     else if (strcmp(cmd_name, "calc") == 0) {
+
+        int pos = 0;
+    
+        // 1. Converte o primeiro número
+        int n1 = string_to_int(args, &pos);
+        
+        // 2. O operador está na posição onde o string_to_int parou
+        char operator = args[pos];
+        
+        // 3. Converte o segundo número (pulando o operador)
+        int n2 = string_to_int(&args[pos + 1], NULL);
+
+        int resultado = 0;
+        int erro = 0;
         init_calc();
     }
     else {

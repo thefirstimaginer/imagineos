@@ -4,25 +4,9 @@
 #include "libraries/libimagine.h"
 #include "print.h"
 
-extern char* args = "";
+extern  else if (strcmp(cmd_name, "calc") == 0);
 
 void init_calc(void){
-
-    int pos = 0;
-
-    extern int string_to_int(char str, int next_pos);
-    
-    // 1. Converte o primeiro número
-    int n1 = string_to_int(args, &pos);
-    
-    // 2. O operador está na posição onde o string_to_int parou
-    char operator = args[pos];
-    
-    // 3. Converte o segundo número (pulando o operador)
-    int n2 = string_to_int(&args[pos + 1], NULL);
-
-    int resultado = 0;
-    int erro = 0;
 
     if (strcmp(args, "ver") == 0)
     {
