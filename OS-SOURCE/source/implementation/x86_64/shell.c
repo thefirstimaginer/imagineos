@@ -5,6 +5,8 @@
 #include "libraries/string.h"
 #include "libraries/math.h"
 
+#include "modules.h"
+
 char last_command[128] = {0};// Buffer para armazenar o último comando digitado
 
 // Note que agora as variáveis 'buffer', 'color', 'col', 'row' 
@@ -23,7 +25,7 @@ extern size_t shell_prompt_col; // Variável para armazenar a coluna do prompt d
 extern size_t shell_prompt_row;
 
 void shell_init() {
-    print_clear(); // Limpa qualquer mensagem de debug do boot
+    //print_clear(); // Limpa qualquer mensagem de debug do boot
     row = 0;
     col = 0;
     
@@ -34,11 +36,11 @@ void shell_init() {
     print_str("   | || '_ ` _ \\ / _` |/ _` | | '_ \\ / _ \\ | | \\___ \\ \n");
     print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
     print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
-    print_str("                       |___/                   Alpha Release\n");
+    print_str("                       |___/                   \n");
     print_str("  __________________________________________________________  \n\n");
     
     print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-    print_str(" Alpha Release 2026 | Kernel: x86_64 | Under Construction\n");
+    print_str(" ImagineOS R1 | Kernel: x86_64 | Under Construction\n");
     print_str(" Type 'help' to see available commands.\n\n");
     
     shell_print_prompt();
@@ -132,6 +134,8 @@ void shell_handle_enter(void) {                             // process command e
     // GUARDA NO HISTÓRICO: Antes de processar, copiamos para o last_command
     strncpy(last_command, cmd, 127);
 
+    modules_load();
+
     // handle commands (compare manually to avoid relying on <string.h>)
     //Help
     if (strcmp(cmd, "help") == 0)
@@ -167,8 +171,8 @@ void shell_handle_enter(void) {                             // process command e
     {
         print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK);
         print_str("\n");
-        print_str("Imagine System Shell V1.0\n");
-        print_str("Copyright (C) 2026 The ImagineOS Project, All Rights Reserved\n");
+        print_str("ImagineOS System Shell R1\n");
+        print_str("Copyright (C) 2026 Imagine Project, All Rights Reserved\n");
         print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
     }
 
@@ -234,12 +238,6 @@ void shell_handle_enter(void) {                             // process command e
         return;
     }
 
-    //Hello World!
-    else if (strcmp(cmd, "hello") == 0)
-    {
-        print_str("\nHello World!");
-    }
-
     //Reboot
     else if (strcmp(cmd, "reboot") == 0)
     {
@@ -250,63 +248,40 @@ void shell_handle_enter(void) {                             // process command e
     }
 
     //Shutdown
-    else if (strcmp(cmd, "exit") == 0)
+    else if (strcmp(cmd, "halt") == 0)
     {
         print_str("Shutting down...\n");
         shutdown_system();
-        for(;;); // hang if shutdown fails
     }
 
-    //Calculator
-    else if (strcmp(cmd_name, "calc") == 0) {
-
-        int pos = 0;
-        
-        // 1. Converte o primeiro número
-        int n1 = string_to_int(args, &pos);
-        
-        // 2. O operador está na posição onde o string_to_int parou
-        char operator = args[pos];
-        
-        // 3. Converte o segundo número (pulando o operador)
-        int n2 = string_to_int(&args[pos + 1], NULL);
-
-        int resultado = 0;
-        int erro = 0;
-
+    //Shell Daemon Version
+    else if (strcmp(cmd, "shell") == 0)
+    {
         if (strcmp(args, "ver") == 0)
         {
-        print_str("\nCalculator Module v1.0 - ImagineOS\n");
-        print_str("\nCopyright (C) 2024-2026, ImagineOS Project\n");
-        }
-
-        // 4. Lógica de cálculo
-        if (operator == '+') resultado = n1 + n2;
-        else if (operator == '-') resultado = n1 - n2;
-        else if (operator == '*') resultado = n1 * n2;
-        else if (operator == '/') {
-            if (n2 != 0) resultado = n1 / n2;
-            else {
-                print_str("\nError: Division by zero!");
-                erro = 1;
-            }
-        } else {
-            print_str("\nError: Unknown operator. Use +, -, * or /");
-            erro = 1;
-        }
-
-        if (!erro) {
-            char res_str[32];
-            int_to_string(resultado, res_str); // Usa sua nova biblioteca!
-            
-            print_str("\nResult: ");
-            print_str(res_str);
+            print_str("ImagineOS R1 - Running ShellBox R1");
         }
     }
     else {
-        print_str("\n[SYS]: Unknown Command: '");
-        print_str(cmd_name);
-        print_str("'");
+        // Verifica se é um módulo
+        extern Module modules[];
+        extern int modules_count;
+        extern int modules_loaded;
+        int found = 0;
+        if (modules_loaded) {
+            for (int i = 0; i < modules_count; i++) {
+                if (strcmp(cmd_name, modules[i].name) == 0) {
+                    if (modules[i].run) modules[i].run(args);
+                    found = 1;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            print_str("\n[SYS]: Unknown Command: '");
+            print_str(cmd_name);
+            print_str("'");
+        }
     }
 
     print_char('\n');                                   // move to next line

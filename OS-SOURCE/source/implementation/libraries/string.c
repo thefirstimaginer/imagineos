@@ -1,3 +1,20 @@
+// Converte string para inteiro, com suporte a next_pos
+int string_to_int(char* str, int* next_pos) {
+    int res = 0;
+    int i = 0;
+    while (str[i] == ' ') i++;
+    int sign = 1;
+    if (str[i] == '-') {
+        sign = -1;
+        i++;
+    }
+    while (str[i] >= '0' && str[i] <= '9') {
+        res = res * 10 + (str[i] - '0');
+        i++;
+    }
+    if (next_pos) *next_pos = i;
+    return res * sign;
+}
 #include "libimagine.h"
 #include <stddef.h>
 
