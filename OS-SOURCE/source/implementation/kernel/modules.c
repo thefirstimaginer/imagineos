@@ -6,10 +6,13 @@
 // Prototipos dos módulos
 void calc_init();
 void calc_run(char* args);
+void liteinterp_init();
+void liteinterp(char* args);
 
 // Lista de módulos
 Module modules[] = {
     {"calc", calc_init, calc_run},
+    {"liteinterp", liteinterp_init, liteinterp},
     // Adicione outros módulos aqui
 };
 
