@@ -8,11 +8,14 @@ void calc_init();
 void calc_run(char* args);
 void liteinterp_init();
 void liteinterp(char* args);
+void halt_init();
+void halt_run(char* args);
 
 // Lista de módulos
 Module modules[] = {
     {"calc", calc_init, calc_run},
     {"liteinterp", liteinterp_init, liteinterp},
+    {"halt", halt_init, halt_run},
     // Adicione outros módulos aqui
 };
 
@@ -29,9 +32,8 @@ void modules_init() {
 }
 
 void modules_output() {
-    print_str("\n");
     for (int i = 0; i < sizeof(modules)/sizeof(Module); i++) {
-        print_str("");
+        return 0;
     }
 }
 

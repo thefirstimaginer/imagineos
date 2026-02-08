@@ -1,6 +1,27 @@
+// Busca substring (strstr)
+#include <stddef.h>
+char* string_strstr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    for (; *haystack; haystack++) {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*h && *n && *h == *n) { h++; n++; }
+        if (!*n) return (char*)haystack;
+    }
+    return NULL;
+}
+
+// Função para ler caractere do shell (simula getchar)
+char shell_getchar() {
+    // Você pode implementar usando um buffer global ou integração com o kernel
+    // Aqui retorna 0 (stub), mas pode ser substituído por leitura real
+    return 0;
+}
+
 #include "print.h"
 #include "string.h"
 #include <stddef.h>
+// Não usar stdio.h, usar apenas funções da biblioteca
 
 #define MAX_VARS 16
 #define MAX_VAR_NAME 16
@@ -71,7 +92,7 @@ void liteinterp(char* args) {
         code[len] = 0;
         liteinterp_run(code);
     } else {
-        print_str("\nErro: bloco entre chaves não encontrado ou incompleto!\n");
+        print_str("\n[LI]ERROR: Block between braces not found or incomplete!\n");
     }
 }
 
@@ -88,26 +109,29 @@ static char* next_token(char* s, char* token) {
 
 // Interpretação principal (simplificada)
 void liteinterp_run(const char* code) {
-                if (strcmp(token, "put") == 0) {
-                    // put valor -> varname
-                    char valstr[16], arrow[8], varname[16];
-                    s = next_token(s, valstr);
-                    s = next_token(s, arrow);
-                    s = next_token(s, varname);
-                    if (strcmp(arrow, "->") == 0) {
-                        int val = string_to_int(valstr, NULL);
-                        create_var(varname, val);
-                    }
-                } else 
-        char ask_buffer[32] = {0};
+    // Prototipos ausentes
+    int string_to_int(char* str, int* next_pos);
+    void int_to_string(int value, char* out);
+
     char line[256];
     strncpy(line, code, 255);
     line[255] = 0;
     char* s = line;
     char token[32];
+    char ask_buffer[32] = {0};
     while (*s) {
         s = next_token(s, token);
-        if (strcmp(token, "ask") == 0) {
+        if (strcmp(token, "put") == 0) {
+            // put valor -> varname
+            char valstr[16], arrow[8], varname[16];
+            s = next_token(s, valstr);
+            s = next_token(s, arrow);
+            s = next_token(s, varname);
+            if (strcmp(arrow, "->") == 0) {
+                int val = string_to_int(valstr, NULL);
+                create_var(varname, val);
+            }
+        } else if (strcmp(token, "ask") == 0) {
             // ask -> varname
             char arrow[8], varname[16];
             s = next_token(s, arrow);
@@ -117,7 +141,7 @@ void liteinterp_run(const char* code) {
                 // Simula scanf: lê do teclado até Enter
                 int i = 0;
                 char c = 0;
-                while (i < 31 && (c = getchar()) != '\n' && c != '\r') {
+                while (i < 31 && (c = shell_getchar()) != '\n' && c != '\r') {
                     if (c >= ' ' && c <= '~') {
                         ask_buffer[i++] = c;
                         char s[2] = {c, 0};
@@ -150,9 +174,9 @@ void liteinterp_run(const char* code) {
                 else if (*ifend == ')') depth--;
                 if (depth > 0) ifend++;
             }
-            char* elseblk = strstr(ifend, "else");
+            char* elseblk = string_strstr(ifend, "else");
             char* elsebody = NULL;
-            char* endif = strstr(ifend, "!endif");
+            char* endif = string_strstr(ifend, "!endif");
             if (elseblk && endif) {
                 elsebody = strchr(elseblk, '(');
                 if (elsebody) elsebody++;
@@ -188,7 +212,7 @@ void liteinterp_run(const char* code) {
             // Pega o corpo até !enddef
             char* body_start = strchr(s, '(');
             if (body_start) body_start++;
-            char* body_end = strstr(body_start, "!enddef");
+            char* body_end = string_strstr(body_start, "!enddef");
             if (body_end && func_count < MAX_FUNCS) {
                 int len = body_end - body_start;
                 if (len > MAX_FUNC_BODY-1) len = MAX_FUNC_BODY-1;
@@ -284,5 +308,5 @@ void liteinterp_run(const char* code) {
 }
 
 void liteinterp_init() {
-    print_str("\nLiteInterp pronto!\n");
+    return 0;
 }

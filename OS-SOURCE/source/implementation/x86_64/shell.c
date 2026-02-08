@@ -247,13 +247,6 @@ void shell_handle_enter(void) {                             // process command e
         for(;;);                                    // hang
     }
 
-    //Shutdown
-    else if (strcmp(cmd, "halt") == 0)
-    {
-        print_str("Shutting down...\n");
-        shutdown_system();
-    }
-
     //Shell Daemon Version
     else if (strcmp(cmd, "shell") == 0)
     {
