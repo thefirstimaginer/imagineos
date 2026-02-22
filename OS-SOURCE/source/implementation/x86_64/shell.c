@@ -137,47 +137,9 @@ void shell_handle_enter(void) {                             // process command e
     modules_load();
 
     // handle commands (compare manually to avoid relying on <string.h>)
-    //Help
-    if (strcmp(cmd, "help") == 0)
-    {
-        print_str("\n");
-        print_str("+---------------------------------------------+\n");
-        print_str("|");
-        print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK);
-        print_str("        ImagineOS Help Guide V1.0.1          ");
-        print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-        print_str("|\n");
-        print_str("+---------------------------------------------+\n");
-        print_str("|              [SYSTEM COMMANDS]              |\n");
-        print_str("| [help] - Display this screen.               |\n");
-        print_str("| [date] - Show the current time.             |\n");
-        print_str("| [clear] - Clear the shell.                  |\n");
-        print_str("| [history] - Command history, only the last  |\n");
-        print_str("| command.                                    |\n");
-        print_str("| [ver] - Show your OS version.               |\n");
-        print_str("| [reboot] - Reboot the System.               |\n");
-        print_str("| [exit] - Turn off the system.               |\n");
-        print_str("|                                             |\n");
-        print_str("|              [SYSTEM FEATURES]              |\n");
-        print_str("| [calc] - Basic operations (2 NUMBERS ONLY!) |\n");
-        print_str("| [hello] - Hello World!                      |\n");
-        print_str("| [(PROG) ver] - Show the program version.    |\n");
-        print_str("| [(PROG) help] - Show the program help.      |\n");
-        print_str("+---------------------------------------------+");
-    }
-
-    //Version
-    else if(strcmp(cmd, "ver") == 0)
-    {
-        print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK);
-        print_str("\n");
-        print_str("ImagineOS System Shell R1\n");
-        print_str("Copyright (C) 2026 Imagine Project, All Rights Reserved\n");
-        print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-    }
 
     //History
-    else if (strcmp(cmd_name, "history") == 0) {
+    if (strcmp(cmd_name, "history") == 0) {
         if (last_command[0] == '\0') {
             print_str("\nNo history.");
         } else {
@@ -247,14 +209,6 @@ void shell_handle_enter(void) {                             // process command e
         for(;;);                                    // hang
     }
 
-    //Shell Daemon Version
-    else if (strcmp(cmd, "shell") == 0)
-    {
-        if (strcmp(args, "ver") == 0)
-        {
-            print_str("ImagineOS R1 - Running ShellBox R1");
-        }
-    }
     else {
         // Verifica se é um módulo
         extern Module modules[];
@@ -271,7 +225,7 @@ void shell_handle_enter(void) {                             // process command e
             }
         }
         if (!found) {
-            print_str("\n[SYS]: Unknown Command: '");
+            print_str("[SYS]: Unknown Command: '");
             print_str(cmd_name);
             print_str("'");
         }

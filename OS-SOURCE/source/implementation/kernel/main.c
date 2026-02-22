@@ -12,16 +12,6 @@ void keyboard_keys_init();           // inicializa as teclas
 
 void kernel_main()                   // É onde o sistema roda
 {
-    /*
-        #TODO
-        Criar uma função "modules_load()" que carrega 
-        todos os módulos antes do shell.
-
-        #TODO
-        Criar uma variável para quando os módulos são
-        carregados, eles indicam que podem ser
-        executados pelo sistema.
-    */
     print_clear();
     modules_load(); // Carrega os módulos antes do shell
     shell_init();

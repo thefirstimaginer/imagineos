@@ -1,22 +1,23 @@
+//Calculator
+#include "print.h"
+#include "string.h"
+
 void calc_init() {
-    print_str(" ");
+    print_str("");
 }
 
 void calc_run(char* args) {
     calc_module_main(args);
 }
-//Calculator
-#include "print.h"
-#include "string.h"
 
 void calc_module_main(char* args)
 {
     // Ajuda
     if (strcmp(args, "ver") == 0 || strcmp(args, "help") == 0) {
-        print_str("\nCalculator Module v2.0 - ImagineOS\n");
+        print_str("Calculator Module v2.0 - ImagineOS\n");
         print_str("Copyright (C) 2024-2026, ImagineOS Project\n");
         print_str("\nUsage: calc <num1> <op> <num2>\n");
-        print_str("\nOperators: +, -, *, /\n");
+        print_str("\nOperators: +, -, *, /");
         return;
     }
 
@@ -34,7 +35,7 @@ void calc_module_main(char* args)
     // Extrai operador
     char operator = *input;
     if (operator != '+' && operator != '-' && operator != '*' && operator != '/') {
-        print_str("\nError: Unknown operator. Use +, -, * or /\n");
+        print_str("[ERROR]: Unknown operator. Use +, -, * or /");
         return;
     }
     input++;
@@ -50,7 +51,7 @@ void calc_module_main(char* args)
     else if (operator == '/') {
         if (n2 != 0) resultado = n1 / n2;
         else {
-            print_str("\nError: Division by zero!\n");
+            print_str("[ERROR]: Division by zero!");
             erro = 1;
         }
     }
@@ -58,8 +59,7 @@ void calc_module_main(char* args)
     if (!erro) {
         char res_str[32];
         int_to_string(resultado, res_str);
-        print_str("\nResult: ");
+        print_str("[RESULT]: ");
         print_str(res_str);
-        print_str("\n");
     }
 }

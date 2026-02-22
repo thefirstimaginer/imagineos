@@ -70,6 +70,11 @@ static struct Var* create_var(const char* name, int value) {
 void liteinterp_run(const char* code);
 
 void liteinterp(char* args) {
+    if (strcmp(args, "ver") == 0) {
+        print_str("Lightweight Interpreter - LITEINTERP - v1.0\n");
+        print_str("Copyright (C) 2026 Imagine Project.");
+        return;
+    }
     // Reset vars/funcs para cada execução
     var_count = 0;
     func_count = 0;
@@ -92,7 +97,7 @@ void liteinterp(char* args) {
         code[len] = 0;
         liteinterp_run(code);
     } else {
-        print_str("\n[LI]ERROR: Block between braces not found or incomplete!\n");
+        print_str("[ERROR]: Block between braces not found or incomplete!");
     }
 }
 
@@ -222,7 +227,7 @@ void liteinterp_run(const char* code) {
                 func_count++;
                 s = body_end + 7; // pula !enddef
             } else {
-                print_str("\nErro: !enddef não encontrado ou limite de funções atingido!\n");
+                print_str("\n[ERRO]: !enddef não encontrado ou limite de funções atingido!\n");
                 break;
             }
         } else {
@@ -308,5 +313,5 @@ void liteinterp_run(const char* code) {
 }
 
 void liteinterp_init() {
-    return 0;
+    return;
 }
