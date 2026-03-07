@@ -3,9 +3,8 @@
 #include "libraries/string.h"
 #include "modules.h"
 
-void calc_init() {
-    print_str("");
-}
+void calc_init(){return;}
+
 
 void calc_run(char* args) {
     calc_module_main(args);

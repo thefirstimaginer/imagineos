@@ -1,6 +1,6 @@
 // SOURCE_(x86_64)/source/implementation/x86_64/print.c
 #include "print.h"
-#include "shell.h"
+#include "shellMain.h"
 #include "x86_64/port.h"
 #include "x86_64/rtc.h"
 
@@ -17,9 +17,6 @@ struct Char {
 // VGA text mode buffer pointer
 struct Char* buffer = (struct Char*) 0xb8000;// VGA text mode buffer address
 
-// framebuffer color used by renderer (RGB 32-bit)
-static uint32_t fb_fg = 0x00FFFFFF;// default white
-static uint32_t fb_bg = 0x00000000;// default black
 
 // Current cursor position
 size_t col = 0;
@@ -103,25 +100,6 @@ void print_str(char* str) {
 
 void print_set_color(uint8_t foreground, uint8_t background) {
     color = foreground + (background << 4);
-    // map VGA 16-color palette to simple 32-bit RGB values for framebuffer
-    static const uint32_t palette[16] = {
-        0x00000000, // black
-        0x000000AA, // blue
-        0x0000AA00, // green
-        0x0000AAAA, // cyan
-        0x00AA0000, // red
-        0x00AA00AA, // magenta
-        0x00AA5500, // brown
-        0x00AAAAAA, // light gray
-        0x00555555, // dark gray
-        0x005555FF, // light blue
-        0x0055FF55, // light green
-        0x0055FFFF, // light cyan
-        0x00FF5555, // light red
-        0x00FF55FF, // pink
-        0x00FFFF55, // yellow
-        0x00FFFFFF, // white
-    };
 }
 
 void print_uint64_dec(uint64_t value) {

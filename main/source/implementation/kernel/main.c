@@ -1,5 +1,5 @@
 #include "print.h"
-#include "shell.h"
+#include "shellMain.h"
 #include "keyboard.h"
 #include "x86_64/rtc.h"
 #include "bool.h"

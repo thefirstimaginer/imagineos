@@ -1,5 +1,5 @@
 #include "print.h"
-#include "shell.h"
+#include "shellMain.h"
 #include "x86_64/rtc.h"
 
 #include "libraries/string.h"
@@ -50,7 +50,7 @@ void shell_init() {
 void shell_print_prompt() {                             // print shell prompt and set editable area
     // Imprime o prompt e só então registra o início da área editável
     print_set_color(PRINT_COLOR_LIGHT_GREEN, PRINT_COLOR_BLACK); // cor verde para o prompt
-    print_str("shell@: ");                              // imprime o prompt
+    print_str("main@os ");                              // imprime o prompt
     shell_prompt_col = col;                             // registra a coluna do prompt
     shell_prompt_row = row;                             // registra a linha do prompt
     enable_cursor(14, 15);                              // cursor block
@@ -59,7 +59,7 @@ void shell_print_prompt() {                             // print shell prompt an
 }
 
 // Função para processar o comando digitado no prompt
-void shell_handle_enter(void) {                             // process command entered at prompt
+void shell_handle_enter(void) {                         // process command entered at prompt
     // Read the typed command from the screen buffer (from prompt start to current cursor)
     size_t start = shell_prompt_row * NUM_COLS + 
     shell_prompt_col;                                   // start of editable area
@@ -172,8 +172,6 @@ void shell_handle_enter(void) {                             // process command e
     //Date command
     else if (strcmp(cmd, "date") == 0)
     {
-        print_char('\n');
-        
         // Lê os dados do RTC usando a lógica que você já tinha
         uint8_t day    = rtc_get_value(RTC_REGISTER_DAY);
         uint8_t month  = rtc_get_value(RTC_REGISTER_MONTH);
