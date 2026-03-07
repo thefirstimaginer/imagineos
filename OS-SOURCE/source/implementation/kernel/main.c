@@ -4,8 +4,8 @@
 #include "x86_64/rtc.h"
 #include "bool.h"
 #include "keyboard_keys.h"
-
 #include "modules.h"
+//#include "main.h"
 
 
 void keyboard_keys_init();           // inicializa as teclas
