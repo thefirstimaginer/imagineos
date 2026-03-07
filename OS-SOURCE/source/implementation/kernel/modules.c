@@ -1,19 +1,6 @@
 #include "modules.h"
 #include "print.h"
-#include "modules.h"
-#include "print.h"
 
-// Prototipos dos módulos
-void calc_init();
-void calc_run(char* args);
-void liteinterp_init();
-void liteinterp(char* args);
-void halt_init();
-void halt_run(char* args);
-void ver_init();
-void ver_run(char* args);
-void help_init();
-void help_run(char* args);
 
 // Lista de módulos
 Module modules[] = {
@@ -40,7 +27,7 @@ void modules_init() {
 
 void modules_output() {
     for (int i = 0; i < sizeof(modules)/sizeof(Module); i++) {
-        return 0;
+        return;
     }
 }
 

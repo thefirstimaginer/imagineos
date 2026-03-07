@@ -1,6 +1,7 @@
 //Version, works like neofetch
 #include "print.h"
 #include "string.h"
+#include "modules.h"
 
 void ver_init() {
 	print_str("\n");

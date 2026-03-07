@@ -1,3 +1,7 @@
+#include "libimagine.h"
+#include <stddef.h>
+#include "string.h"
+
 // Converte string para inteiro, com suporte a next_pos
 int string_to_int(char* str, int* next_pos) {
     int res = 0;
@@ -15,8 +19,6 @@ int string_to_int(char* str, int* next_pos) {
     if (next_pos) *next_pos = i;
     return res * sign;
 }
-#include "libimagine.h"
-#include <stddef.h>
 
 int strcmp(const char *s1, const char *s2) {
     while (*s1 && (*s1 == *s2)) {

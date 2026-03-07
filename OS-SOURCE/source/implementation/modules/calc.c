@@ -1,6 +1,7 @@
 //Calculator
 #include "print.h"
-#include "string.h"
+#include "libraries/string.h"
+#include "modules.h"
 
 void calc_init() {
     print_str("");
