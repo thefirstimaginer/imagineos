@@ -50,7 +50,7 @@ build-x86_64: $(kernel_object_files) $(x86_64_object_files) $(libraries_object_f
 	mkdir -p distro/x86_64
 	$(LD) -n -o distro/x86_64/kernel.bin -T targets/x86_64/linker.ld $(kernel_object_files) $(x86_64_object_files) $(libraries_object_files) $(modules_object_files)
 	cp distro/x86_64/kernel.bin targets/x86_64/iso/boot/kernel.bin
-	grub-mkrescue /usr/lib/grub/i386-pc -o distro/x86_64/ImagineOS-READY.iso targets/x86_64/iso
+	grub-mkrescue /usr/lib/grub/i386-pc -o distro/x86_64/main.iso targets/x86_64/iso
 
 .PHONY: clean
 clean:

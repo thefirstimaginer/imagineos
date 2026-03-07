@@ -1,9 +1,10 @@
-./OS-SOURCE/build
-./OS-SOURCE/distro
-./OS-SOURCE/tools
-/OS-SOURCE/targets/x86_64/iso/boot/kernel.bin
+./main/build
+./main/distro
+./main/tools
+/main/targets/x86_64/iso/boot/kernel.bin
 *.bin
 /videodrv
-./OS-SOURCE/distro/x86_64/ImagineOS-READY.iso
-OS-SOURCE/distro/x86_64/ImagineOS-READY.iso
+./main/distro/x86_64/main.iso
+main/distro/x86_64/main.iso
+*.iso
 *.o

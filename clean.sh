@@ -1,3 +1,3 @@
-cd ./OS-SOURCE/
+cd ./main/
 make clean
 cd ..
