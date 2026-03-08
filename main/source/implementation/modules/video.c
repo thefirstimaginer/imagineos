@@ -3,14 +3,6 @@
 #include "x86_64/port.h"
 #include <stdint.h>
 
-// protótipo do init/exec
-void video_init();
-void video_run();
-
-// registra módulo estático (será adicionado em modules.c)
-// o nome do comando será "video".
-Module video_module = {"video", video_init, video_run};
-
 void video_init() {
     // nada especial por enquanto
 }
@@ -202,7 +194,7 @@ void set_palette16() {
     }
 }
 
-static void video_run(char* args) {
+void video_run(char* args) {
     (void)args;
     print_str("[video] switching to mode 12 (640x480x16 planar)\n");
     vga_mode12();
