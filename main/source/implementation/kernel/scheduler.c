@@ -1,6 +1,7 @@
 #include "scheduler.h"
 #include "process.h"
 #include "x86_64/pic.h"
+#include "x86_64/port.h"
 
 // Contador de ticks
 static uint32_t tick_count = 0;

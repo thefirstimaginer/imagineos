@@ -3,9 +3,13 @@
 #include "shellMain.h"
 #include "x86_64/port.h"
 #include "x86_64/rtc.h"
-#include "x86_64/graphics.h"   // para font_data e dimensões
+// #include "x86_64/graphics.h"   // removido pois arquivo foi apagado
 
 #include <stdbool.h>
+
+// Definições de fonte (bitmap 8x16)
+#define FONT_WIDTH 8
+#define FONT_HEIGHT 16
 
 // VGA/text-mode characteristics
 size_t NUM_COLS = 80;
@@ -29,8 +33,30 @@ size_t shell_prompt_col = 0, shell_prompt_row = 0;
 bool graphics_print = false;
 uint8_t graph_fg = 15, graph_bg = 0;  // índices de cor 0‑15
 
-// font_data está definido em graphics.c
-extern const uint8_t font_data[256][FONT_HEIGHT];
+// font_data: bitmap 8x16 para caracteres ASCII
+const uint8_t font_data[256][FONT_HEIGHT] = {
+    // Apenas alguns caracteres básicos; resto zero
+    [0 ... 255] = {0},  // Inicializa tudo com zero
+    ['A'] = {
+        0b00011000,
+        0b00100100,
+        0b01000010,
+        0b01000010,
+        0b01111110,
+        0b01000010,
+        0b01000010,
+        0b01000010,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000
+    },
+    // Adicione mais caracteres conforme necessário
+};
 
 /* funções de framebuffer declaradas em modules/video.c */
 extern void planar_fill(uint8_t color);

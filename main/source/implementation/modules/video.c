@@ -4,8 +4,8 @@
 #include <stdint.h>
 
 // protótipo do init/exec
-static void video_init();
-static void video_run();
+void video_init();
+void video_run();
 
 // registra módulo estático (será adicionado em modules.c)
 // o nome do comando será "video".

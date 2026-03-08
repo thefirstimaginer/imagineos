@@ -32,6 +32,10 @@ typedef struct Process {
     struct Process* next;   // Próximo na lista (para scheduler)
 } Process;
 
+// Variáveis globais
+extern Process* process_list;
+extern Process* current_process;
+
 // Funções básicas
 void process_init();
 Process* process_create(void (*entry_point)());

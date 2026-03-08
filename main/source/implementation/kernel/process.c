@@ -4,8 +4,8 @@
 #include <stddef.h>
 
 // Lista de processos (simples linked list)
-static Process* process_list = NULL;
-static Process* current_process = NULL;
+Process* process_list = NULL;
+Process* current_process = NULL;
 static uint32_t next_pid = 1;
 
 // Pilha por processo (4KB por enquanto, sem alocação dinâmica)

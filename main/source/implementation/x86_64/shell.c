@@ -1,7 +1,7 @@
 #include "print.h"
 #include "shellMain.h"
 #include "x86_64/rtc.h"
-#include "graphics.h"
+//#include "graphics.h"
 
 /* precisamos de memset, que está declarado em libimagine.h */
 #include "libraries/libimagine.h"   // inclui string/math e protótipos de memória

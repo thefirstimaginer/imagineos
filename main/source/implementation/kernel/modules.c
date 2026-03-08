@@ -2,8 +2,9 @@
 #include "print.h"
 
 /* protótipos do módulo de vídeo (definidos em modules/video.c) */
-void video_init();
-void video_run();
+extern void video_init();
+extern void video_run();
+extern Module video_module;
 
 // Lista de módulos
 Module modules[] = {

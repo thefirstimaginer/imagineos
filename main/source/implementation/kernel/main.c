@@ -2,7 +2,7 @@
 #include "shellMain.h"
 #include "keyboard.h"
 #include "x86_64/rtc.h"
-#include "graphics.h"  // Driver gráfico
+// #include "graphics.h"  // Driver gráfico - arquivo removido
 #include "bool.h"
 #include "keyboard_keys.h"
 #include "modules.h"

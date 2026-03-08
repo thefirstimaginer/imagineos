@@ -1,4 +1,5 @@
 extern idt_handler_keyboard
+extern idt_handler_timer
 global idt_load
 
 idt_load:
