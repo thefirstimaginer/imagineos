@@ -1,35 +1,23 @@
 #include "print.h"
 #include "shellMain.h"
 #include "x86_64/rtc.h"
+#include "graphics.h"
 
-#include "libraries/string.h"
-#include "libraries/math.h"
+/* precisamos de memset, que está declarado em libimagine.h */
+#include "libraries/libimagine.h"   // inclui string/math e protótipos de memória
 
 #include "modules.h"
 
-char last_command[128] = {0};// Buffer para armazenar o último comando digitado
+char last_command[128] = {0};
+static char input_buffer[256] = {0};
+static int input_index = 0;
 
-// Note que agora as variáveis 'buffer', 'color', 'col', 'row' 
-// precisam ser acessadas. Como elas estão no print.c, 
-// usamos 'extern' para avisar o compilador.
-extern uint8_t color;
-extern size_t col;
-extern size_t row;
-
-extern struct Char* buffer;
-struct Char {uint8_t character; uint8_t color; };
-extern size_t NUM_COLS;
-extern size_t NUM_ROWS;
-
-extern size_t shell_prompt_col; // Variável para armazenar a coluna do prompt do shell
-extern size_t shell_prompt_row;
+static int shell_x = 10;
+static int shell_y = 170;
 
 void shell_init() {
-    //print_clear(); // Limpa qualquer mensagem de debug do boot
-    row = 0;
-    col = 0;
+    print_clear();
     
-    print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK); // Uma cor diferente para o título
     print_str("  __________________________________________________________  \n");
     print_str("   ___                       _             ___  ____  \n");
     print_str("  |_ _|_ __ ___   __ _  __ _(_)_ __   ___ / _ \\/ ___| \n");
@@ -37,198 +25,111 @@ void shell_init() {
     print_str("   | || | | | | | (_| | (_| | | | | |  __/ |_| |___) |\n");
     print_str("  |___|_| |_| |_|\\__,_|\\__, |_|_| |_|\\___|\\___/|____/ \n");
     print_str("                       |___/                   \n");
-    print_str("  __________________________________________________________  \n\n");
+    print_str("  __________________________________________________________  \n");
     
-    print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-    print_str(" ImagineOS R1 | Kernel: x86_64 | Under Construction\n");
-    print_str(" Type 'help' to see available commands.\n\n");
+    print_str(" ImagineOS R1 | Kernel: x86_64 | Text Mode (Graphics disabled)\n");
+    print_str(" Type 'help' to see available commands.\n");
     
     shell_print_prompt();
+    input_index = 0;
 }
 
-// Variáveis para armazenar a posição do prompt do shell
-void shell_print_prompt() {                             // print shell prompt and set editable area
-    // Imprime o prompt e só então registra o início da área editável
-    print_set_color(PRINT_COLOR_LIGHT_GREEN, PRINT_COLOR_BLACK); // cor verde para o prompt
-    print_str("main@os ");                              // imprime o prompt
-    shell_prompt_col = col;                             // registra a coluna do prompt
-    shell_prompt_row = row;                             // registra a linha do prompt
-    enable_cursor(14, 15);                              // cursor block
-    set_cursor(col, row);                               // garante que o cursor está na posição correta
-    print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+void shell_print_prompt() {
+    print_str("main@os > ");
 }
 
-// Função para processar o comando digitado no prompt
-void shell_handle_enter(void) {                         // process command entered at prompt
-    // Read the typed command from the screen buffer (from prompt start to current cursor)
-    size_t start = shell_prompt_row * NUM_COLS + 
-    shell_prompt_col;                                   // start of editable area
-    size_t end = row * NUM_COLS + col;                  // current cursor position
-    size_t len = 0;                                     // length of command
-
-    if (end > start) len = end - start;                 // compute length
-    if (len > 127) len = 127;                           // limit length to buffer size
-
-    char cmd[128];                                      // command buffer (+1 for null terminator)
-    for (size_t i = 0; i < len; i++) {                  // copy characters
-        cmd[i] = (char) buffer[start + i].character;    // copy character
-    }
-    cmd[len] = '\0';// null-terminate string
-
-
-    // Function to convert string to integer
-    int string_to_int(char* str, int* next_pos) {
-        int res = 0;
-        int i = 0;
-
-        // Pula espaços se houver
-        while (str[i] == ' ') i++;
-
-        // Converte os caracteres '0'-'9' em valor numérico
-        while (str[i] >= '0' && str[i] <= '9') {
-            res = res * 10 + (str[i] - '0');
-            i++;
-        }
-
-        if (next_pos) *next_pos = i; 
-        return res;
-    }
-
-    // Parse command and arguments
+void shell_handle_enter(void) {
+    char* cmd = input_buffer;
+    
     char cmd_name[32] = {0};
     char* args = "";
     
-    // Procura o primeiro espaço
     char* space = strchr(cmd, ' ');
-    
     if (space) {
-        // Se tem espaço, o comando é o que vem antes
         strncpy(cmd_name, cmd, space - cmd);
-        args = space + 1; // Argumentos começam depois do espaço
+        args = space + 1;
     } else {
-        // Se não tem espaço, o comando é a string inteira
         strncpy(cmd_name, cmd, 31);
     }
     
-    // Handle empty command
     if (cmd_name[0] == '\0') {
-        print_char('\n');
+        print_str("\n");
         shell_print_prompt();
-        return; // Sai da função sem passar pelos outros else if
-    }
-
-    // If the command is empty, just print a new prompt
-    if (is_empty(cmd_name)) {
-    print_char('\n');
-    shell_print_prompt();
-    return;
-    }
-
-    // Handle empty command
-    if (cmd_name[0] == '\0') {
-        print_char('\n');
-        shell_print_prompt();
+        input_index = 0;
         return;
     }
 
-    // GUARDA NO HISTÓRICO: Antes de processar, copiamos para o last_command
     strncpy(last_command, cmd, 127);
-
     modules_load();
 
-    // handle commands (compare manually to avoid relying on <string.h>)
-
-    //History
-    if (strcmp(cmd_name, "history") == 0) {
-        if (last_command[0] == '\0') {
-            print_str("\nNo history.");
-        } else {
-            print_str("\nLast command: ");
+    if (strcmp(cmd_name, "help") == 0) {
+        print_str("Available Commands:\n");
+        print_str("  clear      - Clear the screen\n");
+        print_str("  date       - Show current date and time\n");
+        print_str("  history    - Show last command\n");
+        print_str("  ver        - Show OS version\n");
+    }
+    else if (strcmp(cmd_name, "clear") == 0) {
+        print_clear();
+        shell_print_prompt();
+        input_index = 0;
+        return;
+    }
+    else if (strcmp(cmd_name, "date") == 0) {
+        uint8_t day = rtc_get_value(RTC_REGISTER_DAY);
+        uint8_t month = rtc_get_value(RTC_REGISTER_MONTH);
+        uint8_t year = rtc_get_value(RTC_REGISTER_YEAR);
+        uint8_t hour = rtc_get_value(RTC_REGISTER_HOURS);
+        uint8_t minute = rtc_get_value(RTC_REGISTER_MINUTES);
+        
+        print_str("Date: 20");
+        print_uint64_hex(year);
+        print_str("/");
+        print_uint64_hex(month);
+        print_str("/");
+        print_uint64_hex(day);
+        print_str(" ");
+        print_uint64_hex(hour);
+        print_str(":");
+        print_uint64_hex(minute);
+        print_str("\n");
+    }
+    else if (strcmp(cmd_name, "history") == 0) {
+        print_str("Last command: ");
+        if (last_command[0] != '\0') {
             print_str(last_command);
         }
+        print_str("\n");
     }
-
-    //Call
-    else if (strcmp(cmd_name, "call") == 0) {
-        if (strcmp(args, ".err_screen") == 0)
-        {
-            print_clear();
-            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLUE);
-            print_str("ERROR!, This is a joke!");
-            color = PRINT_COLOR_WHITE | PRINT_COLOR_BLUE << 4;
-        }
+    else if (strcmp(cmd_name, "ver") == 0) {
+        print_str("ImagineOS R1 (Text Mode)\n");
     }
-
-    //Clear
-    else if (strcmp(cmd, "clear") == 0)
-    {
-        print_clear();
-        row = 0;
-        col = 0;
-        shell_print_prompt();
-        return;
-    }
-
-    //Date command
-    else if (strcmp(cmd, "date") == 0)
-    {
-        // Lê os dados do RTC usando a lógica que você já tinha
-        uint8_t day    = rtc_get_value(RTC_REGISTER_DAY);
-        uint8_t month  = rtc_get_value(RTC_REGISTER_MONTH);
-        uint8_t year   = rtc_get_value(RTC_REGISTER_YEAR);
-        uint8_t hour   = rtc_get_value(RTC_REGISTER_HOURS);
-        uint8_t minute = rtc_get_value(RTC_REGISTER_MINUTES);
-
-        print_str("Current Date: ");
-        print_uint64_dec(day);
-        print_char('/');
-        print_uint64_dec(month);
-        print_str("/20"); // O RTC costuma dar o ano com 2 dígitos (ex: 25)
-        print_uint64_dec(year);
-
-        print_str("  Hour: ");
-        if (hour < 10) print_char('0');
-        print_uint64_dec(hour);
-        print_char(':');
-        if (minute < 10) print_char('0');
-        print_uint64_dec(minute);
-        
-        print_char('\n');
-        shell_print_prompt();
-        return;
-    }
-
-    //Reboot
-    else if (strcmp(cmd, "reboot") == 0)
-    {
-        print_str("Rebooting...\n");                // feedback
-        reboot_system();                            // reboot system
-        // if reboot fails, loop
-        for(;;);                                    // hang
-    }
-
     else {
-        // Verifica se é um módulo
-        extern Module modules[];
-        extern int modules_count;
-        extern int modules_loaded;
-        int found = 0;
-        if (modules_loaded) {
-            for (int i = 0; i < modules_count; i++) {
-                if (strcmp(cmd_name, modules[i].name) == 0) {
-                    if (modules[i].run) modules[i].run(args);
-                    found = 1;
-                    break;
-                }
-            }
-        }
-        if (!found) {
-            print_str("[SYS]: Unknown Command: '");
-            print_str(cmd_name);
-            print_str("'");
-        }
+        print_str("Unknown command: ");
+        print_str(cmd_name);
+        print_str("\n");
     }
 
-    print_char('\n');                                   // move to next line
-    shell_print_prompt();                               // print new prompt
+    print_str("\n");
+    shell_print_prompt();
+    input_index = 0;
+    memset(input_buffer, 0, 256);
+}
+
+void shell_add_char(char c) {
+    if (c == '\b') {
+        if (input_index > 0) {
+            input_index--;
+            input_buffer[input_index] = '\0';
+            print_str("\b \b");  // backspace
+        }
+    } else if (c == '\n') {
+        input_buffer[input_index] = '\0';
+        shell_handle_enter();
+    } else if (input_index < 255) {
+        input_buffer[input_index] = c;
+        input_index++;
+        input_buffer[input_index] = '\0';
+        print_char(c);
+    }
 }

@@ -49,3 +49,4 @@ idt_load:
 %endmacro
 
 WRAPPED_HANDLER idt_handler_keyboard
+WRAPPED_HANDLER idt_handler_timer

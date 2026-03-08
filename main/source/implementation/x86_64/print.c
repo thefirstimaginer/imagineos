@@ -3,30 +3,39 @@
 #include "shellMain.h"
 #include "x86_64/port.h"
 #include "x86_64/rtc.h"
+#include "x86_64/graphics.h"   // para font_data e dimensões
 
-// VGA text mode dimensions
-size_t NUM_COLS = 80;// text mode dimensions
-size_t NUM_ROWS = 25;// text mode dimensions
+#include <stdbool.h>
 
-// VGA text mode character structure
+// VGA/text-mode characteristics
+size_t NUM_COLS = 80;
+size_t NUM_ROWS = 25;
+
+// VGA text-mode character structure
 struct Char {
-    uint8_t character;  // ASCII character
-    uint8_t color;      // color attribute
+    uint8_t character;
+    uint8_t color;
 };
 
-// VGA text mode buffer pointer
-struct Char* buffer = (struct Char*) 0xb8000;// VGA text mode buffer address
+// pointer para buffer de texto; em modo gráfico não é usado
+struct Char* buffer = (struct Char*)0xb8000;
 
+// cursor e cor atuais (text-mode)
+size_t col = 0, row = 0;
+uint8_t color = PRINT_COLOR_WHITE | (PRINT_COLOR_BLACK << 4);
+size_t shell_prompt_col = 0, shell_prompt_row = 0;
 
-// Current cursor position
-size_t col = 0;
-size_t row = 0;
+// flag que indica se estamos desenhando texto sobre framebuffer
+bool graphics_print = false;
+uint8_t graph_fg = 15, graph_bg = 0;  // índices de cor 0‑15
 
-// Current color attribute for text mode
-uint8_t color = PRINT_COLOR_WHITE | PRINT_COLOR_BLACK << 4;
-// Shell prompt tracking: start column and row of the editable area after the prompt
-size_t shell_prompt_col = 0;
-size_t shell_prompt_row = 0;
+// font_data está definido em graphics.c
+extern const uint8_t font_data[256][FONT_HEIGHT];
+
+/* funções de framebuffer declaradas em modules/video.c */
+extern void planar_fill(uint8_t color);
+extern void planar_set_pixel(int x, int y, uint8_t color);
+extern void set_palette16();
 
 // Clear a specific row in text mode
 void clear_row(size_t row) {                        // clear a specific row
@@ -41,33 +50,76 @@ void clear_row(size_t row) {                        // clear a specific row
 }
 
 // Clear the entire screen
-void print_clear() {                        // clear the entire screen
-    for (size_t i = 0; i < NUM_ROWS; i++) {
-        clear_row(i);
+void print_clear() {
+    if (!graphics_print) {
+        for (size_t i = 0; i < NUM_ROWS; i++) {
+            clear_row(i);
+        }
+    } else {
+        // em modo gráfico usa plano fill (driver vídeo deve fornecer)
+        extern void planar_fill(uint8_t color);
+        planar_fill(graph_bg);
+        col = row = 0;
     }
 }
 
 void print_newline() {
     col = 0;
 
-    if (row < NUM_ROWS - 1) {
-        row++;
-        set_cursor(col, row);
-        return;
-    }
-
-    for (size_t row = 1; row < NUM_ROWS; row++) {
-        for (size_t col = 0; col < NUM_COLS; col++) {
-            struct Char character = buffer[col + NUM_COLS * row];
-            buffer[col + NUM_COLS * (row - 1)] = character;
+    if (!graphics_print) {
+        if (row < NUM_ROWS - 1) {
+            row++;
+            set_cursor(col, row);
+            return;
         }
-    }
 
-    clear_row(NUM_ROWS - 1);
-    set_cursor(col, row);
+        for (size_t r = 1; r < NUM_ROWS; r++) {
+            for (size_t c = 0; c < NUM_COLS; c++) {
+                struct Char character = buffer[c + NUM_COLS * r];
+                buffer[c + NUM_COLS * (r - 1)] = character;
+            }
+        }
+
+        clear_row(NUM_ROWS - 1);
+        set_cursor(col, row);
+    } else {
+        // simples: se ultrapassar, limpa tudo
+        if (row < NUM_ROWS - 1) {
+            row++;
+            return;
+        }
+        print_clear();
+    }
 }
 
 void print_char(char character) {
+    if (graphics_print) {
+        // desenhar usando bitmap de fonte em framebuffer planar
+        if (character == '\n') {
+            print_newline();
+            return;
+        }
+        if (col >= NUM_COLS) {
+            print_newline();
+        }
+        // desenha caractere em (col,row)
+        int base_x = col * FONT_WIDTH;
+        int base_y = row * FONT_HEIGHT;
+        const uint8_t *glyph = font_data[(uint8_t)character];
+        for (int gy = 0; gy < FONT_HEIGHT; gy++) {
+            for (int gx = 0; gx < FONT_WIDTH; gx++) {
+                if (glyph[gy] & (1 << (7 - gx))) {
+                    planar_set_pixel(base_x + gx, base_y + gy, graph_fg);
+                } else {
+                    planar_set_pixel(base_x + gx, base_y + gy, graph_bg);
+                }
+            }
+        }
+        col++;
+        return;
+    }
+
+    // modo texto normal
     if (character == '\n') {
         print_newline();
         return;
@@ -99,7 +151,20 @@ void print_str(char* str) {
 }
 
 void print_set_color(uint8_t foreground, uint8_t background) {
-    color = foreground + (background << 4);
+    if (!graphics_print) {
+        color = foreground + (background << 4);
+    } else {
+        graph_fg = foreground & 0x0F;
+        graph_bg = background & 0x0F;
+    }
+}
+
+void enable_graphics_print() {
+    graphics_print = true;
+    col = row = 0;
+    // também redefinir cores para padrão
+    graph_fg = 15;
+    graph_bg = 0;
 }
 
 void print_uint64_dec(uint64_t value) {
@@ -161,7 +226,7 @@ void print_uint64_bin(uint64_t value) { // print 64-bit value in binary
 }
 
 void backspace() {
-    // 1. Verificar se o cursor está no início (coluna 0). 
+    // 1. Verificar se o cursor está no início (coluna 0).
     //    Se for 0, não fazemos nada (não voltamos para a linha anterior por simplicidade).
     // Não permitir apagar antes do início do prompt salvo
     if (row == shell_prompt_row && col <= shell_prompt_col) {
@@ -172,14 +237,23 @@ void backspace() {
         // 2. Mover o cursor para trás (lógica)
         col--;
 
-        // 3. Sobrescrever o caractere anterior com um espaço em branco
-        //    A cor do espaço é a cor de fundo atual, o que faz parecer que a letra "sumiu".
-        buffer[col + NUM_COLS * row] = (struct Char) {
-            character: ' ',
-            color: color,
-        };
-
-        set_cursor(col, row);
+        if (!graphics_print) {
+            // 3. Sobrescrever o caractere anterior com um espaço em branco
+            buffer[col + NUM_COLS * row] = (struct Char) {
+                character: ' ',
+                color: color,
+            };
+            set_cursor(col, row);
+        } else {
+            // em gráfico, apenas reescreve o caractere com cor de fundo
+            int base_x = col * FONT_WIDTH;
+            int base_y = row * FONT_HEIGHT;
+            for (int gy = 0; gy < FONT_HEIGHT; gy++) {
+                for (int gx = 0; gx < FONT_WIDTH; gx++) {
+                    planar_set_pixel(base_x + gx, base_y + gy, graph_bg);
+                }
+            }
+        }
         return;
     }
 

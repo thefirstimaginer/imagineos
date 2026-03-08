@@ -60,12 +60,20 @@ void idt_handler_keyboard() {
 	pic_eoi_master();
 }
 
+extern void idt_handler_timer_wrapped();
+
+void idt_handler_timer() {
+	extern void scheduler_tick();
+	scheduler_tick();
+}
+
 void idt_init() {
 	pic_remap();
 	
 	idt_ptr.limit = (sizeof(struct IdtEntry) * 256) - 1;
 	idt_ptr.base = (uint64_t) &idt;
 	
+	idt_set_entry(IDT_IRQ0_TIMER, (uint64_t) idt_handler_timer_wrapped, GDT_SELECTOR_CS_KERNEL, IDT_ENTRY_TYPE_INTERRUPT);
 	idt_set_entry(IDT_IRQ1_KEYBOARD, (uint64_t) idt_handler_keyboard_wrapped, GDT_SELECTOR_CS_KERNEL, IDT_ENTRY_TYPE_INTERRUPT);
 	
 	idt_load(&idt_ptr);

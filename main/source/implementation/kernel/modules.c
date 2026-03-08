@@ -1,6 +1,9 @@
 #include "modules.h"
 #include "print.h"
 
+/* protótipos do módulo de vídeo (definidos em modules/video.c) */
+void video_init();
+void video_run();
 
 // Lista de módulos
 Module modules[] = {
@@ -10,6 +13,7 @@ Module modules[] = {
     {"halt", halt_init, halt_run},
     {"ver", ver_init, ver_run},
     {"help", help_init, help_run},
+    {"video", video_init, video_run},  // driver de vídeo
     // Adicione outros módulos aqui
 };
 

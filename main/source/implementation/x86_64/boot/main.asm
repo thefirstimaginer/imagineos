@@ -10,6 +10,15 @@ start:
 	call check_cpuid
 	call check_long_mode
 
+	; temporariamente removido: configuração de modo gráfico VESA.
+	; o int 0x10 em protected mode causa reinicialização no QEMU.
+	; para testar se o kernel inicia, comentamos isso.
+	; posteriormente, implemente modo real temporário para chamar int 0x10.
+	;
+	; mov ax, 0x4F02      ; VESA mode set
+	; mov bx, 0x101       ; modo 0x101: 640×480, 8 bpp, linear
+	; int 0x10
+
 	call setup_page_tables
 	call enable_paging
 	
