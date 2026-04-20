@@ -22,7 +22,7 @@ Alternatively, you should be able to load the operating system on a USB drive an
 
 ## Copyright
 
-    Copyright (C) 2024-2026  The Imagine System Project
+    Copyright (C) 2024-2026  O Projeto Imagine
     
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
