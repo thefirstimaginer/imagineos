@@ -16,13 +16,13 @@ Build for x86 (other architectures may come in the future):
 You can emulate your operating system using [Qemu](https://www.qemu.org/).
 
  - `qemu-system-x86_64 -cdrom dist/x86_64/kernel.iso`
- - Note: Close the emulator when finished, so as to not block writing to `kernel.iso` for future builds.
+ - Note: Close the emulator when finished, so as to not block writing to `distroimagine.iso` for future builds.
 
 Alternatively, you should be able to load the operating system on a USB drive and boot into it when you turn on your computer. (I tested it, you need to boot in Legacy Mode, if you're in a UEFI system.)
 
 ## Copyright
 
-    Copyright (C) 2024-2026  O Projeto Imagine
+    Copyright (C) 2024-2026  TeamImagine
     
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
