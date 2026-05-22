@@ -1,4 +1,6 @@
-# Imagine Operating System
+# Imagine Operating System <img width="200" height="auto" align="right" alt="imagine3w" src="https://github.com/user-attachments/assets/e406f860-0038-4076-8014-8fe5f7ff955e" />
+
+
 
 ## Prerequisites
 
