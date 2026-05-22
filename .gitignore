@@ -4,8 +4,10 @@
 /main/targets/x86_64/iso/boot/kernel.bin
 *.bin
 /videodrv
+/learning
 /main/distro/x86_64/main.iso
 main/distro/x86_64/main.iso
 *.iso
 *.o
 /main/source/implementation/shell
+/implementation
