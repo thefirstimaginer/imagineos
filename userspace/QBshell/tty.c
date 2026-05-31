@@ -1,10 +1,24 @@
-#include "print.h"
-#include "shellMain.h"
+/* Imagine Operating System - vR1_0.1.0 - Codename "Jessica"
+ * Copyright (c) 2026, Adryan Alcantara & TeamImagine
+ * Licensed Under IGPLv1
+ *
+ * Shell Interpreter for ImagineOS.
+ */
+
+#include "print.h" /*
+                    * Será removido no futuro para dar lugar a um
+                    * driver de vídeo com suporte a gráficos e texto
+                    */
+
+#include "shell.h" // Será desenvolvido em breve
+#include "tty.h"
+
 #include "x86_64/rtc.h"
 //#include "graphics.h"
 
 /* precisamos de memset, que está declarado em libimagine.h */
 #include "libraries/libimagine.h"   // inclui string/math e protótipos de memória
+// NOTA: A LIBIMAGINE será removida no futuro...
 
 #include "modules.h"
 
@@ -27,7 +41,7 @@ void shell_init() {
     print_str("                       |___/                   \n");
     print_str("  __________________________________________________________  \n");
     
-    print_str(" ImagineOS R1 | Kernel: x86_64 | Text Mode (Graphics disabled)\n");
+    print_str(" ImagineOS R1 | Kernel: IMAGINE/Jessica | Under Development\n");
     print_str(" Type 'help' to see available commands.\n");
     
     shell_print_prompt();
@@ -35,7 +49,7 @@ void shell_init() {
 }
 
 void shell_print_prompt() {
-    print_str("main@os > ");
+    print_str("root@tty:$ ");
 }
 
 void shell_handle_enter(void) {

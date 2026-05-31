@@ -11,3 +11,4 @@ main/distro/x86_64/main.iso
 *.o
 /main/source/implementation/shell
 /implementation
+targets/

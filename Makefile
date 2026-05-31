@@ -1,13 +1,11 @@
 kernel_source_files := $(shell find source/implementation/kernel -name *.c)
 kernel_object_files := $(patsubst source/implementation/kernel/%.c, build/kernel/%.o, $(kernel_source_files))
+
 libraries_source_files := $(shell find source/implementation/libraries -name *.c)
 libraries_object_files := $(patsubst source/implementation/libraries/%.c, build/libraries/%.o, $(libraries_source_files))
 
 modules_source_files := $(shell find source/implementation/modules -name *.c)
 modules_object_files := $(patsubst source/implementation/modules/%.c, build/modules/%.o, $(modules_source_files))
-
-libraries_source_files := $(shell find source/implementation/libraries -name *.c)
-libraries_object_files := $(patsubst source/implementation/libraries/%.c, build/libraries/%.o, $(libraries_source_files))
 
 x86_64_c_source_files := $(shell find source/implementation/x86_64 -name *.c)
 x86_64_c_object_files := $(patsubst source/implementation/x86_64/%.c, build/x86_64/%.o, $(x86_64_c_source_files))
@@ -44,7 +42,6 @@ build/x86_64/%.o: source/implementation/x86_64/%.asm
 	nasm -f elf64 $(patsubst build/x86_64/%.o, source/implementation/x86_64/%.asm, $@) -o $@
 
 # Build for x86_64
-
 .PHONY: build-x86_64
 build-x86_64: $(kernel_object_files) $(x86_64_object_files) $(libraries_object_files) $(modules_object_files)
 	mkdir -p distro/x86_64
@@ -52,6 +49,12 @@ build-x86_64: $(kernel_object_files) $(x86_64_object_files) $(libraries_object_f
 	cp distro/x86_64/kernel.bin targets/x86_64/iso/boot/kernel.bin
 	grub-mkrescue /usr/lib/grub/i386-pc -o distro/x86_64/main.iso targets/x86_64/iso
 
+# Build Quindim Bootloader "QuinBoot"
+.PHONY: build-quinboot
+build-quinboot:
+	cd boot/quin-headers # Under Development
+
+#Clean Directories
 .PHONY: clean
 clean:
 	rm -rf build distro

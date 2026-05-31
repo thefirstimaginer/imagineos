@@ -2,7 +2,7 @@
 
 
 
-## Code-Name "Jessica"
+## vR1 Codename "Jessica"
 This production is Under Construction phase, is instable by now, it can 
 have bugs but if you want to test it, you can report to `nyxieworlduniverse@gmail.com`
 
