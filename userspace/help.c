@@ -14,7 +14,7 @@ void help_module_main(char* args) {
 
 	//Page 1
 	if(strcmp(args, "ver") == 0){
-		print_str("Help Guide Module for ImagineOS\n");
+		print_str("Help Guide for ImagineOS\n");
 		print_str("Copyright (C) 2026 Imagine Project,");
 		return;
 	}

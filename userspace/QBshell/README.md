@@ -1,2 +1,2 @@
 # QuickBasic Shell - QBshell
-- A shell for Imagine OS
+- A minimal shell for Imagine OS
