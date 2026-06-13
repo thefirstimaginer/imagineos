@@ -26,127 +26,48 @@ switch (code) {
     case 0x4A: case (0xE000 | 0x4A): return num_lock_active ? '-' : '?';
 }
 
-
 switch (code) {
-    case 
-        KEY_CODE_A: base_char = 'A';
-    break;
-    case
-        KEY_CODE_B: base_char = 'B';
-    break;
-    case 
-        KEY_CODE_C: base_char = 'C'; 
-    break;
-    case 
-        KEY_CODE_D: base_char = 'D'; 
-    break;
-    case 
-        KEY_CODE_E: base_char = 'E'; 
-    break;
-    case 
-        KEY_CODE_F: base_char = 'F'; 
-    break;
-    case 
-        KEY_CODE_G: base_char = 'G'; 
-    break;
-    case 
-        KEY_CODE_H: base_char = 'H';
-    break;
-    case 
-        KEY_CODE_I: base_char = 'I'; 
-    break;
-    case 
-        KEY_CODE_J: base_char = 'J'; 
-    break;
-    case
-        KEY_CODE_K: base_char = 'K'; 
-    break;
-    case 
-        KEY_CODE_L: base_char = 'L'; 
-    break;
-    case 
-        KEY_CODE_M: base_char = 'M'; 
-    break;
-    case 
-        KEY_CODE_N: base_char = 'N'; 
-    break;
-    case 
-        KEY_CODE_O: base_char = 'O'; 
-    break;
-    case 
-        KEY_CODE_P: base_char = 'P'; 
-    break;
-    case 
-        KEY_CODE_Q: base_char = 'Q'; 
-    break;
-    case 
-        KEY_CODE_R: base_char = 'R'; 
-    break;
-    case 
-        KEY_CODE_S: base_char = 'S'; 
-    break;
-    case 
-        KEY_CODE_T: base_char = 'T'; 
-    break;
-    case 
-        KEY_CODE_U: base_char = 'U'; 
-    break;
-    case 
-        KEY_CODE_V: base_char = 'V'; 
-    break;
-    case 
-        KEY_CODE_W: base_char = 'W'; 
-    break;
-    case 
-        KEY_CODE_X: base_char = 'X'; 
-    break;
-    case 
-        KEY_CODE_Y: base_char = 'Y'; 
-    break;
-    case 
-        KEY_CODE_Z: base_char = 'Z'; 
-    break;
-    // Para Números
-    case 
-        KEY_CODE_1: base_char = '1'; 
-    break;
-    case 
-        KEY_CODE_2: base_char = '2'; 
-    break;
-    case 
-        KEY_CODE_3: base_char = '3'; 
-    break;
-    case 
-        KEY_CODE_4: base_char = '4'; 
-    break;
-    case 
-        KEY_CODE_5: base_char = '5'; 
-    break;
-    case 
-        KEY_CODE_6: base_char = '6'; 
-    break;
-    case 
-        KEY_CODE_7: base_char = '7'; 
-    break;
-    case 
-        KEY_CODE_8: base_char = '8'; 
-    break;
-    case
-        KEY_CODE_9: base_char = '9'; 
-    break;
-    case 
-        KEY_CODE_0: base_char = '0'; 
-    break;
+    case KEY_CODE_A: base_char = 'A'; break;
+    case KEY_CODE_B: base_char = 'B'; break;
+    case KEY_CODE_C: base_char = 'C'; break;
+    case KEY_CODE_D: base_char = 'D'; break;
+    case KEY_CODE_E: base_char = 'E'; break;
+    case KEY_CODE_F: base_char = 'F'; break;
+    case KEY_CODE_G: base_char = 'G'; break;
+    case KEY_CODE_H: base_char = 'H'; break;
+    case KEY_CODE_I: base_char = 'I'; break;
+    case KEY_CODE_J: base_char = 'J'; break;
+    case KEY_CODE_K: base_char = 'K'; break;
+    case KEY_CODE_L: base_char = 'L'; break;
+    case KEY_CODE_M: base_char = 'M'; break;
+    case KEY_CODE_N: base_char = 'N'; break;
+    case KEY_CODE_O: base_char = 'O'; break;
+    case KEY_CODE_P: base_char = 'P'; break;
+    case KEY_CODE_Q: base_char = 'Q'; break;
+    case KEY_CODE_R: base_char = 'R'; break;
+    case KEY_CODE_S: base_char = 'S'; break;
+    case KEY_CODE_T: base_char = 'T'; break;
+    case KEY_CODE_U: base_char = 'U'; break;
+    case KEY_CODE_V: base_char = 'V'; break;
+    case KEY_CODE_W: base_char = 'W'; break;
+    case KEY_CODE_X: base_char = 'X'; break;
+    case KEY_CODE_Y: base_char = 'Y'; break;
+    case KEY_CODE_Z: base_char = 'Z'; break;
+    // Teclas Numericas
+    case KEY_CODE_1: base_char = '1'; break;
+    case KEY_CODE_2: base_char = '2'; break;
+    case KEY_CODE_3: base_char = '3'; break;
+    case KEY_CODE_4: base_char = '4'; break;
+    case KEY_CODE_5: base_char = '5'; break;
+    case KEY_CODE_6: base_char = '6'; break;
+    case KEY_CODE_7: base_char = '7'; break;
+    case KEY_CODE_8: base_char = '8'; break;
+    case KEY_CODE_9: base_char = '9'; break;
+    case KEY_CODE_0: base_char = '0'; break;
     // Teclas de Confirmação
-    case 
-        KEY_CODE_SPACE: base_char = ' '; 
-    break;
-    case 
-        KEY_CODE_ENTER: base_char = '\n'; 
-    break;
-    case 
-        KEY_CODE_BACKSPACE: base_char = '\b'; 
-    break;
+    case KEY_CODE_SPACE: base_char = ' '; break;
+    case KEY_CODE_ENTER: base_char = '\n'; break;
+    case KEY_CODE_BACKSPACE: base_char = '\b'; break;
     // Símbolos
     case KEY_CODE_MINUS: base_char = '-'; break;
     case KEY_CODE_EQUALS: base_char = '='; break;
@@ -160,8 +81,7 @@ switch (code) {
     case KEY_CODE_PERIOD: base_char = '.'; break;
     case KEY_CODE_SLASH: base_char = '/'; break;
 
-    default:
-        return '?';
+    default: return '?';
 }
 
 // Se o Shift estiver pressionado, convertemos o caractere base
@@ -177,26 +97,16 @@ if (base_char >= 'A' && base_char <= 'Z') {
 if (shift_active) {
     switch (base_char) {
         // Números -> Símbolos
-        case '1': 
-            return '!';
-        case '2': 
-            return '@';
-        case '3': 
-            return '#';
-        case '4': 
-            return '$';
-        case '5': 
-            return '%';
-        case '6': 
-            return '^'; // Em alguns layouts pode ser '¨'
-        case '7': 
-            return '&';
-        case '8': 
-            return '*';
-        case '9': 
-            return '(';
-        case '0': 
-            return ')';
+        case '1': return '!';
+        case '2': return '@';
+        case '3': return '#';
+        case '4': return '$';
+        case '5': return '%';
+        case '6': return '^'; // Em alguns layouts pode ser '¨'
+        case '7': return '&';
+        case '8': return '*';
+        case '9': return '(';
+        case '0': return ')';
         
         // Símbolos -> Símbolos Shiftados
         case '`': return '~';
