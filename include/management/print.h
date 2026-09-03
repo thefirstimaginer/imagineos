@@ -6,6 +6,8 @@
 
 extern size_t col;// current cursor position
 extern size_t row;// current cursor position
+extern size_t shell_prompt_col;
+extern size_t shell_prompt_row;
 
 enum {	// text colors
     PRINT_COLOR_BLACK = 0,
@@ -35,8 +37,6 @@ void print_uint64_hex(uint64_t value);								// print 64-bit value in hexadecim
 void print_uint64_bin(uint64_t value);								// print 64-bit value in binary
 void backspace();													// handle backspace key
 void shell_disable_cursor();										// disable hardware text cursor
-void shell_print_prompt();											// print shell prompt and set editable area
-void shell_handle_enter();											// process command entered at prompt
 void reboot_system(void);											// reboot the system using keyboard controller
 void shutdown_system(void);											// shutdown the system using ACPI
 void set_cursor(size_t col, size_t row);							// set hardware text cursor position

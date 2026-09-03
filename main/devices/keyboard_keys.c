@@ -127,7 +127,7 @@ return base_char;
 }
 
 
-extern void shell_add_char(char c);
+extern void terminal_input(char c);
 extern void login_handle_input(char c);
 extern int login_is_complete(void);
 
@@ -149,17 +149,17 @@ void handle_input(struct KeyboardEvent event) {
             // Login completo, processa comandos do shell
             if (c == '\b') {
                 // Se for backspace, passa para o shell processar
-                shell_add_char('\b'); 
+                terminal_input('\b');
             } 
             else if (c == '\n') {
                 // Tratar o ENTER (pular linha) e processar comandos
                 print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-                shell_add_char('\n');
+                terminal_input('\n');
             }
             else if (c != '?') { // Ignora teclas não mapeadas
                 // É um caractere normal (A, B, C...)
                 // Adiciona ao buffer de input do shell
-                shell_add_char(c);
+                terminal_input(c);
             }
         }
 

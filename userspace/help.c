@@ -31,12 +31,12 @@ void help_module_main(char* args) {
 		print_str("| [help] - Show Help.                         |\n");
 		print_str("| [date] - Show the current time.             |\n");
 		print_str("| [clear] - Clear the shell.                  |\n");
-		print_str("| [history] - Command history, only the last  |\n");
-		print_str("| command.                                    |\n");
+		print_str("| [history] - Show the last 24 commands.      |\n");
 		print_str("| [ver] - Show your OS version.               |\n");
 		print_str("| [reboot] - Reboot the System.               |\n");
 		print_str("| [halt] - Turn off the system.               |\n");
 		print_str("| [calc] - Basic operations (2 NUMBERS ONLY!) |\n");
+		print_str("| [ps] - List registered processes.            |\n");
 		print_str("| [halt] - Turn off the system.               |\n");
 		print_str("+---------------------------------------------+");
 		return;

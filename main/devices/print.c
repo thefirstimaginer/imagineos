@@ -81,6 +81,9 @@ void print_clear() {
         for (size_t i = 0; i < NUM_ROWS; i++) {
             clear_row(i);
         }
+        col = 0;
+        row = 0;
+        set_cursor(col, row);
     } else {
         // em modo gráfico usa plano fill (driver vídeo deve fornecer)
         extern void planar_fill(uint8_t color);

@@ -12,13 +12,13 @@ void ver_run(char* args) {
 }
 
 void ver_module_main(char* args) {
-	print_str("IIIIII MM    MM  OOOO   SSSSS \n");
-	print_str("  II   MMM  MMM OO  OO SS___  \n");
-	print_str("  II   MM MM MM OO  OO     SS \n");
-	print_str("IIIIII MM    MM  OOOO  SSSSS  \n");
+	print_str("RRRRRR  1111\n");
+	print_str("RR  RR    11\n");
+	print_str("RRRR      11\n");
+	print_str("RR  RR  111111\n");
 	print_set_color(PRINT_COLOR_CYAN, PRINT_COLOR_BLACK);
 	print_str("\n");
-	print_str("ImagineOS System Shell R1\n");
-	print_str("Copyright (C) 2026 Imagine Project, All Rights Reserved.");
+	print_str("Imagine Platform R1\n");
+	print_str("(C) 2026 Imagine Project, All Rights Reserved.");
 	print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
 }

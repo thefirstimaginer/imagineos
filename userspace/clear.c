@@ -8,5 +8,4 @@ void clear_init(void) {
 void clear_run(char* args) {
     (void)args;
     print_clear();
-    shell_print_prompt();
 }

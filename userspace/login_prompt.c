@@ -8,8 +8,7 @@
 #include "print.h"
 #include "userspace/login.h"
 #include "libraries/libimagine.h"
-
-extern void shell_init(void);  // Forward declaration
+#include "userspace/QBshell/tty.h"
 
 // Buffer de entrada para o login
 static char login_input_buffer[256] = {0};
@@ -48,7 +47,7 @@ void login_handle_input(char c) {
                 
                 // Inicializar o shell após login
                 if (!shell_initialized) {
-                    shell_init();
+                    terminal_start();
                     shell_initialized = 1;
                 }
             } else {
@@ -59,7 +58,7 @@ void login_handle_input(char c) {
                 
                 // Inicializar o shell após login
                 if (!shell_initialized) {
-                    shell_init();
+                    terminal_start();
                     shell_initialized = 1;
                 }
             }
