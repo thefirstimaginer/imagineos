@@ -11,3 +11,4 @@ main/distro/x86_64/main.iso
 *.o
 targets/
 /.build
+/distro
