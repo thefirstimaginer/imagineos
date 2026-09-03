@@ -19,6 +19,7 @@ KERNEL_SRCS := \
 	main/devices/ps2.c \
 	main/devices/rtc.c \
 	main/management/modules.c \
+	main/management/init.c \
 	main/management/process.c \
 	main/management/scheduler.c \
 	userspace/calc.c \
@@ -29,6 +30,8 @@ KERNEL_SRCS := \
 	userspace/video.c \
 	userspace/string_compat.c \
 	userspace/lite.c \
+	userspace/ps.c \
+	userspace/QBshell/shell.c \
 	userspace/login.c \
 	userspace/login_prompt.c \
 	userspace/QBshell/tty.c
@@ -49,6 +52,7 @@ KERNEL_OBJS := \
 	$(BUILD_DIR)/main/devices/ps2.o \
 	$(BUILD_DIR)/main/devices/rtc.o \
 	$(BUILD_DIR)/main/management/modules.o \
+	$(BUILD_DIR)/main/management/init.o \
 	$(BUILD_DIR)/main/management/process.o \
 	$(BUILD_DIR)/main/management/scheduler.o \
 	$(BUILD_DIR)/userspace/calc.o \
@@ -59,6 +63,8 @@ KERNEL_OBJS := \
 	$(BUILD_DIR)/userspace/video.o \
 	$(BUILD_DIR)/userspace/string_compat.o \
 	$(BUILD_DIR)/userspace/lite.o \
+	$(BUILD_DIR)/userspace/ps.o \
+	$(BUILD_DIR)/userspace/QBshell/shell.o \
 	$(BUILD_DIR)/userspace/login.o \
 	$(BUILD_DIR)/userspace/login_prompt.o \
 	$(BUILD_DIR)/userspace/QBshell/tty.o
@@ -125,6 +131,10 @@ $(BUILD_DIR)/main/management/modules.o: main/management/modules.c | $(BUILD_DIR)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/main/management/init.o: main/management/init.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(BUILD_DIR)/main/management/process.o: main/management/process.c | $(BUILD_DIR)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -162,6 +172,14 @@ $(BUILD_DIR)/userspace/string_compat.o: userspace/string_compat.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/userspace/lite.o: userspace/lite.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/userspace/ps.o: userspace/ps.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/userspace/QBshell/shell.o: userspace/QBshell/shell.c | $(BUILD_DIR)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

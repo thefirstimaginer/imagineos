@@ -6,10 +6,15 @@
 // Lista de processos (simples linked list)
 Process* process_list = NULL;
 Process* current_process = NULL;
+uint32_t process_count = 0;
 static uint32_t next_pid = 1;
 
 // Pilha por processo (4KB por enquanto, sem alocação dinâmica)
 #define PROCESS_STACK_SIZE 4096
+#define MAX_PROCESSES 32
+
+static Process process_pool[MAX_PROCESSES];
+static uint8_t process_stacks[MAX_PROCESSES][PROCESS_STACK_SIZE];
 
 // Função dummy para idle process
 static void idle_process() {
@@ -21,7 +26,7 @@ static void idle_process() {
 // Inicializa o sistema de processos
 void process_init() {
     // Cria processo idle
-    Process* idle = process_create(idle_process);
+    Process* idle = process_create_named("idle", idle_process);
     if (idle) {
         idle->pid = 0;  // PID especial para idle
         current_process = idle;
@@ -30,12 +35,18 @@ void process_init() {
 
 // Cria um novo processo
 Process* process_create(void (*entry_point)()) {
-    Process* proc = (Process*) 0x100000;  // Alocação dummy (fixo por enquanto)
-    if (!proc) return NULL;
+    return process_create_named("process", entry_point);
+}
+
+Process* process_create_named(const char* name, void (*entry_point)()) {
+    if (process_count >= MAX_PROCESSES || !entry_point) return NULL;
+
+    Process* proc = &process_pool[process_count];
 
     proc->pid = next_pid++;
+    proc->name = name;
     proc->state = PROCESS_READY;
-    proc->stack_base = (uint64_t) proc + sizeof(Process);
+    proc->stack_base = (uint64_t) process_stacks[process_count];
     proc->stack_top = proc->stack_base + PROCESS_STACK_SIZE;
 
     // Inicializa contexto
@@ -62,8 +73,19 @@ Process* process_create(void (*entry_point)()) {
     // Adiciona à lista
     proc->next = process_list;
     process_list = proc;
+    process_count++;
 
     return proc;
+}
+
+const char* process_state_name(ProcessState state) {
+    switch (state) {
+        case PROCESS_READY: return "READY";
+        case PROCESS_RUNNING: return "RUNNING";
+        case PROCESS_BLOCKED: return "BLOCKED";
+        case PROCESS_TERMINATED: return "TERMINATED";
+        default: return "UNKNOWN";
+    }
 }
 
 // Context switch (assembly inline por enquanto)

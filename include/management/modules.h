@@ -20,6 +20,10 @@ void ver_init();
 void ver_run(char* args);
 void help_init();
 void help_run(char* args);
+void clear_init(void);
+void clear_run(char* args);
+void ps_init();
+void ps_run(char* args);
 
 //Registering Functions
 void calc_module_main();

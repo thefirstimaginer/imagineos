@@ -1,61 +1,89 @@
 #include "print.h"
-#include "string.h"
+#include "shell.h"
 #include "modules.h"
+#include "libraries/string.h"
 
-void qbs_main() {
+#define SHELL_HISTORY_SIZE 24
+#define SHELL_HISTORY_LENGTH 128
 
+static char command_history[SHELL_HISTORY_SIZE][SHELL_HISTORY_LENGTH];
+static int history_count = 0;
+static int history_write = 0;
+static int history_position = -1;
+
+static void history_add(const char* line) {
+    strncpy(command_history[history_write], line, SHELL_HISTORY_LENGTH - 1);
+    command_history[history_write][SHELL_HISTORY_LENGTH - 1] = '\0';
+    history_write = (history_write + 1) % SHELL_HISTORY_SIZE;
+    if (history_count < SHELL_HISTORY_SIZE) history_count++;
+    history_position = -1;
 }
 
-void qbs_commands() {
+const char* shell_history_up(void) {
+    if (history_count == 0) return "";
+    if (history_position < history_count - 1) history_position++;
+    return command_history[(history_write + SHELL_HISTORY_SIZE - 1 - history_position) % SHELL_HISTORY_SIZE];
+}
 
-	if (strcmp(cmd_name, "help") == 0) {
-		print_str("QBSHELL - vR1 - Aug 2026 Release\n");
-        print_str("Copyright (c) 2026, TeamImagine\n\n");
+const char* shell_history_down(void) {
+    if (history_position < 0) return "";
+    history_position--;
+    if (history_position < 0) return "";
+    return command_history[(history_write + SHELL_HISTORY_SIZE - 1 - history_position) % SHELL_HISTORY_SIZE];
+}
 
-        print_str("Available Commands:\n");
-        print_str("  pwd  - Show Current Dir\n");
-        print_str("  list - List directory content\n");
-        print_str("  cd   - Change Dir\n");
-        print_str("  exec - Change actual shell proccess by another program.\n");
-        print_str("  exit - Exit the shell\n");
-        print_str("  kill - Force stop of a current task\n");
-        print_str("  echo - Print message on the screen\n");
+static void skip_command_spaces(char** text) {
+    while (**text == ' ') (*text)++;
+}
+
+void shell_execute_line(const char* line) {
+    char command[32] = {0};
+    char arguments[224] = {0};
+    char* cursor = (char*)line;
+    int command_length = 0;
+
+    skip_command_spaces(&cursor);
+    while (cursor[command_length] != '\0' && cursor[command_length] != ' ' && command_length < 31) {
+        command[command_length] = cursor[command_length];
+        command_length++;
     }
-    else if (strcmp(cmd_name, "date") == 0) {
-        uint8_t day = rtc_get_value(RTC_REGISTER_DAY);
-        uint8_t month = rtc_get_value(RTC_REGISTER_MONTH);
-        uint8_t year = rtc_get_value(RTC_REGISTER_YEAR);
-        uint8_t hour = rtc_get_value(RTC_REGISTER_HOURS);
-        uint8_t minute = rtc_get_value(RTC_REGISTER_MINUTES);
-        
-        print_str("Date: 20");
-        print_uint64_hex(year);
-        print_str("/");
-        print_uint64_hex(month);
-        print_str("/");
-        print_uint64_hex(day);
-        print_str(" ");
-        print_uint64_hex(hour);
-        print_str(":");
-        print_uint64_hex(minute);
-        print_str("\n");
-    }
-    else if (strcmp(cmd_name, "history") == 0) {
-        print_str("Last command: ");
-        if (last_command[0] != '\0') {
-            print_str(last_command);
+    command[command_length] = '\0';
+    cursor += command_length;
+    skip_command_spaces(&cursor);
+    strncpy(arguments, cursor, sizeof(arguments) - 1);
+
+    if (command[0] == '\0') return;
+
+    history_add(line);
+
+    if (strcmp(command, "history") == 0) {
+        int first = history_count == SHELL_HISTORY_SIZE ? history_write : 0;
+        for (int offset = 0; offset < history_count; offset++) {
+            int entry = (first + offset) % SHELL_HISTORY_SIZE;
+            print_uint64_dec((uint64_t)(offset + 1));
+            print_str("  ");
+            print_str(command_history[entry]);
+            print_str("\n");
         }
-        print_str("\n");
-    }
-    else {
-        print_str("Unknown command: ");
-        print_str(cmd_name);
-        print_str("\n");
+        return;
     }
 
+    for (int index = 0; index < modules_count; index++) {
+        if (strcmp(modules[index].name, command) == 0) {
+            if (modules[index].run) modules[index].run(arguments);
+            if (col != 0) print_str("\n");
+            return;
+        }
+    }
+
+    print_str("Comando nao encontrado: ");
+    print_str(command);
+    print_str("\n");
 }
 
-void qbs_echo_prompt() {
-    print_str("root@tty:$ ");
-    //print_str("\u@\h:\w\$ ");
+void shell_init(void) {
+}
+
+void shell_run(char* args) {
+    (void)args;
 }

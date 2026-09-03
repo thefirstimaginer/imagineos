@@ -9,6 +9,5 @@
 main/distro/x86_64/main.iso
 *.iso
 *.o
-/main/source/implementation/shell
-/implementation
 targets/
+/.build

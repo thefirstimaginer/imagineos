@@ -14,6 +14,8 @@ Module modules[] = {
     {"halt", halt_init, halt_run},
     {"ver", ver_init, ver_run},
     {"help", help_init, help_run},
+    {"clear", clear_init, clear_run},
+    {"ps", ps_init, ps_run},
     {"video", video_init, video_run},  // driver de vídeo
     // Adicione outros módulos aqui
 };

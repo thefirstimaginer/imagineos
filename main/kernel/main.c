@@ -6,20 +6,14 @@
 // #include "graphics.h"  // Driver gráfico - arquivo removido
 #include "bool.h"
 #include "keyboard_keys.h"
-#include "modules.h"
-#include "process.h"
+#include "management/init.h"
 #include "scheduler.h"
 //#include "main.h"
 
 void kernel_main()                   // É onde o sistema roda
 {
-    process_init();  // Inicializa sistema de processos
+    init_system();
     scheduler_init();  // Inicializa scheduler
-
-    modules_load(); // Carrega os módulos antes do shell
-    
-    // Inicia o prompt de login primeiro
-    login_prompt();
     
     keyboard_keys_init();   // inicializa as teclas
     keyboard_init();

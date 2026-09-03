@@ -25,6 +25,7 @@ typedef struct {
 // PCB (Process Control Block)
 typedef struct Process {
     uint32_t pid;           // ID único do processo
+    const char* name;       // Nome do programa
     ProcessState state;     // Estado atual
     CpuContext context;     // Contexto de CPU
     uint64_t stack_top;     // Topo da pilha
@@ -35,10 +36,13 @@ typedef struct Process {
 // Variáveis globais
 extern Process* process_list;
 extern Process* current_process;
+extern uint32_t process_count;
 
 // Funções básicas
 void process_init();
 Process* process_create(void (*entry_point)());
+Process* process_create_named(const char* name, void (*entry_point)());
+const char* process_state_name(ProcessState state);
 void process_switch(Process* old, Process* new);
 void process_yield();
 
