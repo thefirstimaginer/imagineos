@@ -1,6 +1,7 @@
 #include "print.h"
 #include "shell.h"
 #include "keyboard.h"
+#include "userspace/login.h"
 #include "x86_64/rtc.h"
 // #include "graphics.h"  // Driver gráfico - arquivo removido
 #include "bool.h"
@@ -16,10 +17,10 @@ void kernel_main()                   // É onde o sistema roda
     scheduler_init();  // Inicializa scheduler
 
     modules_load(); // Carrega os módulos antes do shell
-    //user_load_kits();
-    shell_init();
-    //qbs_init();
-
+    
+    // Inicia o prompt de login primeiro
+    login_prompt();
+    
     keyboard_keys_init();   // inicializa as teclas
     keyboard_init();
     keyboard_set_handler(handle_input);

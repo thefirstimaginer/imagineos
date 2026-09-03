@@ -127,26 +127,40 @@ return base_char;
 }
 
 
+extern void shell_add_char(char c);
+extern void login_handle_input(char c);
+extern int login_is_complete(void);
+
+void keyboard_keys_init(void) {
+    // Inicialização de mapeamento do teclado: sem estado adicional por enquanto.
+}
+
 void handle_input(struct KeyboardEvent event) {
     if (event.type == KEYBOARD_EVENT_TYPE_MAKE) {
         
         // Converte o código da tecla para um caractere
     char c = to_ascii(event.code,event.shift_active, event.caps_active, event.num_lock_active);
         
-        // Decide o que fazer
-        if (c == '\b') {
-            // Se for backspace, chama a nova função
-            backspace(); 
-        } 
-        else if (c == '\n') {
-            // Tratar o ENTER (pular linha) e processar comandos
-            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-            shell_handle_enter();
-        }
-        else if (c != '?') { // Ignora teclas não mapeadas
-            // É um caractere normal (A, B, C...)
-            print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-            print_char(c);
+        // Redireciona para login ou shell dependendo do estado
+        if (!login_is_complete()) {
+            // Ainda em processo de login
+            login_handle_input(c);
+        } else {
+            // Login completo, processa comandos do shell
+            if (c == '\b') {
+                // Se for backspace, passa para o shell processar
+                shell_add_char('\b'); 
+            } 
+            else if (c == '\n') {
+                // Tratar o ENTER (pular linha) e processar comandos
+                print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
+                shell_add_char('\n');
+            }
+            else if (c != '?') { // Ignora teclas não mapeadas
+                // É um caractere normal (A, B, C...)
+                // Adiciona ao buffer de input do shell
+                shell_add_char(c);
+            }
         }
 
     } else if (event.type == KEYBOARD_EVENT_TYPE_BREAK) {

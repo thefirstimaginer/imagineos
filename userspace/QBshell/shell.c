@@ -1,3 +1,7 @@
+#include "print.h"
+#include "string.h"
+#include "modules.h"
+
 void qbs_main() {
 
 }
@@ -5,7 +9,7 @@ void qbs_main() {
 void qbs_commands() {
 
 	if (strcmp(cmd_name, "help") == 0) {
-		print_str("QBSHELL - vR1 - May 2026 Release\n");
+		print_str("QBSHELL - vR1 - Aug 2026 Release\n");
         print_str("Copyright (c) 2026, TeamImagine\n\n");
 
         print_str("Available Commands:\n");
@@ -14,7 +18,7 @@ void qbs_commands() {
         print_str("  cd   - Change Dir\n");
         print_str("  exec - Change actual shell proccess by another program.\n");
         print_str("  exit - Exit the shell\n");
-        print_str("  kill - Force stop of a current task\n")
+        print_str("  kill - Force stop of a current task\n");
         print_str("  echo - Print message on the screen\n");
     }
     else if (strcmp(cmd_name, "date") == 0) {
