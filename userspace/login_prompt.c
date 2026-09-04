@@ -98,6 +98,8 @@ void login_prompt(void) {
     print_str("\n");
     
     print_str("Usuario: ");
+    enable_cursor(0, 15);
+    set_cursor(col, row);
     login_state = 0;
     login_input_index = 0;
 }
