@@ -1,0 +1,67 @@
+# Preciso de ajuda na organização da codebase do projeto
+
+imagineos/
+├── arch/                     # Tudo que depende da CPU
+│   └── x86_64/
+│       ├── boot/             # Assembly de inicialização (multiboot, entry.S)
+│       │   └── start.asm
+│       ├── include/          # Headers ESPECÍFICOS dessa arch (GDT, IDT, Ports)
+│       │   ├── gdt.h
+│       │   ├── idt.h
+│       │   ├── pic.h
+│       │   └── port.h
+│       └── src/              # Código .c/.asm específico da arch
+│           ├── gdt.c
+│           ├── idt.c
+│           └── pic.c
+│
+├── kernel/                   # Núcleo independente da arquitetura
+│   ├── include/              # Headers públicos do núcleo
+│   │   ├── print.h
+│   │   ├── scheduler.h
+│   │   ├── process.h
+│   │   └── modules.h
+│   ├── main.c                # O kmain() (entry point em C)
+│   ├── scheduler.c
+│   ├── process.c
+│   └── syscall.c             # Chamadas de sistema
+│
+├── drivers/                  # Periféricos (antigo devices/drivers)
+│   ├── include/
+│   │   ├── keyboard.h
+│   │   ├── ps2.h
+│   │   ├── rtc.h
+│   │   └── video.h
+│   ├── keyboard/
+│   │   ├── keyboard.c
+│   │   └── layouts/
+│   │       └── keyboard_keys.c
+│   ├── ps2.c
+│   ├── rtc.c
+│   └── video/
+│       └── video.c
+│
+├── lib/                      # Biblioteca padrão (string, math, stdio)
+│   ├── include/
+│   │   ├── string.h
+│   │   ├── math.h
+│   │   ├── stdio.h
+│   │   └── bool.h
+│   └── src/
+│       ├── string.c
+│       └── printf.c
+│
+├── userspace/                # (igual ao atual)
+│   ├── common/
+│   │   ├── QBshell/
+│   │   └── system/
+│   └── utilities/
+│
+├── init/                     # Inicialização de subsistemas (pode manter)
+│   └── init.c
+│
+├── documentation/            # APENAS documentação (roadmaps, notas)
+│
+├── Makefile
+├── LICENSE
+└── README.md
