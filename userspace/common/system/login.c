@@ -6,7 +6,7 @@
  */
 
 #include "print.h"
-#include "libraries/libimagine.h"
+#include "libraries/stdimagine.h"
 
 // Variáveis globais de usuário e hostname
 char current_username[32] = "root";

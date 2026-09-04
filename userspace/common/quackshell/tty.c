@@ -1,8 +1,8 @@
 #include "print.h"
-#include "tty.h"
-#include "shell.h"
-#include "userspace/login.h"
-#include "libraries/libimagine.h"
+#include "userspace/quackshell/tty.h"
+#include "userspace/quackshell/shell.h"
+#include "userspace/system/login.h"
+#include "libraries/stdimagine.h"
 
 static char input_buffer[256] = {0};
 static int input_index = 0;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "print.h"
-#include "libraries/libimagine.h"
+#include "libraries/stdimagine.h"
 
 extern char current_username[32];
 extern char current_hostname[32];

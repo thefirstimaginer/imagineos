@@ -6,9 +6,9 @@
  */
 
 #include "print.h"
-#include "userspace/login.h"
-#include "libraries/libimagine.h"
-#include "userspace/QBshell/tty.h"
+#include "userspace/system/login.h"
+#include "libraries/stdimagine.h"
+#include "userspace/quackshell/tty.h"
 
 // Buffer de entrada para o login
 static char login_input_buffer[256] = {0};

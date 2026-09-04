@@ -1,6 +1,6 @@
 #include <stddef.h>
-#include "bool.h"
-#include "keyboard.h"
+#include "libraries/bool.h"
+#include "../include/keyboard.h"
 #include "idt.h"
 #include "ps2.h"
 #include "print.h"

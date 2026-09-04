@@ -1,9 +1,9 @@
 #include "init.h"
-#include "process.h"
+#include "management/process.h"
 #include "modules.h"
-#include "shell.h"
-#include "print.h"
-#include "rtc.h"
+#include "userspace/quackshell/shell.h"
+#include "management/print.h"
+#include "x86_64/rtc.h"
 
 extern void login_prompt(void);
 extern void calc_run(char* args);

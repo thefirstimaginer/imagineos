@@ -35,5 +35,4 @@ void graphics_put_pixel(int x, int y, uint16_t color);  // Desenha um pixel
 void graphics_draw_char(int x, int y, char c, uint16_t fg_color, uint16_t bg_color);  // Desenha um caractere
 void graphics_draw_string(int x, int y, const char* str, uint16_t fg_color, uint16_t bg_color);  // Desenha uma string
 
-#endif</content>
-<parameter name="filePath">/workspaces/imagine-os/main/include/graphics.h
+#endif
