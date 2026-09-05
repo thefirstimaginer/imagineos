@@ -53,6 +53,14 @@ typedef struct {
 
 extern void *memcpy(void *, const void *, size_t);
 extern void *memset(void *, int, size_t);
+static uint64_t multiboot_info_address;
+
+static int module_name_matches(const char *module_name, const char *wanted_name) {
+    while (*wanted_name != '\0') {
+        if (*module_name++ != *wanted_name++) return 0;
+    }
+    return *module_name == '\0';
+}
 
 static int load_elf(uint32_t start, uint32_t end, uint64_t *entry) {
     ElfHeader *header = (ElfHeader *)(uintptr_t)start;
@@ -78,23 +86,42 @@ static int load_elf(uint32_t start, uint32_t end, uint64_t *entry) {
     return 0;
 }
 
-int user_init_from_multiboot(uint64_t multiboot_info) {
+static int load_named_module(const char *name, uint64_t *entry) {
     uint32_t offset = 8;
     while (1) {
-        MultibootTag *tag = (MultibootTag *)((uintptr_t)multiboot_info + offset);
+        MultibootTag *tag = (MultibootTag *)((uintptr_t)multiboot_info_address + offset);
         if (tag->type == MULTIBOOT_TAG_END) break;
         if (tag->type == MULTIBOOT_TAG_MODULE) {
             MultibootModuleTag *module = (MultibootModuleTag *)tag;
-            uint64_t entry;
-            print_str("[INFO] loading userspace module\n");
-            if (load_elf(module->start, module->end, &entry) == 0) {
-                print_str("[OK] init.elf loaded, entering userspace\n");
-                user_enter(entry, USER_STACK_TOP);
+            if (module_name_matches(module->name, name)) {
+                return load_elf(module->start, module->end, entry);
             }
-            print_str("[FAIL] invalid userspace ELF\n");
-            return -1;
         }
         offset += (tag->size + 7) & ~7u;
     }
+    return -1;
+}
+
+int user_init_from_multiboot(uint64_t multiboot_info) {
+    uint64_t entry;
+
+    multiboot_info_address = multiboot_info;
+    print_str("[INFO] loading userspace module init.elf\n");
+    if (load_named_module("init.elf", &entry) == 0) {
+        user_enter(entry, USER_STACK_TOP);
+    }
+    print_str("[FAIL] invalid init.elf\n");
+    return -1;
+}
+
+int user_exec_service(const char *service_name) {
+    uint64_t entry;
+
+    if (module_name_matches(service_name, "shell.service")) {
+        if (load_named_module("shell.elf", &entry) != 0) return -1;
+    } else {
+        return -1;
+    }
+    user_enter(entry, USER_STACK_TOP);
     return -1;
 }

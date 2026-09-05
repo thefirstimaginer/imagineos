@@ -5,11 +5,13 @@ section .text
 bits 32
 start:
         mov esp, stack_top
+        mov esi, ebx
         call check_multiboot
         call check_cpuid
         call check_long_mode
         call setup_page_tables
         call enable_paging
+        mov ebx, esi
         lgdt [gdt64.pointer]
         jmp gdt64.code_segment:long_mode_start
         hlt
@@ -56,10 +58,10 @@ check_long_mode:
 
 setup_page_tables:
     mov eax, page_table_l3
-    or eax, 0b11
+        or eax, 0b111
     mov [page_table_l4], eax
     mov eax, page_table_l2
-    or eax, 0b11
+        or eax, 0b111
     mov [page_table_l3], eax
     add eax, 4096
     mov [page_table_l3 + 8], eax

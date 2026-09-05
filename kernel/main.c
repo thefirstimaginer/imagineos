@@ -4,6 +4,8 @@
 #include "syscall.h"
 #include "user.h"
 #include "tss.h"
+#include "print.h"
+#include "input.h"
 
 void kernel_main(uint64_t multiboot_info) {
     print_clear();
@@ -16,6 +18,7 @@ void kernel_main(uint64_t multiboot_info) {
     video_init();
     scheduler_init();
 
+    input_init();
     idt_init();
     print_str("[OK] IDT and scheduler\n");
 

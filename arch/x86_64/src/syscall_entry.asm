@@ -20,5 +20,9 @@ syscall_entry:
     call kernel_syscall_handler
     pop rcx
     pop r11
-    mov rsp, [rel syscall_user_stack]
-    sysret
+    push qword 0x1B
+    push qword [rel syscall_user_stack]
+    push r11
+    push qword 0x23
+    push rcx
+    iretq
