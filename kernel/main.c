@@ -1,12 +1,12 @@
 #include "print.h"
-#include "userspace/quackshell/shell.h"
+#include "shell.h"
 #include "keyboard_keys.h"
 #include "keyboard.h"
-#include "userspace/system/login.h"
-#include "x86_64/rtc.h"
+#include "login.h"
+#include "rtc.h"
 // #include "graphics.h"  // Driver gráfico - arquivo removido
-#include "libraries/bool.h"
-#include "management/init.h"
+#include "bool.h"
+#include "init.h"
 #include "scheduler.h"
 //#include "main.h"
 
