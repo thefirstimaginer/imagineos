@@ -1,21 +1,86 @@
 # Imagine Operating System <img width="200" height="auto" align="right" alt="imagine3w" src="https://github.com/user-attachments/assets/e406f860-0038-4076-8014-8fe5f7ff955e" />
 
+ImagineOS is an experimental and educational x86_64 operating system. The current
+release is vR1, codenamed **Jessica**.
 
+The project is under construction and unstable. It currently boots through GRUB
+and Multiboot2, starts a freestanding 64-bit kernel, and provides a VGA text-mode
+shell for testing kernel and userspace components.
 
-## vR1 Codename "Jessica"
-This production is Under Construction phase, is instable by now, it can 
-have bugs but if you want to test it, you can report to `nyxieworlduniverse@gmail.com`
+## Current status
 
-## Build
-Build instructions will be introduced in a future build.
+- GRUB/Multiboot2 boot sequence
+- x86_64 kernel written in C and Assembly
+- IDT, PIC, timer, RTC, PS/2 keyboard, and VGA text output
+- Basic process management and round-robin scheduler
+- QBshell with command history
+- No filesystem or persistent storage
+- No UEFI boot support
+- No active graphics/framebuffer mode
 
-## Emulate
-You can emulate your operating system using [Qemu](https://www.qemu.org/).
+## Requirements
 
- - `qemu-system-x86_64 -cdrom distro/out/imos-jessica-unstable(arch).iso`
- - Note: Close the emulator when finished, so as to not block writing to the `.iso file` for future builds.
+On a Debian or Ubuntu-based system, install the toolchain and emulator first:
 
-Alternatively, you should be able to load the operating system on a USB drive and boot into it when you turn on your computer. (I tested it, you need to boot in Legacy Mode, if you're in a UEFI system.)
+```sh
+sudo apt install build-essential nasm binutils grub-pc-bin grub-common xorriso qemu-system-x86_64
+```
+
+The build uses `gcc`, `ld`, `nasm`, and `grub-mkrescue`. QEMU is only required
+to run the resulting image.
+
+## Build and run
+
+Build the kernel ELF:
+
+```sh
+make
+```
+
+Create a bootable ISO at `distro/imos.iso`:
+
+```sh
+make iso
+```
+
+Build the ISO and start it in QEMU with serial output connected to the terminal:
+
+```sh
+make run
+```
+
+`make qemu` is an alias for `make run`. To remove generated files:
+
+```sh
+make clean
+```
+
+The generated kernel ELF is `.build/imos.elf`. The ISO is created with GRUB and
+boots in legacy BIOS mode; UEFI is not supported yet.
+
+## Shell commands
+
+The current shell registers these commands:
+
+`calc`, `clear`, `halt`, `help`, `history`, `li`, `liteinterp`, `ps`, `ver`, and
+`video`.
+
+Command arguments and some command implementations are still limited. Use
+`history` to navigate previously entered commands.
+
+## Project layout
+
+- `arch/x86_64/boot/`: Multiboot header, boot assembly, and linker script
+- `arch/x86_64/src/`: interrupt, PIC, and port implementations
+- `kernel/`: kernel entry point, modules, processes, and scheduler
+- `devices/drivers/`: keyboard, PS/2, RTC, video, and text output drivers
+- `init/`: system initialization and initial processes
+- `userspace/`: shell and user-facing modules
+- `include/` and `lib/`: headers and freestanding library code
+- `documentation/`: design notes and development roadmaps
+
+For planned work and known limitations, see [TODO.md](TODO.md) and the
+[development roadmap](documentation/roadmap.md).
 
 ## Copyright
 
