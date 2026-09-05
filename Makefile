@@ -33,7 +33,7 @@ C_SRCS := \
 	kernel/src/modules.c \
 	kernel/src/process.c \
 	kernel/src/scheduler.c \
-	kernel/src/syscall.c \
+	kernel/src/syscall_dispatch.c \
 	lib/libkern/src/kprintf.c \
 	lib/libkern/src/kmalloc.c \
 	lib/libkern/src/kassert.c \
@@ -47,10 +47,10 @@ C_SRCS := \
 	userspace/utilities/ps.c \
 	userspace/utilities/version.c \
 	lib/common/src/string.c \
-	arch/x86_64/src/syscall.c
+	arch/x86_64/src/syscall_msr.c
 
 LIBC_SRCS := \
-	lib/libc/src/syscall.c \
+	lib/libc/src/syscall_wrapper.c \
 	lib/libc/src/unistd.c \
 	lib/libc/src/stdio.c
 
