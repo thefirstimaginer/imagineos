@@ -1,6 +1,6 @@
-#include "print.h"
-#include "shell.h"
-#include "modules.h"
+#include "management/print.h"
+#include "userspace/quackshell/shell.h"
+#include "management/modules.h"
 #include "libraries/string.h"
 
 #define SHELL_HISTORY_SIZE 24

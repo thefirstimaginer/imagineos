@@ -11,10 +11,7 @@ NASMFLAGS := -f elf64
 LDFLAGS := -m elf_x86_64 -n --gc-sections
 
 C_SRCS := \
-	kernel/main.c \
-	kernel/modules.c \
-	kernel/process.c \
-	kernel/scheduler.c \
+	init/init.c \
 	arch/x86_64/src/idt.c \
 	arch/x86_64/src/pic.c \
 	arch/x86_64/src/port.c \
@@ -24,13 +21,16 @@ C_SRCS := \
 	devices/drivers/ps2.c \
 	devices/drivers/rtc.c \
 	devices/drivers/video.c \
-	init/init.c \
-	lib/src/string.c \
-	userspace/common/QBshell/shell.c \
-	userspace/common/QBshell/tty.c \
+	kernel/main.c \
+	kernel/management/modules.c \
+	kernel/management/process.c \
+	kernel/management/scheduler.c \
+	userspace/common/quackshell/shell.c \
+	userspace/common/quackshell/tty.c \
 	userspace/common/system/halt.c \
 	userspace/common/system/login.c \
 	userspace/common/system/login_prompt.c \
+	userspace/common/system/string.c \
 	userspace/utilities/calc.c \
 	userspace/utilities/clear.c \
 	userspace/utilities/help.c \
@@ -77,4 +77,4 @@ run: iso
 qemu: run
 
 clean:
-	rm -rf $(BUILD_DIR) distro/iso distro/imos.iso
+	rm -rf $(BUILD_DIR) distro/iso distro/imos.iso distro/
