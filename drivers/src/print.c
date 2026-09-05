@@ -120,6 +120,18 @@ void print_char(char character) {
     }
 
     // modo texto normal
+    if (character == '\b') {
+        if (col > 0) {
+            col--;
+            buffer[col + NUM_COLS * row] = (struct Char) {
+                character: ' ',
+                color: color,
+            };
+            set_cursor(col, row);
+        }
+        return;
+    }
+
     if (character == '\n') {
         print_newline();
         return;

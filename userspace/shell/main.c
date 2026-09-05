@@ -2,6 +2,7 @@
 #include <syscall_numbers.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 void tty_init(void);
 int tty_read_line(char *line, unsigned int capacity);
@@ -40,7 +41,7 @@ int main(void) {
         } else if (strcmp(line, "test") == 0) {
             shell_write("[OK] shell is running in userspace\n");
         } else if (strcmp(line, "clear") == 0) {
-            shell_write("\033[2J\033[H");
+            syscall6(SYS_CLEAR_TERMINAL, 0, 0, 0, 0, 0, 0);
         } else if (strcmp(line, "exit") == 0) {
             shell_write("shell stopped\n");
             exit(0);

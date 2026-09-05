@@ -4,6 +4,11 @@
 #define SYS_READ  0
 #define SYS_WRITE 1
 #define SYS_EXEC_SERVICE 2
+#define SYS_READ_NONBLOCK 3
+#define SYS_GET_TICKS 4
+#define SYS_CLEAR_TERMINAL 5
+#define SYS_FORK 6
+#define SYS_WAITPID 7
 #define SYS_EXIT  60
 
 #define STDIN_FILENO  0
@@ -12,6 +17,8 @@
 
 #define EBADF  9
 #define EFAULT 14
+#define EAGAIN 11
+#define ECHILD 10
 #define ENOSYS 38
 
 #endif

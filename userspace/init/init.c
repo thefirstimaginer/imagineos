@@ -23,8 +23,6 @@ static int read_service_from_script(void) {
 }
 
 int main(int argc, char **argv) {
-    ssize_t written;
-
     (void)argc;
     (void)argv;
 

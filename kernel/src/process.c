@@ -15,6 +15,7 @@ static uint32_t next_pid = 1;
 
 static Process process_pool[MAX_PROCESSES];
 static uint8_t process_stacks[MAX_PROCESSES][PROCESS_STACK_SIZE];
+extern UserFrame syscall_user_frame;
 
 // Função dummy para idle process
 static void idle_process() {
@@ -38,6 +39,19 @@ Process* process_create(void (*entry_point)()) {
     return process_create_named("process", entry_point);
 }
 
+Process* process_create_user(const char* name, uint64_t cr3) {
+    Process* process = process_create_named(name, idle_process);
+    if (process != NULL) {
+        process->context.cr3 = cr3;
+        process->state = PROCESS_RUNNING;
+        if (current_process != NULL && current_process->pid == 0) {
+            current_process->state = PROCESS_BLOCKED;
+            current_process = process;
+        }
+    }
+    return process;
+}
+
 Process* process_create_named(const char* name, void (*entry_point)()) {
     if (process_count >= MAX_PROCESSES || !entry_point) return NULL;
 
@@ -46,6 +60,9 @@ Process* process_create_named(const char* name, void (*entry_point)()) {
     proc->pid = next_pid++;
     proc->name = name;
     proc->state = PROCESS_READY;
+    proc->parent_pid = current_process != NULL ? current_process->pid : 0;
+    proc->exit_status = 0;
+    proc->waiting_for_pid = 0;
     proc->stack_base = (uint64_t) process_stacks[process_count];
     proc->stack_top = proc->stack_base + PROCESS_STACK_SIZE;
 
@@ -76,6 +93,36 @@ Process* process_create_named(const char* name, void (*entry_point)()) {
     process_count++;
 
     return proc;
+}
+
+Process* process_find(uint32_t pid) {
+    Process* process = process_list;
+
+    while (process != NULL) {
+        if (process->pid == pid) return process;
+        process = process->next;
+    }
+    return NULL;
+}
+
+void process_mark_exit(Process* process, int status) {
+    if (process == NULL) return;
+    process->exit_status = status;
+    process->state = PROCESS_TERMINATED;
+}
+
+void process_reap(Process* process) {
+    if (process == NULL) return;
+    process->state = PROCESS_BLOCKED;
+    process->parent_pid = 0;
+    process->exit_status = 0;
+    process->waiting_for_pid = 0;
+}
+
+void process_capture_user_frame(void) {
+    if (current_process != NULL) {
+        current_process->user_frame = syscall_user_frame;
+    }
 }
 
 const char* process_state_name(ProcessState state) {

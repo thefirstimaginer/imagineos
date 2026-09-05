@@ -110,3 +110,13 @@ long input_read(char *buffer, unsigned long count) {
     }
     return (long)copied;
 }
+
+long input_read_nonblock(char *buffer, unsigned long count) {
+    unsigned long copied = 0;
+
+    while (copied < count && input_read_position != input_write_position) {
+        buffer[copied++] = input_buffer[input_read_position % INPUT_BUFFER_SIZE];
+        input_read_position++;
+    }
+    return (long)copied;
+}

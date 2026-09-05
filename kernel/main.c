@@ -17,6 +17,7 @@ void kernel_main(uint64_t multiboot_info) {
     print_str("[OK] TSS\n");
     video_init();
     scheduler_init();
+    process_init();
 
     input_init();
     idt_init();

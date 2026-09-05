@@ -9,6 +9,7 @@ section .text
 bits 64
 user_enter:
     mov rax, rsp
+    mov cr3, rdx
     mov rsp, rsi
     push qword 0x1B
     push rsi
