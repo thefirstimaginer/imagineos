@@ -12,6 +12,7 @@ void ver_run(char* args) {
 }
 
 void ver_module_main(char* args) {
+	(void)args;
 	print_str("RRRRRR  1111\n");
 	print_str("RR  RR    11\n");
 	print_str("RRRR      11\n");

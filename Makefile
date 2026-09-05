@@ -6,7 +6,14 @@ BUILD_DIR := .build
 KERNEL_BIN := $(BUILD_DIR)/imos.elf
 
 CFLAGS := -m64 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -Wall -Wextra \
-	-Ikernel/include -Idevices/include -Iarch/x86_64/include -Ilib/include -Ilib
+	-Iarch/x86_64/include \
+	-Idrivers/include \
+	-Ikernel/include \
+	-Ilib/libc/include \
+	-Ilib/libkern/include \
+	-Iuserspace/include
+
+
 NASMFLAGS := -f elf64
 LDFLAGS := -m elf_x86_64 -n --gc-sections
 
@@ -15,28 +22,26 @@ C_SRCS := \
 	arch/x86_64/src/idt.c \
 	arch/x86_64/src/pic.c \
 	arch/x86_64/src/port.c \
-	devices/drivers/keyboard.c \
-	devices/drivers/keyboard_keys.c \
-	devices/drivers/print.c \
-	devices/drivers/ps2.c \
-	devices/drivers/rtc.c \
-	devices/drivers/video.c \
+	drivers/src/keyboard.c \
+	drivers/src/keyboard_keys.c \
+	drivers/src/print.c \
+	drivers/src/ps2.c \
+	drivers/src/rtc.c \
+	drivers/src/video.c \
 	kernel/main.c \
-	kernel/management/modules.c \
-	kernel/management/process.c \
-	kernel/management/scheduler.c \
-	userspace/common/quackshell/shell.c \
-	userspace/common/quackshell/tty.c \
-	userspace/common/system/halt.c \
-	userspace/common/system/login.c \
-	userspace/common/system/login_prompt.c \
-	userspace/common/system/string.c \
+	kernel/src/modules.c \
+	kernel/src/process.c \
+	kernel/src/scheduler.c \
+	userspace/shell/shell.c \
+	userspace/shell/tty.c \
+	userspace/utilities/login.c \
+	userspace/utilities/login_prompt.c \
 	userspace/utilities/calc.c \
 	userspace/utilities/clear.c \
-	userspace/utilities/help.c \
 	userspace/utilities/lite.c \
 	userspace/utilities/ps.c \
-	userspace/utilities/version.c
+	userspace/utilities/version.c \
+	lib/libc/src/string.c
 
 ASM_SRCS := \
 	arch/x86_64/boot/header.asm \
@@ -68,7 +73,7 @@ $(BUILD_DIR)/%.o: %.asm
 iso: $(KERNEL_BIN)
 	mkdir -p distro/iso/boot/grub
 	cp $(KERNEL_BIN) distro/iso/boot/imos.elf
-	printf '%s\n' 'set timeout=0' 'set default=0' 'menuentry "ImagineOS" {' '    multiboot2 /boot/imos.elf' '    boot' '}' > distro/iso/boot/grub/grub.cfg
+	printf '%s\n' 'set timeout=0' 'set default=0' 'menuentry "Imagine R1" {' '    multiboot2 /boot/imos.elf' '    boot' '}' > distro/iso/boot/grub/grub.cfg
 	grub-mkrescue -o distro/imos.iso distro/iso >/dev/null 2>&1
 
 run: iso
