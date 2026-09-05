@@ -9,6 +9,7 @@ CFLAGS := -m64 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -Wall -Wex
 	-Iarch/x86_64/include \
 	-Idrivers/include \
 	-Ikernel/include \
+	-Ilib/common/include \
 	-Ilib/libc/include \
 	-Ilib/libkern/include \
 	-Iuserspace/include
@@ -32,6 +33,10 @@ C_SRCS := \
 	kernel/src/modules.c \
 	kernel/src/process.c \
 	kernel/src/scheduler.c \
+	kernel/src/syscall.c \
+	lib/libkern/src/kprintf.c \
+	lib/libkern/src/kmalloc.c \
+	lib/libkern/src/kassert.c \
 	userspace/shell/shell.c \
 	userspace/shell/tty.c \
 	userspace/utilities/login.c \
@@ -41,22 +46,32 @@ C_SRCS := \
 	userspace/utilities/lite.c \
 	userspace/utilities/ps.c \
 	userspace/utilities/version.c \
-	lib/libc/src/string.c
+	lib/common/src/string.c \
+	arch/x86_64/src/syscall.c
+
+LIBC_SRCS := \
+	lib/libc/src/syscall.c \
+	lib/libc/src/unistd.c \
+	lib/libc/src/stdio.c
 
 ASM_SRCS := \
 	arch/x86_64/boot/header.asm \
 	arch/x86_64/boot/main.asm \
 	arch/x86_64/boot/main64.asm \
 	arch/x86_64/src/idt_.asm \
+	arch/x86_64/src/syscall_entry.asm \
 	arch/x86_64/src/port_.asm
 
 C_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
+LIBC_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIBC_SRCS))
 ASM_OBJS := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(ASM_SRCS))
 
-.PHONY: all build iso run qemu clean
+.PHONY: all build libc iso run qemu clean
 
 all: build
 build: $(KERNEL_BIN)
+
+libc: $(LIBC_OBJS)
 
 $(KERNEL_BIN): $(C_OBJS) $(ASM_OBJS) arch/x86_64/boot/linker.ld
 	mkdir -p $(dir $@)

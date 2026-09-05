@@ -8,10 +8,12 @@
 #include "bool.h"
 #include "init.h"
 #include "scheduler.h"
+#include "syscall.h"
 //#include "main.h"
 
 void kernel_main()                   // É onde o sistema roda
 {
+    syscall_init();
     init_system();
     scheduler_init();  // Inicializa scheduler
     

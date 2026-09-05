@@ -112,7 +112,10 @@ section .rodata
 gdt64:
         dq 0
 .code_segment: equ $ - gdt64
-        dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53)
+        dq 0x00AF9A000000FFFF
+        dq 0x00CF92000000FFFF
+        dq 0x00CFF2000000FFFF
+        dq 0x00AFFA000000FFFF
 .pointer:
         dw $ - gdt64 - 1
         dq gdt64
