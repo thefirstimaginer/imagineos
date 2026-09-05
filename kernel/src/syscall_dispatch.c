@@ -7,8 +7,8 @@
 
 static long sys_write(int fd, const char *buffer, size_t count) {
     size_t index;
-    if (fd != STDOUT_FILENO && fd != STDERR_FILENO) return -1;
-    if (buffer == NULL) return -1;
+    if (fd != STDOUT_FILENO && fd != STDERR_FILENO) return -EBADF;
+    if (buffer == NULL) return -EFAULT;
     for (index = 0; index < count; index++) print_char(buffer[index]);
     return (long)count;
 }
@@ -21,14 +21,10 @@ static long sys_exit(int status) {
     for (;;) __asm__ volatile ("hlt");
 }
 
-long kernel_syscall_handler(long number, long arg1, long arg2, long arg3,
-                            long arg4, long arg5, long arg6) {
-    (void)arg4;
-    (void)arg5;
-    (void)arg6;
+long kernel_syscall_handler(long number, long arg1, long arg2, long arg3) {
     switch (number) {
         case SYS_WRITE: return sys_write((int)arg1, (const char *)arg2, (size_t)arg3);
         case SYS_EXIT: return sys_exit((int)arg1);
-        default: return -1;
+        default: return -ENOSYS;
     }
 }

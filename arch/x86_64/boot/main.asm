@@ -72,6 +72,10 @@ setup_page_tables:
     mov eax, 0x200000
     mul ecx
     or eax, 0b10000011
+        cmp ecx, 2
+        jne .kernel_page
+        or eax, 0b100
+.kernel_page:
     mov [page_table_l2 + ecx * 8], eax
     inc ecx
     cmp ecx, 2048
@@ -110,12 +114,15 @@ stack_top:
 
 section .rodata
 gdt64:
+global gdt64
         dq 0
 .code_segment: equ $ - gdt64
         dq 0x00AF9A000000FFFF
         dq 0x00CF92000000FFFF
         dq 0x00CFF2000000FFFF
         dq 0x00AFFA000000FFFF
+        dq 0
+        dq 0
 .pointer:
         dw $ - gdt64 - 1
         dq gdt64

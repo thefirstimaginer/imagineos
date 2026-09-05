@@ -9,4 +9,8 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+#define EBADF  9
+#define EFAULT 14
+#define ENOSYS 38
+
 #endif

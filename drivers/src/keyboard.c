@@ -131,7 +131,6 @@ void keyboard_handler() {
 }
 
 void keyboard_init() {
-	idt_init();
 	idt_set_handler_keyboard(keyboard_handler);
 }
 
