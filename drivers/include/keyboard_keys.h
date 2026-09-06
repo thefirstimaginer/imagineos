@@ -1,5 +1,6 @@
 #pragma once
 #include "bool.h"
+#include <stdint.h>
 
 struct KeyboardEvent;
 void handle_input(struct KeyboardEvent event);

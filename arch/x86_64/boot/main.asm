@@ -5,11 +5,13 @@ section .text
 bits 32
 start:
         mov esp, stack_top
+        mov esi, ebx
         call check_multiboot
         call check_cpuid
         call check_long_mode
         call setup_page_tables
         call enable_paging
+        mov ebx, esi
         lgdt [gdt64.pointer]
         jmp gdt64.code_segment:long_mode_start
         hlt
@@ -56,10 +58,10 @@ check_long_mode:
 
 setup_page_tables:
     mov eax, page_table_l3
-    or eax, 0b11
+        or eax, 0b111
     mov [page_table_l4], eax
     mov eax, page_table_l2
-    or eax, 0b11
+        or eax, 0b111
     mov [page_table_l3], eax
     add eax, 4096
     mov [page_table_l3 + 8], eax
@@ -72,6 +74,10 @@ setup_page_tables:
     mov eax, 0x200000
     mul ecx
     or eax, 0b10000011
+        cmp ecx, 2
+        jne .kernel_page
+        or eax, 0b100
+.kernel_page:
     mov [page_table_l2 + ecx * 8], eax
     inc ecx
     cmp ecx, 2048
@@ -110,9 +116,15 @@ stack_top:
 
 section .rodata
 gdt64:
+global gdt64
         dq 0
 .code_segment: equ $ - gdt64
-        dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53)
+        dq 0x00AF9A000000FFFF
+        dq 0x00CF92000000FFFF
+        dq 0x00CFF2000000FFFF
+        dq 0x00AFFA000000FFFF
+        dq 0
+        dq 0
 .pointer:
         dw $ - gdt64 - 1
         dq gdt64

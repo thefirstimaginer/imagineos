@@ -1,84 +1,78 @@
-#include "print.h"
-#include "tty.h"
-#include "shell.h"
-#include "login.h"
-#include "stdimagine.h"
+#include <syscall_numbers.h>
+#include <unistd.h>
+#include <string.h>
 
-static char input_buffer[256] = {0};
-static int input_index = 0;
+static char tty_line[128];
+static unsigned int tty_length;
+static int tty_cursor_visible;
 
-void shell_print_prompt(void) {
-    print_set_color(PRINT_COLOR_GREEN, PRINT_COLOR_BLACK);
-    print_str((char*)login_get_username());
-    print_str("@");
-    print_str((char*)login_get_hostname());
-    print_str(":~$ ");
-    print_set_color(PRINT_COLOR_WHITE, PRINT_COLOR_BLACK);
-    shell_prompt_row = row;
-    shell_prompt_col = col;
-    enable_cursor(0, 15);
-    set_cursor(col, row);
+void tty_init(void) {
+    tty_length = 0;
+    tty_cursor_visible = 0;
+    memset(tty_line, 0, sizeof(tty_line));
 }
 
-void terminal_init(void) {
-    input_index = 0;
-    memset(input_buffer, 0, sizeof(input_buffer));
-}
-
-void terminal_start(void) {
-    terminal_init();
-    shell_print_prompt();
-}
-
-static void terminal_replace_input(const char* text) {
-    while (input_index > 0) {
-        input_index--;
-        input_buffer[input_index] = '\0';
-        backspace();
+static void tty_cursor_hide(void) {
+    if (tty_cursor_visible) {
+        write(STDOUT_FILENO, "\b", 1);
+        tty_cursor_visible = 0;
     }
-
-    strncpy(input_buffer, text, sizeof(input_buffer) - 1);
-    input_buffer[sizeof(input_buffer) - 1] = '\0';
-    input_index = (int)strlen(input_buffer);
-    print_str(input_buffer);
 }
 
-void terminal_history_up(void) {
-    terminal_replace_input(shell_history_up());
+static void tty_cursor_show(void) {
+    if (!tty_cursor_visible) {
+        write(STDOUT_FILENO, "_", 1);
+        tty_cursor_visible = 1;
+    }
 }
 
-void terminal_history_down(void) {
-    terminal_replace_input(shell_history_down());
+static void tty_cursor_blink(void) {
+    if (tty_cursor_visible) tty_cursor_hide();
+    else tty_cursor_show();
 }
 
-void terminal_input(char c) {
-    if (c == '\b') {
-        if (input_index > 0) {
-            input_index--;
-            input_buffer[input_index] = '\0';
-            backspace();
+static void tty_erase(void) {
+    if (tty_length != 0) {
+        tty_cursor_hide();
+        tty_length--;
+        write(STDOUT_FILENO, "\b", 1);
+        tty_cursor_show();
+    }
+}
+
+int tty_read_line(char *line, unsigned int capacity) {
+    char character;
+    unsigned long next_blink = get_ticks() + 150;
+
+    tty_length = 0;
+    tty_cursor_show();
+    while (tty_length + 1 < capacity) {
+        if (read_nonblock(STDIN_FILENO, &character, 1) != 1) {
+            if (get_ticks() >= next_blink) {
+                tty_cursor_blink();
+                next_blink = get_ticks() + 150;
+            }
+            continue;
         }
-        return;
+        tty_cursor_hide();
+        if (character == '\b') {
+            tty_erase();
+            continue;
+        }
+        if (character == '\n') {
+            tty_line[tty_length] = '\0';
+            strcpy(line, tty_line);
+            write(STDOUT_FILENO, "\n", 1);
+            tty_cursor_visible = 0;
+            return (int)tty_length;
+        }
+        tty_line[tty_length++] = character;
+        write(STDOUT_FILENO, &character, 1);
+        tty_cursor_show();
+        next_blink = get_ticks() + 150;
     }
 
-    if (c == '\r') return;
-
-    if (c == '\n') {
-        input_buffer[input_index] = '\0';
-        print_str("\n");
-        shell_execute_line(input_buffer);
-        input_index = 0;
-        memset(input_buffer, 0, sizeof(input_buffer));
-        shell_print_prompt();
-        return;
-    }
-
-    if (c >= 32 && c < 127 && input_index < (int)sizeof(input_buffer) - 1) {
-        input_buffer[input_index++] = c;
-        print_char(c);
-    }
-}
-
-void shell_add_char(char c) {
-    terminal_input(c);
+    tty_line[tty_length] = '\0';
+    strcpy(line, tty_line);
+    return (int)tty_length;
 }

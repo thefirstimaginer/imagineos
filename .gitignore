@@ -12,6 +12,4 @@ main/distro/x86_64/main.iso
 targets/
 /.build
 /distro
-/documentation
-documentation/
 *.notused

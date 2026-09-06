@@ -3,6 +3,7 @@
 #include "gdt.h"
 #include "idt.h"
 #include "pic.h"
+#include "scheduler.h"
 
 #define IDT_IRQ0_TIMER 0x20
 #define IDT_IRQ1_KEYBOARD 0x21
@@ -65,6 +66,10 @@ extern void idt_handler_timer_wrapped();
 void idt_handler_timer() {
 	extern void scheduler_tick();
 	scheduler_tick();
+}
+
+void idt_handler_timer_frame(InterruptFrame *frame) {
+	scheduler_user_tick(frame);
 }
 
 void idt_init() {

@@ -1,0 +1,4 @@
+#ifndef IMAGINEOS_COMMON_MATH_H
+#define IMAGINEOS_COMMON_MATH_H
+
+#endif
