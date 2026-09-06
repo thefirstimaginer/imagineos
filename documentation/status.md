@@ -29,11 +29,13 @@ A documentacao antiga foi removida porque continha caminhos de uma arquitetura a
 
 ### Loader e init
 
-O sistema ainda pode imprimir `invalid init.elf`, travar durante a inicializacao ou reiniciar a VM. O problema nao e tempo de procura: o modulo ja esta presente na memoria quando o kernel inicia. As areas de risco sao o parser Multiboot/ELF, a copia para o staging em `0x400000`, a criacao das page tables e a entrada em ring 3.
+O sistema ainda pode imprimir `invalid init.elf`, travar durante a inicializacao ou reiniciar a VM. O problema nao e tempo de procura: o modulo ja esta presente na memoria quando o kernel inicia. As areas de risco sao o parser Multiboot/ELF, a copia para o staging em `0x400000`, a criacao das page tables e a entrada em ring 3. A compilacao agora desativa `ENDBR64`/CET e red zone, que eram incompatíveis com o ambiente freestanding observado durante o boot.
 
 ### Processos
 
-`fork`, `waitpid` e `exit` ainda nao formam um ciclo de vida confiavel. O processo filho pode imprimir `[OK] child process started` e, em seguida, provocar page fault ou triple fault. O scheduler e o caminho de retorno de interrupcao ainda nao preservam todos os invariantes necessarios.
+`fork`, `waitpid` e `exit` ainda nao formam um ciclo de vida comprovadamente confiavel. O retorno entre processos agora usa `user_resume`, que restaura o `UserFrame` completo. O loader de servicos tambem foi corrigido para escrever no slot fisico do filho, sem sobrescrever a imagem virtual do pai. O teste interativo de `exit` e `proc-test` ainda precisa confirmar o comportamento no QEMU.
+
+O login vazio agora permanece no prompt em vez de chamar `exit`, evitando usar prematuramente o retorno de processo durante a cadeia `getty -> login -> shell`.
 
 ### Scheduler e frames
 
@@ -67,8 +69,8 @@ Qualquer resultado positivo no shell deve ser tratado como um teste isolado, nao
 ## Problemas conhecidos
 
 1. Reinicio intermitente antes ou durante o carregamento do `init.elf`.
-2. Page fault/triple fault durante `proc-test`.
-3. Possivel corrupcao no retorno de interrupcoes de ring 3.
+2. Page fault/triple fault durante `proc-test` ou ao encerrar um servico.
+3. Possivel corrupcao no retorno de interrupcoes de ring 3; o handler agora mostra RIP, CS, RFLAGS, RSP, SS, erro e CR3.
 4. Trocas de CR3 e frames de processo ainda insuficientemente testadas.
 5. Ausencia de relatorio de panic legivel para excecoes de CPU.
 6. Falta de testes automatizados de boot e de syscalls em guest.

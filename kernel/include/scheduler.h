@@ -16,6 +16,7 @@ void scheduler_init();
 void scheduler_tick();
 uint32_t scheduler_ticks(void);
 void scheduler_user_tick(InterruptFrame *frame);
+void load_user_frame(Process *process, InterruptFrame *frame);
 
 // Agenda próximo processo
 void scheduler_schedule();

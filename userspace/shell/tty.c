@@ -44,9 +44,11 @@ int tty_read_line(char *line, unsigned int capacity) {
     char character;
     unsigned long next_blink = get_ticks() + 150;
 
+    if (capacity == 0) return 0;
+    if (capacity > sizeof(tty_line)) capacity = sizeof(tty_line);
     tty_length = 0;
     tty_cursor_show();
-    while (tty_length + 1 < capacity) {
+    for (;;) {
         if (read_nonblock(STDIN_FILENO, &character, 1) != 1) {
             if (get_ticks() >= next_blink) {
                 tty_cursor_blink();
@@ -66,13 +68,11 @@ int tty_read_line(char *line, unsigned int capacity) {
             tty_cursor_visible = 0;
             return (int)tty_length;
         }
-        tty_line[tty_length++] = character;
+        if (tty_length + 1 < capacity) {
+            tty_line[tty_length++] = character;
+        }
         write(STDOUT_FILENO, &character, 1);
         tty_cursor_show();
         next_blink = get_ticks() + 150;
     }
-
-    tty_line[tty_length] = '\0';
-    strcpy(line, tty_line);
-    return (int)tty_length;
 }

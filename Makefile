@@ -6,9 +6,11 @@ BUILD_DIR := .build
 KERNEL_BIN := $(BUILD_DIR)/imos.elf
 SHELL_BIN := $(BUILD_DIR)/shell.elf
 CLEAR_BIN := $(BUILD_DIR)/clear.elf
+GETTY_BIN := $(BUILD_DIR)/getty.elf
+LOGIN_BIN := $(BUILD_DIR)/login.elf
 INIT_SCRIPT_OBJ := $(BUILD_DIR)/userspace/init/init_script.o
 
-CFLAGS := -m64 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -Wall -Wextra \
+CFLAGS := -m64 -mno-red-zone -fcf-protection=none -ffreestanding -fno-pie -fno-stack-protector -nostdlib -Wall -Wextra \
 	-Iarch/x86_64/include \
 	-Idrivers/include \
 	-Ikernel/include \
@@ -63,7 +65,7 @@ C_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
 LIBC_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIBC_SRCS))
 ASM_OBJS := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(ASM_SRCS))
 
-.PHONY: all build libc init shell clear iso run qemu clean
+.PHONY: all build libc init shell clear getty login iso run qemu clean
 
 all: build
 build: $(KERNEL_BIN)
@@ -73,12 +75,14 @@ libc: $(LIBC_OBJS)
 init: $(BUILD_DIR)/init.elf
 shell: $(SHELL_BIN)
 clear: $(CLEAR_BIN)
+getty: $(GETTY_BIN)
+login: $(LOGIN_BIN)
 
 $(BUILD_DIR)/init.elf: $(BUILD_DIR)/userspace/init/init.o $(INIT_SCRIPT_OBJ) $(LIBC_OBJS) $(BUILD_DIR)/lib/common/src/string.o userspace/init/init.ld
 	mkdir -p $(dir $@)
 	$(LD) $(LDFLAGS) -T userspace/init/init.ld -o $@ $(BUILD_DIR)/lib/libc/src/crt0.o $(BUILD_DIR)/userspace/init/init.o $(INIT_SCRIPT_OBJ) $(BUILD_DIR)/lib/libc/src/stdio.o $(BUILD_DIR)/lib/libc/src/unistd.o $(BUILD_DIR)/lib/libc/src/syscall_wrapper.o $(BUILD_DIR)/lib/libc/src/errno.o $(BUILD_DIR)/lib/common/src/string.o
 
-$(INIT_SCRIPT_OBJ): userspace/init/init.d/01-shell
+$(INIT_SCRIPT_OBJ): userspace/init/initfile/initfile.ini
 
 $(SHELL_BIN): $(BUILD_DIR)/userspace/shell/main.o $(BUILD_DIR)/userspace/shell/tty.o $(LIBC_OBJS) $(BUILD_DIR)/lib/common/src/string.o userspace/shell/shell.ld
 	mkdir -p $(dir $@)
@@ -87,6 +91,14 @@ $(SHELL_BIN): $(BUILD_DIR)/userspace/shell/main.o $(BUILD_DIR)/userspace/shell/t
 $(CLEAR_BIN): $(BUILD_DIR)/userspace/utilities/clear.o $(LIBC_OBJS) userspace/utilities/utility.ld
 	mkdir -p $(dir $@)
 	$(LD) $(LDFLAGS) -T userspace/utilities/utility.ld -o $@ $(BUILD_DIR)/lib/libc/src/crt0.o $(BUILD_DIR)/userspace/utilities/clear.o $(BUILD_DIR)/lib/libc/src/unistd.o $(BUILD_DIR)/lib/libc/src/syscall_wrapper.o $(BUILD_DIR)/lib/libc/src/errno.o
+
+$(GETTY_BIN): $(BUILD_DIR)/userspace/utilities/getty.o $(LIBC_OBJS) userspace/utilities/utility.ld
+	mkdir -p $(dir $@)
+	$(LD) $(LDFLAGS) -T userspace/utilities/utility.ld -o $@ $(BUILD_DIR)/lib/libc/src/crt0.o $(BUILD_DIR)/userspace/utilities/getty.o $(BUILD_DIR)/lib/libc/src/stdio.o $(BUILD_DIR)/lib/libc/src/unistd.o $(BUILD_DIR)/lib/libc/src/syscall_wrapper.o $(BUILD_DIR)/lib/libc/src/errno.o $(BUILD_DIR)/lib/common/src/string.o
+
+$(LOGIN_BIN): $(BUILD_DIR)/userspace/utilities/login.o $(LIBC_OBJS) userspace/utilities/utility.ld
+	mkdir -p $(dir $@)
+	$(LD) $(LDFLAGS) -T userspace/utilities/utility.ld -o $@ $(BUILD_DIR)/lib/libc/src/crt0.o $(BUILD_DIR)/userspace/utilities/login.o $(BUILD_DIR)/lib/libc/src/stdio.o $(BUILD_DIR)/lib/libc/src/unistd.o $(BUILD_DIR)/lib/libc/src/syscall_wrapper.o $(BUILD_DIR)/lib/libc/src/errno.o $(BUILD_DIR)/lib/common/src/string.o
 
 $(KERNEL_BIN): $(C_OBJS) $(ASM_OBJS) arch/x86_64/boot/linker.ld
 	mkdir -p $(dir $@)
@@ -100,13 +112,15 @@ $(BUILD_DIR)/%.o: %.asm
 	mkdir -p $(dir $@)
 	$(NASM) $(NASMFLAGS) $< -o $@
 
-iso: $(KERNEL_BIN) $(BUILD_DIR)/init.elf $(SHELL_BIN) $(CLEAR_BIN)
+iso: $(KERNEL_BIN) $(BUILD_DIR)/init.elf $(SHELL_BIN) $(CLEAR_BIN) $(GETTY_BIN) $(LOGIN_BIN)
 	mkdir -p distro/iso/boot/grub
 	cp $(KERNEL_BIN) distro/iso/boot/imos.elf
 	cp $(BUILD_DIR)/init.elf distro/iso/boot/init.elf
 	cp $(SHELL_BIN) distro/iso/boot/shell.elf
 	cp $(CLEAR_BIN) distro/iso/boot/clear.elf
-	printf '%s\n' 'set timeout=0' 'set default=0' 'menuentry "Imagine R1" {' '    multiboot2 /boot/imos.elf' '    module2 /boot/init.elf init.elf' '    module2 /boot/shell.elf shell.elf' '    module2 /boot/clear.elf clear.elf' '    boot' '}' > distro/iso/boot/grub/grub.cfg
+	cp $(GETTY_BIN) distro/iso/boot/getty.elf
+	cp $(LOGIN_BIN) distro/iso/boot/login.elf
+	printf '%s\n' 'set timeout=0' 'set default=0' 'menuentry "Imagine R1" {' '    multiboot2 /boot/imos.elf' '    module2 /boot/init.elf init.elf' '    module2 /boot/shell.elf shell.elf' '    module2 /boot/clear.elf clear.elf' '    module2 /boot/getty.elf getty.elf' '    module2 /boot/login.elf login.elf' '    boot' '}' > distro/iso/boot/grub/grub.cfg
 	grub-mkrescue -o distro/imos.iso distro/iso >/dev/null 2>&1
 
 run: iso

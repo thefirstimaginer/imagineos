@@ -9,19 +9,20 @@
 
 void kernel_main(uint64_t multiboot_info) {
     print_clear();
-    print_str("imaginecore kernel starting...\n");
+    print_str("Dreamcore Kernel Release 1 - Alpha 1\n");
     /* Configure privileged services before enabling hardware interrupts. */
     syscall_init();
-    print_str("[OK] syscall MSRs\n");
+    print_str("Syscall MSRs Configured!\n");
+    /* Configure the TSS before enabling interrupts. */
     tss_init();
-    print_str("[OK] TSS\n");
+    print_str("TSS Configured!\n");
     video_init();
     scheduler_init();
     process_init();
 
     input_init();
     idt_init();
-    print_str("[OK] IDT and scheduler\n");
+    print_str("IDT and scheduler configured!\n");
 
      /* Do not let the timer interrupt the kernel while the first address space
          and its process frame are being prepared. user_enter enables interrupts

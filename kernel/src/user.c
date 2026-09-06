@@ -92,7 +92,8 @@ static void copy_segment(void *destination, const void *source, size_t count) {
     }
 }
 
-static int load_elf(uint32_t start, uint32_t end, uint64_t *entry) {
+static int load_elf(uint32_t start, uint32_t end, uint64_t *entry,
+                    uint64_t destination_base) {
     ElfHeader *header = (ElfHeader *)(uintptr_t)start;
     unsigned int index;
     uint64_t program_headers_end;
@@ -134,10 +135,12 @@ static int load_elf(uint32_t start, uint32_t end, uint64_t *entry) {
             return -1;
         }
         __asm__ volatile ("cli" : : : "memory");
-        copy_segment((void *)(uintptr_t)program->virtual_address,
+         copy_segment((void *)(uintptr_t)(destination_base +
+                program->virtual_address - USER_IMAGE_BASE),
                  (void *)((uintptr_t)header + program->offset),
                  (size_t)program->file_size);
-        memset((void *)(uintptr_t)(program->virtual_address + program->file_size),
+         memset((void *)(uintptr_t)(destination_base +
+             program->virtual_address - USER_IMAGE_BASE + program->file_size),
                0, (size_t)(program->memory_size - program->file_size));
         __asm__ volatile ("sti" : : : "memory");
     }
@@ -145,7 +148,8 @@ static int load_elf(uint32_t start, uint32_t end, uint64_t *entry) {
     return 0;
 }
 
-static int load_named_module(const char *name, uint64_t *entry) {
+static int load_named_module(const char *name, uint64_t *entry,
+                             uint64_t destination_base) {
     uint32_t offset = 8;
     uint32_t tag_end = multiboot_info_size;
 
@@ -160,7 +164,8 @@ static int load_named_module(const char *name, uint64_t *entry) {
             MultibootModuleTag *module = (MultibootModuleTag *)tag;
             if (tag->size >= sizeof(MultibootModuleTag) &&
                 module_name_matches(module->name, name)) {
-                return load_elf(module->start, module->end, entry);
+                return load_elf(module->start, module->end, entry,
+                                destination_base);
             }
         }
         offset += (tag->size + 7) & ~7u;
@@ -181,7 +186,7 @@ int user_init_from_multiboot(uint64_t multiboot_info) {
         return -1;
     }
     print_str("[INFO] loading userspace module init.elf\n");
-    if (load_named_module("init.elf", &entry) == 0) {
+    if (load_named_module("init.elf", &entry, USER_IMAGE_BASE) == 0) {
         print_str("[OK] init.elf loaded, entering userspace\n");
         cr3 = paging_create_user_space();
         if (cr3 == 0) return -1;
@@ -200,33 +205,41 @@ int user_init_from_multiboot(uint64_t multiboot_info) {
 int user_exec_service(const char *service_name) {
     uint64_t entry;
     uint64_t cr3;
-    Process *parent;
+    uint64_t child_physical;
     Process *child;
     const char *process_name;
 
     cr3 = paging_create_user_space();
     if (cr3 == 0) return -1;
-
+    child_physical = paging_user_physical(cr3);
+    if (child_physical == 0) return -1;
     if (module_name_matches(service_name, "shell.service")) {
-        if (load_named_module("shell.elf", &entry) != 0) return -1;
+        if (load_named_module("shell.elf", &entry, child_physical) != 0) goto service_load_failed;
         process_name = "shell";
+    } else if (module_name_matches(service_name, "getty.service")) {
+        if (load_named_module("getty.elf", &entry, child_physical) != 0) goto service_load_failed;
+        process_name = "getty";
+    } else if (module_name_matches(service_name, "login.service")) {
+        if (load_named_module("login.elf", &entry, child_physical) != 0) goto service_load_failed;
+        process_name = "login";
     } else if (module_name_matches(service_name, "clear.service")) {
-        if (load_named_module("clear.elf", &entry) != 0) return -1;
+        if (load_named_module("clear.elf", &entry, child_physical) != 0) goto service_load_failed;
         process_name = "clear";
     } else {
-        return -1;
+        goto service_load_failed;
     }
 
-    /* The ELF is loaded at the fixed 0x400000 virtual address while the kernel
-       still owns the active CR3. Switching to the new page table before the copy
-       would make the source and destination alias the same user mapping. */
-    paging_copy_user_image(cr3);
-    parent = current_process;
+     /* The image was copied to the child's physical slot while the parent's
+         CR3 remained active, so the parent executable was not overwritten. */
     child = process_create_user(process_name, cr3);
-    if (child == NULL) return -1;
-    if (parent != NULL) parent->state = PROCESS_BLOCKED;
-    child->state = PROCESS_RUNNING;
-    current_process = child;
-    user_enter(entry, USER_STACK_TOP, cr3);
+    if (child == NULL) goto service_load_failed;
+     child->user_frame.rip = entry;
+     child->user_frame.rsp = USER_STACK_TOP;
+     child->user_frame.rflags = 0x202;
+     child->state = PROCESS_READY;
+     return (int)child->pid;
+
+service_load_failed:
+    paging_destroy_user_space(cr3);
     return -1;
 }

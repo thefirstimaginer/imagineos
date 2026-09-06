@@ -3,5 +3,5 @@ global init_script_end
 
 section .rodata
 init_script_start:
-    incbin "userspace/init/init.d/01-shell"
+    incbin "userspace/init/initfile/initfile.ini"
 init_script_end:

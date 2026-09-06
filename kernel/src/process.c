@@ -71,6 +71,7 @@ Process* process_create_named(const char* name, void (*entry_point)()) {
     proc->parent_pid = current_process != NULL ? current_process->pid : 0;
     proc->exit_status = 0;
     proc->waiting_for_pid = 0;
+    proc->waiting_status = 0;
     proc->stack_base = (uint64_t) process_stacks[slot];
     proc->stack_top = proc->stack_base + PROCESS_STACK_SIZE;
 
@@ -132,6 +133,7 @@ void process_reap(Process* process) {
     process->parent_pid = 0;
     process->exit_status = 0;
     process->waiting_for_pid = 0;
+    process->waiting_status = 0;
     if (process_count != 0) process_count--;
 }
 

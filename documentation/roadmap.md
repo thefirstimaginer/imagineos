@@ -17,6 +17,8 @@ A prioridade e estabilidade do userspace. O desenvolvimento grafico deve aguarda
 - distinguir frame de kernel e frame vindo de ring 3;
 - restaurar somente o frame selecionado;
 - testar timer sem troca de processo e depois com troca controlada.
+- implementar futuramente Indirect Branch Tracking (IBT/CET) somente depois de
+	haver suporte explicito no boot e no tratamento de excecoes;
 
 ## Fase 3: processo minimo confiavel
 
@@ -25,6 +27,7 @@ A prioridade e estabilidade do userspace. O desenvolvimento grafico deve aguarda
 - validar que pai e filho possuem CR3, stack e imagem corretos;
 - fazer `waitpid` dormir e acordar por evento, sem busy loop;
 - fazer `exit` retornar ao pai sem chamar `user_enter` de forma ad hoc;
+- validar interativamente `exit` e `proc-test` depois do novo diagnostico de frame;
 - liberar PCB, stack e address space somente depois do reap.
 
 ## Fase 4: memoria virtual
