@@ -39,6 +39,7 @@ typedef struct Process {
     uint32_t parent_pid;
     int exit_status;
     uint32_t waiting_for_pid;
+    uint64_t waiting_status;
     uint64_t stack_top;     // Topo da pilha
     uint64_t stack_base;    // Base da pilha
     struct Process* next;   // Próximo na lista (para scheduler)

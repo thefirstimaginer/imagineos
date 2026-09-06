@@ -57,11 +57,10 @@ static long sys_waitpid(long pid, int *status) {
     if (child->state != PROCESS_TERMINATED) {
         current_process->state = PROCESS_BLOCKED;
         current_process->waiting_for_pid = (uint32_t)pid;
+        current_process->waiting_status = (uint64_t)(uintptr_t)status;
         child->state = PROCESS_RUNNING;
         current_process = child;
-        paging_activate(child->context.cr3);
-        user_enter(child->user_frame.rip, child->user_frame.rsp,
-                   child->context.cr3);
+        user_resume(&child->user_frame, child->context.cr3);
     }
     if (status != NULL) *status = child->exit_status;
     process_reap(child);
@@ -78,12 +77,30 @@ static long sys_exit(int status) {
     process_mark_exit(current_process, status);
     parent = process_find(current_process->parent_pid);
     if (parent != NULL && parent->state == PROCESS_BLOCKED) {
+        uint32_t child_pid = current_process->pid;
+
+        paging_activate(parent->context.cr3);
+        if (parent->waiting_status != 0) {
+            *(int *)(uintptr_t)parent->waiting_status = status;
+        }
+        process_reap(current_process);
         parent->state = PROCESS_RUNNING;
         parent->waiting_for_pid = 0;
-        parent->user_frame.rax = current_process->pid;
+        parent->waiting_status = 0;
+        parent->user_frame.rax = child_pid;
         current_process = parent;
-        paging_activate(parent->context.cr3);
-        user_enter(parent->user_frame.rip, parent->user_frame.rsp, parent->context.cr3);
+        print_str("[INFO] exit resume pid=");
+        print_uint64_dec(parent->pid);
+        print_str(" parent=");
+        print_uint64_dec(parent->parent_pid);
+        print_str(" rip=0x");
+        print_uint64_hex(parent->user_frame.rip);
+        print_str(" rsp=0x");
+        print_uint64_hex(parent->user_frame.rsp);
+        print_str(" cr3=0x");
+        print_uint64_hex(parent->context.cr3);
+        print_str("\n");
+        user_resume(&parent->user_frame, parent->context.cr3);
     }
     for (;;) __asm__ volatile ("hlt");
 }
