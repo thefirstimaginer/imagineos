@@ -1,13 +1,13 @@
 # Imagine Operating System <img width="200" height="auto" align="right" alt="imagine3w" src="https://github.com/user-attachments/assets/e406f860-0038-4076-8014-8fe5f7ff955e" />
 
 ImagineOS is an experimental and educational x86_64 operating system. The current
-release is vR1, codenamed **Jessica**.
+release is vR1, codenamed **Astrid**.
 
 The project is under construction and unstable. It currently boots through GRUB
 and Multiboot2, starts a freestanding 64-bit kernel, and provides a VGA text-mode
 shell for testing kernel and userspace components.
 
-## Version Release 1
+## Version Release 1 - Alpha 1 (R1-alpha1)
 
 ImagineOS is an experimental operating system and is still unstable. The
 current image is generated as `distro/imos.iso`.
