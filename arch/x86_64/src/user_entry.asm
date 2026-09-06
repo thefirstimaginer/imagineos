@@ -8,6 +8,7 @@ user_kernel_stack: resb 4096
 section .text
 bits 64
 user_enter:
+    cli
     mov rax, rsp
     mov cr3, rdx
     mov rsp, rsi

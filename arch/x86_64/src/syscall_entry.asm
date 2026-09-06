@@ -38,8 +38,10 @@ syscall_entry:
     mov rsi, rdi
     mov rdi, rax
     call kernel_syscall_handler
+    mov [rel syscall_user_frame + 0], rax
     pop rcx
     pop r11
+    mov rax, [rel syscall_user_frame + 0]
     mov rbx, [rel syscall_user_frame + 8]
     mov rdx, [rel syscall_user_frame + 24]
     mov rsi, [rel syscall_user_frame + 32]

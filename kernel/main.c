@@ -23,6 +23,10 @@ void kernel_main(uint64_t multiboot_info) {
     idt_init();
     print_str("[OK] IDT and scheduler\n");
 
+     /* Do not let the timer interrupt the kernel while the first address space
+         and its process frame are being prepared. user_enter enables interrupts
+         as part of the ring-3 iret frame. */
+     __asm__ volatile ("cli" : : : "memory");
     if (user_init_from_multiboot(multiboot_info) != 0) {
         print_str("[FAIL] init.elf not found or invalid\n");
         while (1) asm volatile("hlt");

@@ -57,7 +57,11 @@ static long sys_waitpid(long pid, int *status) {
     if (child->state != PROCESS_TERMINATED) {
         current_process->state = PROCESS_BLOCKED;
         current_process->waiting_for_pid = (uint32_t)pid;
-        return -EAGAIN;
+        child->state = PROCESS_RUNNING;
+        current_process = child;
+        paging_activate(child->context.cr3);
+        user_enter(child->user_frame.rip, child->user_frame.rsp,
+                   child->context.cr3);
     }
     if (status != NULL) *status = child->exit_status;
     process_reap(child);
@@ -70,11 +74,10 @@ static long sys_exit(int status) __attribute__((noreturn));
 static long sys_exit(int status) {
     Process *parent;
 
-    (void)status;
     if (current_process == NULL) for (;;) __asm__ volatile("hlt");
     process_mark_exit(current_process, status);
     parent = process_find(current_process->parent_pid);
-    if (parent != NULL && parent->state != PROCESS_TERMINATED) {
+    if (parent != NULL && parent->state == PROCESS_BLOCKED) {
         parent->state = PROCESS_RUNNING;
         parent->waiting_for_pid = 0;
         parent->user_frame.rax = current_process->pid;

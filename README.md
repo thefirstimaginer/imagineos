@@ -2,24 +2,52 @@
 
 
 
-## vR1 Codename "Jessica"
-This production is Under Construction phase, is instable by now, it can 
-have bugs but if you want to test it, you can report to `nyxieworlduniverse@gmail.com`
+## Version Release 1
+
+ImagineOS is an experimental operating system and is still unstable. The
+current image is generated as `distro/imos.iso`.
 
 ## Build
-Build instructions will be introduced in a future build.
 
-## Emulate
-You can emulate your operating system using [Qemu](https://www.qemu.org/).
+Requirements: GCC, NASM, GNU ld, `grub-mkrescue`, and QEMU.
 
- - `qemu-system-x86_64 -cdrom distro/out/imos-jessica-unstable(arch).iso`
- - Note: Close the emulator when finished, so as to not block writing to the `.iso file` for future builds.
+```sh
+make clean
+make iso
+```
 
-Alternatively, you should be able to load the operating system on a USB drive and boot into it when you turn on your computer. (I tested it, you need to boot in Legacy Mode, if you're in a UEFI system.)
+The generated ISO is:
+
+```text
+distro/imos.iso
+```
+
+## Run
+
+Run the ISO with the Makefile target:
+
+```sh
+make run
+```
+
+For a headless run:
+
+```sh
+timeout 8s qemu-system-x86_64 \
+    -no-reboot -display none -serial stdio \
+    -cdrom distro/imos.iso
+```
+
+The current system can boot the kernel, load userspace ELF modules, and run a
+text shell in successful executions. Userspace process lifecycle and paging
+remain under development; `init.elf` and `proc-test` can still cause faults or
+restart QEMU.
+
+More detailed documentation is available in [documentation/README.md](documentation/README.md).
 
 ## Copyright
 
-    Copyright (C) 2024-2026 TeamImagine
+    Copyright (C) 2024-2026 The Imagine Project & Adryan Alcantara
     
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

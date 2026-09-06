@@ -31,6 +31,7 @@ typedef struct {
 // PCB (Process Control Block)
 typedef struct Process {
     uint32_t pid;           // ID único do processo
+    bool in_use;
     const char* name;       // Nome do programa
     ProcessState state;     // Estado atual
     CpuContext context;     // Contexto de CPU

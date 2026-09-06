@@ -72,25 +72,9 @@ static void load_user_frame(Process *process, InterruptFrame *frame) {
 }
 
 void scheduler_user_tick(InterruptFrame *frame) {
-    Process *next;
-
     tick_count++;
     pic_eoi_master();
-    if ((frame->cs & 3) != 3 || current_process == NULL) return;
-    save_user_frame(current_process, frame);
-    if (tick_count % 10 != 0) return;
-
-    next = current_process->next != NULL ? current_process->next : process_list;
-    while (next != current_process && next->state != PROCESS_READY) {
-        next = next->next != NULL ? next->next : process_list;
-    }
-    if (next == current_process || next->state != PROCESS_READY) return;
-
-    current_process->state = PROCESS_READY;
-    next->state = PROCESS_RUNNING;
-    current_process = next;
-    paging_activate(next->context.cr3);
-    load_user_frame(next, frame);
+    (void)frame;
 }
 
 uint32_t scheduler_ticks(void) {
@@ -105,16 +89,20 @@ void scheduler_schedule() {
 
     if (!process_list) return;
 
+    if (current_process == NULL) return;
+
     Process* next = current_process->next ? current_process->next : process_list;
-    while (next != current_process && next->state != PROCESS_READY) {
+    while (next != current_process &&
+           (next->pid == 0 || next->state != PROCESS_READY)) {
         next = next->next ? next->next : process_list;
     }
 
-    if (next != current_process && next->state == PROCESS_READY) {
+    if (next != current_process && next->pid != 0 &&
+        next->state == PROCESS_READY) {
         Process* old = current_process;
         current_process = next;
         current_process->state = PROCESS_RUNNING;
-        old->state = PROCESS_READY;
+        if (old->state == PROCESS_RUNNING) old->state = PROCESS_READY;
         process_switch(old, current_process);
     }
 }
