@@ -1,7 +1,7 @@
 # Imagine Operating System <img width="200" height="auto" align="right" alt="imagine3w" src="https://github.com/user-attachments/assets/e406f860-0038-4076-8014-8fe5f7ff955e" />
 
 ImagineOS is an experimental and educational x86_64 operating system. The current
-release is vR1, codenamed **Jessica**.
+release is R1, codenamed **Astrid**.
 
 The project is under construction and unstable. It currently boots through GRUB
 and Multiboot2, starts a freestanding 64-bit kernel, and provides a VGA text-mode
@@ -10,7 +10,7 @@ shell for testing kernel and userspace components.
 ## Version Release 1
 
 ImagineOS is an experimental operating system and is still unstable. The
-current image is generated as `distro/imos.iso`.
+current image is generated as `distro/coreimage_imagine-astrid.iso`.
 
 ## Build
 
@@ -24,7 +24,7 @@ make iso
 The generated ISO is:
 
 ```text
-distro/imos.iso
+distro/coreimage_imagine-astrid.iso
 ```
 
 ## Run
@@ -40,7 +40,7 @@ For a headless run:
 ```sh
 timeout 8s qemu-system-x86_64 \
     -no-reboot -display none -serial stdio \
-    -cdrom distro/imos.iso
+    -cdrom distro/coreimage_imagine-astrid.iso
 ```
 
 The current system can boot the kernel, load userspace ELF modules, and run a

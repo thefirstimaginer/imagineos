@@ -14,7 +14,7 @@ O build deve terminar sem erro de compilacao, link ou geracao da ISO.
 for attempt in 1 2 3 4 5; do
     timeout 8s qemu-system-x86_64 \
       -no-reboot -display none -serial stdio \
-      -cdrom distro/imos.iso
+      -cdrom distro/coreimage_imagine-astrid.iso
     echo "status=$?"
 done
 ```
@@ -27,7 +27,7 @@ Um status `124` significa que o processo foi encerrado pelo timeout. Qualquer st
 qemu-system-x86_64 -no-reboot -display none \
   -serial stdio -d cpu_reset,int \
   -D /tmp/imagineos-qemu.log \
-  -cdrom distro/imos.iso
+  -cdrom distro/coreimage_imagine-astrid.iso
 ```
 
 Registrar sempre:

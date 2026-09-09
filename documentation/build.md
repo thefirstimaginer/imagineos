@@ -19,7 +19,7 @@ make clean
 make iso
 ```
 
-A ISO sera gerada em `distro/imos.iso`.
+A ISO sera gerada em `distro/coreimage_imagine-astrid.iso`.
 
 ## Executar com janela QEMU
 
@@ -40,7 +40,7 @@ Para verificar se a VM permanece viva por um periodo curto:
 ```sh
 timeout 8s qemu-system-x86_64 \
   -no-reboot -display none -serial stdio \
-  -cdrom distro/imos.iso
+  -cdrom distro/coreimage_imagine-astrid.iso
 ```
 
 O timeout `124` significa que o processo foi encerrado pelo `timeout`; nesse teste isso indica que a VM permaneceu executando. Status `0` inesperado pode indicar desligamento, reset ou falha no guest e deve ser investigado com logs.
@@ -51,7 +51,7 @@ O timeout `124` significa que o processo foi encerrado pelo `timeout`; nesse tes
 qemu-system-x86_64 -no-reboot -display none \
   -serial stdio -d cpu_reset,int \
   -D /tmp/imagineos-qemu.log \
-  -cdrom distro/imos.iso
+  -cdrom distro/coreimage_imagine-astrid.iso
 ```
 
 Procure por:

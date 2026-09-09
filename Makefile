@@ -121,12 +121,12 @@ iso: $(KERNEL_BIN) $(BUILD_DIR)/init.elf $(SHELL_BIN) $(CLEAR_BIN) $(GETTY_BIN) 
 	cp $(GETTY_BIN) distro/iso/boot/getty.elf
 	cp $(LOGIN_BIN) distro/iso/boot/login.elf
 	printf '%s\n' 'set timeout=0' 'set default=0' 'menuentry "Imagine R1" {' '    multiboot2 /boot/imos.elf' '    module2 /boot/init.elf init.elf' '    module2 /boot/shell.elf shell.elf' '    module2 /boot/clear.elf clear.elf' '    module2 /boot/getty.elf getty.elf' '    module2 /boot/login.elf login.elf' '    boot' '}' > distro/iso/boot/grub/grub.cfg
-	grub-mkrescue -o distro/imos.iso distro/iso >/dev/null 2>&1
+	grub-mkrescue -o distro/coreimage_imagine-astrid.iso distro/iso >/dev/null 2>&1
 
 run: iso
-	$(QEMU) -no-reboot -boot d -serial stdio -cdrom distro/imos.iso
+	$(QEMU) -no-reboot -boot d -serial stdio -cdrom distro/coreimage_imagine-astrid.iso
 
 qemu: run
 
 clean:
-	rm -rf $(BUILD_DIR) distro/iso distro/imos.iso distro/
+	rm -rf $(BUILD_DIR) distro/iso distro/coreimage_imagine-astrid.iso distro/
