@@ -23,7 +23,7 @@ struct Char* buffer = (struct Char*)0xb8000;
 
 // cursor e cor atuais (text-mode)
 size_t col = 0, row = 0;
-uint8_t color = PRINT_COLOR_WHITE | (PRINT_COLOR_BLACK << 4);
+uint8_t color = PRINT_COLOR_LIGHT_GRAY | (PRINT_COLOR_BLACK << 4);
 size_t shell_prompt_col = 0, shell_prompt_row = 0;
 
 // flag que indica se estamos desenhando texto sobre framebuffer

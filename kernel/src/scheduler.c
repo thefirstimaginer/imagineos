@@ -22,14 +22,9 @@ void scheduler_init() {
 void scheduler_tick() {
     tick_count++;
     pic_eoi_master();  // Acknowledge interrupt
-
-    // A cada 10 ticks, agenda (para ~10Hz scheduling)
-    if (tick_count % 10 == 0) {
-        scheduler_schedule();
-    }
 }
 
-static void save_user_frame(Process *process, InterruptFrame *frame) {
+void save_user_frame(Process *process, InterruptFrame *frame) {
     process->user_frame.rax = frame->rax;
     process->user_frame.rbx = frame->rbx;
     process->user_frame.rcx = frame->rcx;
@@ -50,7 +45,7 @@ static void save_user_frame(Process *process, InterruptFrame *frame) {
     process->user_frame.rflags = frame->rflags;
 }
 
-static void load_user_frame(Process *process, InterruptFrame *frame) {
+void load_user_frame(Process *process, InterruptFrame *frame) {
     frame->rax = process->user_frame.rax;
     frame->rbx = process->user_frame.rbx;
     frame->rcx = process->user_frame.rcx;

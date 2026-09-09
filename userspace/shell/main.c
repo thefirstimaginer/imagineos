@@ -61,7 +61,7 @@ int main(void) {
     char line[128];
 
     tty_init();
-    shell_write("\nWelcome to Imagine System R1!\n\n");
+    shell_write("\nWelcome to Imagine System Release 1!\n\n");
 
     for (;;) {
         shell_write("$ ");

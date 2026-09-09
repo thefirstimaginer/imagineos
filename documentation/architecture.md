@@ -40,7 +40,13 @@ A imagem de usuario e ligada em `0x400000`. A libc minima oferece wrappers para:
 - `fork`, `waitpid` e `exit`;
 - `get_ticks`.
 
-O `init` le um script embutido e inicia `shell.service`. O shell executa em processo separado. A utility `clear` possui seu proprio ELF e implementa diretamente a syscall de limpeza.
+O `init` le a configuracao `userspace/init/initfile/initfile.ini`, embutida no
+ELF durante o link, e procura uma diretiva `SERVICE ($nome) START`. O nome
+`$getty` e convertido para `getty.service`. O getty inicia `login.service`, que
+aceita um nome de usuario em modo de desenvolvimento e inicia `shell.service`.
+Esses servicos usam o console padrao; ainda nao existe `/dev/tty` nem um
+filesystem de usuarios. A utility `clear` possui seu proprio ELF e implementa
+diretamente a syscall de limpeza.
 
 ## Memoria
 
@@ -53,3 +59,8 @@ O espaco do kernel e identity-mapped. A imagem de usuario e mapeada como pagina 
 A entrada de syscall fica em `arch/x86_64/src/syscall_entry.asm`. O timer usa um frame de interrupcao definido em `kernel/include/scheduler.h` e wrappers em `arch/x86_64/src/idt_.asm`.
 
 A preservacao e restauracao desse frame ainda e uma area instavel. Um erro nessa fronteira pode corromper RIP, CR3 ou a pilha e produzir page fault, general protection fault ou triple fault.
+
+Os vetores de excecao 0 a 31 agora possuem handlers diagnosticos. Em especial,
+page fault imprime o vetor e o endereco em `CR2` e para a CPU. Isso evita que a
+causa seja mascarada imediatamente por um triple fault, embora ainda nao haja
+recuperacao do processo que falhou.
