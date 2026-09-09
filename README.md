@@ -7,7 +7,7 @@ The project is under construction and unstable. It currently boots through GRUB
 and Multiboot2, starts a freestanding 64-bit kernel, and provides a VGA text-mode
 shell for testing kernel and userspace components.
 
-## Version Release 1
+## Version Release 1 - Alpha 1 (R1-alpha1)
 
 ImagineOS is an experimental operating system and is still unstable. The
 current image is generated as `distro/coreimage_imagine-astrid.iso`.
