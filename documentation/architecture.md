@@ -6,11 +6,11 @@ Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/initrd.tar
 
 ## CPU e memoria
 
-`src/gdt.rs` instala GDT de kernel/user e TSS com stack ring 0 dedicada por processo. `src/idt.rs` instala gates para excecoes 0 a 31 e um gate DPL3 em `int 0x80`. As excecoes sao fatais; interrupcoes externas permanecem desabilitadas.
+`src/gdt.rs` instala GDT de kernel/user e TSS com stack ring 0 dedicada por processo. `src/idt.rs` instala gates para excecoes 0 a 31 e um gate DPL3 em `int 0x80`; o handler registra vetor, error code, RIP, CS e CR2. O PIC legado e mascarado e IF fica desabilitado ate haver remapeamento/controlador de interrupcoes.
 
 `src/memory.rs` percorre regioes `USABLE` do mapa Limine e oferece alocacao monotonica de frames de 4 KiB pelo HHDM. `src/paging.rs` clona as mappings superiores do Limine e cria page tables de usuario independentes. `src/heap.rs` fornece um bump allocator global de 1 MiB; `dealloc` e intencionalmente no-op.
 
-`src/elf.rs` valida ELF64 little-endian x86_64 ET_EXEC, bounds da tabela de programas, segmentos `PT_LOAD` e entrypoint executavel. `src/process.rs` mapeia segmentos/BSS e stack em cada CR3, inicia ring 3 via `iretq` e escalona cooperativamente em `yield`/`exit`. O frame `int 0x80` suporta `write`, `read`, `yield`, `exit`, `getpid` e `clear`; `write` traduz cada pagina do ponteiro user antes de copiar.
+`src/elf.rs` valida ELF64 little-endian x86_64 ET_EXEC, bounds da tabela de programas, segmentos `PT_LOAD` e entrypoint executavel. `src/process.rs` mapeia segmentos/BSS e stack em cada CR3, inicia ring 3 via `iretq` (carregando RSP antes do seletor em AX) e escalona cooperativamente em `yield`/`exit`. O frame `int 0x80` suporta `write`, `read`, `yield`, `exit`, `getpid` e `clear`; `write` traduz cada pagina do ponteiro user antes de copiar.
 
 ## Console e entrada
 

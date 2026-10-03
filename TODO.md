@@ -3,13 +3,13 @@
 ## Bring-up
 
 - [x] Gerar ISO UEFI Limine.
-- [ ] Validar boot em QEMU/OVMF.
+- [x] Confirmar boot Limine do kernel e montagem do RAMFS em QEMU e UEFI real.
+- [ ] Validar a nova transicao ring 3 no QEMU/OVMF.
 - [ ] Configurar CI com target `x86_64-unknown-none` e teste USTAR.
 - [ ] Testar respostas Limine ausentes e excecoes fatais.
 
 ## Memoria e processos
 
-- [ ] Adicionar liberacao/coalescencia de frames e allocator concorrente.
 - [x] Page tables de usuario e heap bump de kernel (sem reclaim ainda).
 - [x] Loader ELF64, entrada ring 3 e syscalls basicas.
 - [x] Processos init/getty/shell com scheduler cooperativo.

@@ -11,8 +11,8 @@ const SYS_EXIT: u64 = 4;
 #[no_mangle]
 extern "C" fn _start() -> ! {
     write("Astrid init: running as ELF in ring 3\n");
-    syscall0(SYS_YIELD);
     write("Astrid init: getty and shell started\n");
+    syscall0(SYS_YIELD);
     syscall0(SYS_EXIT);
     loop { core::hint::spin_loop(); }
 }

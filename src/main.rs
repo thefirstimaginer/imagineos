@@ -48,6 +48,7 @@ pub extern "C" fn _start() -> ! {
     }
 
     serial_init();
+    mask_legacy_pic();
     gdt::init();
     idt::init();
     serial_write(b"ImagineOS Astrid Rust kernel\r\n");
@@ -167,6 +168,10 @@ fn console_number(mut value: u64) {
     }
 }
 
+pub(crate) fn console_write_number(value: u64) {
+    console_number(value);
+}
+
 fn console_hex(mut value: u64) {
     let mut digits = [0u8; 16];
     let mut cursor = digits.len();
@@ -202,14 +207,30 @@ fn serial_init() {
     }
 }
 
+fn mask_legacy_pic() {
+    unsafe {
+        out(0x21, 0xff);
+        out(0xa1, 0xff);
+    }
+}
+
 fn serial_write(bytes: &[u8]) {
+    let mut previous_was_cr = false;
     for &byte in bytes {
-        unsafe {
-            while in_port(0x3fd) & 0x20 == 0 {
-                asm!("pause", options(nomem, nostack, preserves_flags));
-            }
-            out(0x3f8, byte);
+        if byte == b'\n' && !previous_was_cr {
+            serial_write_byte(b'\r');
         }
+        serial_write_byte(byte);
+        previous_was_cr = byte == b'\r';
+    }
+}
+
+fn serial_write_byte(byte: u8) {
+    unsafe {
+        while in_port(0x3fd) & 0x20 == 0 {
+            asm!("pause", options(nomem, nostack, preserves_flags));
+        }
+        out(0x3f8, byte);
     }
 }
 

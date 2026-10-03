@@ -14,9 +14,10 @@
 
 ## Ainda ausente ou nao validado
 
-- A ISO anterior foi gerada antes destas implementacoes; precisa ser reconstruida. QEMU/OVMF nao estao disponiveis neste workspace para validar o novo ring 3.
-- O scheduler nao e preemptivo; interrupcoes externas continuam desativadas.
-- Sem reclaim de frames, W^X, heap user, drivers de disco/rede, filesystem persistente ou layout de teclado completo.
-- Sem drivers de disco/rede, filesystem persistente ou layout de teclado completo.
+- ISO atual: `distro/dreamcore-2026-10-03-20-30-astrid.iso`; ainda precisa de boot no QEMU/hardware.
+- O `#GP` observado no vetor 13 ocorria no `iretq`: `RAX` continha o ponteiro do TrapFrame, mas era sobrescrito com `0x33` antes de carregar `RSP`. A ordem foi corrigida e verificada no disassembly.
+- Os escritores COM1 agora convertem LF isolado em CRLF, mantendo mensagens uma por linha.
+- O PIC legado continua mascarado e IF desabilitado em ring 3 ate existir timer/APIC.
+- O scheduler nao e preemptivo; sem reclaim de frames, W^X, heap user, drivers de disco/rede, filesystem persistente ou layout de teclado completo.
 
 O check Rust e os testes locais ELF/USTAR passam, mas isso nao substitui o teste de boot real.

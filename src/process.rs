@@ -68,12 +68,16 @@ pub enum LoadError {
 }
 
 pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
+    crate::console_write("process: initializing scheduler\n");
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
     scheduler.processes = [Process::EMPTY; MAX_PROCESSES];
     scheduler.count = 0;
     scheduler.current = 0;
 
     for &(image, pid) in programs.iter().take(MAX_PROCESSES) {
+        crate::console_write("process: loading PID ");
+        crate::console_write_number(pid as u64);
+        crate::console_write(" ELF\n");
         let process = load_elf(image, pid)?;
         scheduler.processes[scheduler.count] = process;
         scheduler.count += 1;
@@ -85,13 +89,16 @@ pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
 }
 
 fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
+    crate::console_write("elf: validating header\n");
     let elf = Elf64::parse(image).map_err(LoadError::InvalidElf)?;
+    crate::console_write("elf: creating user page tables\n");
     let address_space = AddressSpace::new_user().ok_or(LoadError::OutOfMemory)?;
 
     for index in 0..elf.program_header_count() {
         let Some(segment) = elf.segment(index).map_err(LoadError::InvalidElf)? else {
             continue;
         };
+        crate::console_write("elf: mapping LOAD segment\n");
         let segment_end = segment
             .virtual_address
             .checked_add(segment.memory_size)
@@ -128,6 +135,7 @@ fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
             .map_err(|_| LoadError::OutOfMemory)?;
         page += PAGE_SIZE;
     }
+    crate::console_write("elf: user stack mapped\n");
     if address_space.translate(elf.entry).is_none() {
         return Err(LoadError::InvalidMapping);
     }
@@ -154,7 +162,7 @@ fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
             rax: 0,
             rip: elf.entry,
             cs: gdt::USER_CODE_SELECTOR,
-            rflags: 0x202,
+            rflags: 0x2,
             rsp: USER_STACK_TOP - 16,
             ss: gdt::USER_DATA_SELECTOR,
         });
@@ -210,10 +218,10 @@ pub fn start() -> ! {
     paging::switch(address_space);
     unsafe {
         asm!(
+            "mov rsp, {frame}",
             "mov ax, 0x33",
             "mov ds, ax",
             "mov es, ax",
-            "mov rsp, {frame}",
             "pop r15", "pop r14", "pop r13", "pop r12", "pop r11",
             "pop r10", "pop r9", "pop r8", "pop rbp", "pop rdi",
             "pop rsi", "pop rdx", "pop rcx", "pop rbx", "pop rax",
