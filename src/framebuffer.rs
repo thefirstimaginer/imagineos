@@ -158,7 +158,7 @@ pub fn write_char(character: char) {
     }
 }
 
-pub fn clear() {
+pub(crate) fn clear() {
     let console = unsafe { &mut *CONSOLE.0.get() };
     if console.address.is_null() {
         return;

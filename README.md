@@ -16,9 +16,9 @@ The UEFI-only image is written to `distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`
 
 ## Boot State
 
-The kernel consumes Limine's HHDM, memory map, framebuffer, and initrd responses. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator, and mounts a USTAR RAMFS containing `/init`, `/getty`, and `/shell`. Serial and framebuffer output, a PS/2 polling keyboard, and PSF1/PSF2 font loading are present.
+The kernel consumes Limine's HHDM, memory map, framebuffer, and initrd responses. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, then loads three ELF64 programs from a USTAR RAMFS. `init`, `getty`, and `shell` run in ring 3 with separate page-table roots.
 
-The shell runs as a built-in kernel task. ELF loading, ring-3 processes, a scheduler, heap, virtual-memory manager, timer/APIC, and persistent storage are not implemented yet.
+The kernel provides `int 0x80` syscalls for console I/O, yield, exit, PID, and clear. Scheduling is cooperative round-robin; timer preemption, heap reclamation, full W^X permissions, VFS, and persistent storage are not implemented yet.
 
 More details: [documentation/README.md](documentation/README.md).
 

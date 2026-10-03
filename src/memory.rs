@@ -93,3 +93,10 @@ pub fn allocate_frame() -> Option<Frame> {
     }
     None
 }
+
+pub fn phys_to_virt(physical_address: u64) -> Option<*mut u8> {
+    let allocator = unsafe { &*ALLOCATOR.0.get() };
+    physical_address
+        .checked_add(allocator.hhdm_offset)
+        .map(|virtual_address| virtual_address as *mut u8)
+}

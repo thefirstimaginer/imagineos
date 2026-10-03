@@ -6,6 +6,8 @@ const STACK_SIZE: usize = 16 * 1024;
 const KERNEL_CODE_SELECTOR: u16 = 0x08;
 const KERNEL_DATA_SELECTOR: u16 = 0x10;
 const TSS_SELECTOR: u16 = 0x18;
+pub const USER_CODE_SELECTOR: u64 = 0x2b;
+pub const USER_DATA_SELECTOR: u64 = 0x33;
 
 #[repr(C, packed)]
 struct TaskStateSegment {
@@ -34,7 +36,7 @@ impl TaskStateSegment {
 
 #[repr(C, align(16))]
 struct Tables {
-    gdt: [u64; 5],
+    gdt: [u64; 7],
     tss: TaskStateSegment,
     stack: [u8; STACK_SIZE],
 }
@@ -43,7 +45,7 @@ struct SharedTables(UnsafeCell<Tables>);
 unsafe impl Sync for SharedTables {}
 
 static TABLES: SharedTables = SharedTables(UnsafeCell::new(Tables {
-    gdt: [0; 5],
+    gdt: [0; 7],
     tss: TaskStateSegment::new(),
     stack: [0; STACK_SIZE],
 }));
@@ -57,7 +59,9 @@ struct DescriptorTablePointer {
 pub fn init() {
     let tables = unsafe { &mut *TABLES.0.get() };
     let stack_top = tables.stack.as_ptr() as u64 + STACK_SIZE as u64;
-    tables.tss.privilege_stack[0] = stack_top;
+    unsafe {
+        core::ptr::addr_of_mut!(tables.tss.privilege_stack[0]).write_unaligned(stack_top);
+    }
     let tss_base = &tables.tss as *const TaskStateSegment as u64;
     let tss_limit = (size_of::<TaskStateSegment>() - 1) as u64;
 
@@ -70,9 +74,11 @@ pub fn init() {
         | ((tss_limit & 0x000f_0000) << 32)
         | ((tss_base & 0xff00_0000) << 32);
     tables.gdt[4] = tss_base >> 32;
+    tables.gdt[5] = 0x00af_fa00_0000_ffff;
+    tables.gdt[6] = 0x00cf_f200_0000_ffff;
 
     let pointer = DescriptorTablePointer {
-        limit: (size_of::<[u64; 5]>() - 1) as u16,
+        limit: (size_of::<[u64; 7]>() - 1) as u16,
         base: tables.gdt.as_ptr() as u64,
     };
     unsafe {
@@ -95,5 +101,12 @@ pub fn init() {
             tss_selector = const TSS_SELECTOR,
             out("rax") _,
         );
+    }
+}
+
+pub fn set_kernel_stack(stack_top: u64) {
+    let tables = unsafe { &mut *TABLES.0.get() };
+    unsafe {
+        core::ptr::addr_of_mut!(tables.tss.privilege_stack[0]).write_unaligned(stack_top);
     }
 }

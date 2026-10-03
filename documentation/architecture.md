@@ -2,13 +2,15 @@
 
 ## Boot
 
-Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/initrd.tar`. O entrypoint Rust valida a revisao Limine e consome HHDM, mapa de memoria e framebuffer. O initrd USTAR contem `/init`, `/getty` e `/shell`; os comandos `echo` e `exec /...` encadeiam init ate o shell integrado ao kernel.
+Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/initrd.tar`. O kernel e linkado em `0xffffffff80000000` com PADDRs a partir de 1 MiB, para satisfazer a regra do Limine contra PHDRs lower-half. O initrd USTAR contem `init.elf`, `getty.elf` e `shell.elf`.
 
 ## CPU e memoria
 
-`src/gdt.rs` instala GDT de kernel e TSS com stack ring 0 dedicada. `src/idt.rs` instala gates para excecoes 0 a 31; todas sao fatais e param a CPU com uma mensagem serial. Interrupcoes externas permanecem desabilitadas.
+`src/gdt.rs` instala GDT de kernel/user e TSS com stack ring 0 dedicada por processo. `src/idt.rs` instala gates para excecoes 0 a 31 e um gate DPL3 em `int 0x80`. As excecoes sao fatais; interrupcoes externas permanecem desabilitadas.
 
-`src/memory.rs` percorre regioes `USABLE` do mapa Limine e oferece alocacao monotonica de frames de 4 KiB pelo HHDM. As tabelas de paging fornecidas pelo Limine permanecem ativas; nao ha page-table manager, heap, liberacao de frames ou isolamento entre processos.
+`src/memory.rs` percorre regioes `USABLE` do mapa Limine e oferece alocacao monotonica de frames de 4 KiB pelo HHDM. `src/paging.rs` clona as mappings superiores do Limine e cria page tables de usuario independentes. `src/heap.rs` fornece um bump allocator global de 1 MiB; `dealloc` e intencionalmente no-op.
+
+`src/elf.rs` valida ELF64 little-endian x86_64 ET_EXEC, bounds da tabela de programas, segmentos `PT_LOAD` e entrypoint executavel. `src/process.rs` mapeia segmentos/BSS e stack em cada CR3, inicia ring 3 via `iretq` e escalona cooperativamente em `yield`/`exit`. O frame `int 0x80` suporta `write`, `read`, `yield`, `exit`, `getpid` e `clear`; `write` traduz cada pagina do ponteiro user antes de copiar.
 
 ## Console e entrada
 
@@ -16,4 +18,4 @@ Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/initrd.tar
 
 ## Limites
 
-O shell e uma tarefa foreground em ring 0, nao um programa ELF. Nao ha loader ELF, ring 3, syscalls, scheduler, timer/APIC, heap, VFS ou armazenamento persistente. O parser RAMFS le arquivos USTAR sem validar checksums; o initrd e um artefato confiavel construido junto da ISO.
+O scheduler e cooperativo e nao ha timer/APIC ou preempcao. Todas as paginas user sao writable/executable; nao existe W^X, reclaim de frames, heap user ou validacao de checksum USTAR. O sistema nao tem VFS nem armazenamento persistente. O initrd e tratado como artefato confiavel.

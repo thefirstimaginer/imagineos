@@ -11,10 +11,48 @@ global_asm!(
     "1:",
     "hlt",
     "jmp 1b",
+    ".global dreamcore_syscall_stub",
+    "dreamcore_syscall_stub:",
+    "push rax",
+    "push rbx",
+    "push rcx",
+    "push rdx",
+    "push rsi",
+    "push rdi",
+    "push rbp",
+    "push r8",
+    "push r9",
+    "push r10",
+    "push r11",
+    "push r12",
+    "push r13",
+    "push r14",
+    "push r15",
+    "mov rdi, rsp",
+    "and rsp, -16",
+    "call dreamcore_syscall_dispatch",
+    "mov rsp, rax",
+    "pop r15",
+    "pop r14",
+    "pop r13",
+    "pop r12",
+    "pop r11",
+    "pop r10",
+    "pop r9",
+    "pop r8",
+    "pop rbp",
+    "pop rdi",
+    "pop rsi",
+    "pop rdx",
+    "pop rcx",
+    "pop rbx",
+    "pop rax",
+    "iretq",
 );
 
 extern "C" {
     fn dreamcore_exception_stub();
+    fn dreamcore_syscall_stub();
 }
 
 #[no_mangle]
@@ -83,6 +121,11 @@ pub fn init() {
     for entry in idt.iter_mut().take(32) {
         *entry = IdtEntry::interrupt_gate(handler, selector);
     }
+    let syscall_handler = dreamcore_syscall_stub as *const () as usize as u64;
+    idt[0x80] = IdtEntry {
+        attributes: 0xee,
+        ..IdtEntry::interrupt_gate(syscall_handler, selector)
+    };
     let pointer = DescriptorTablePointer {
         limit: (size_of::<[IdtEntry; 256]>() - 1) as u16,
         base: idt.as_ptr() as u64,

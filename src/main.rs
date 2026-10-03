@@ -1,17 +1,25 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
+use alloc::vec::Vec;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
 use limine::BaseRevision;
 
+mod elf;
 mod framebuffer;
 mod gdt;
+mod heap;
 mod idt;
 mod keyboard;
 mod memory;
+mod paging;
+mod process;
 mod ramfs;
+mod syscall;
 
 #[used]
 #[link_section = ".requests"]
@@ -96,127 +104,48 @@ pub extern "C" fn _start() -> ! {
         halt();
     };
     let archive = ramfs::Archive::new(archive_bytes);
-    let Some(init_script) = archive.find("init") else {
-        console_write("RAMFS has no /init; stopping safely\n");
+    let Some(init_elf) = archive.find("init.elf") else {
+        console_write("RAMFS has no /init.elf; stopping safely\n");
+        halt();
+    };
+    let Some(getty_elf) = archive.find("getty.elf") else {
+        console_write("RAMFS has no /getty.elf; stopping safely\n");
+        halt();
+    };
+    let Some(shell_elf) = archive.find("shell.elf") else {
+        console_write("RAMFS has no /shell.elf; stopping safely\n");
         halt();
     };
 
     if let Some(font) = archive.find("font.psf") {
         framebuffer::load_font(font);
     }
-    console_write("RAMFS mounted; /init found\n");
-    run_script("init", init_script, &archive, 0)
-}
-
-fn run_script(path: &str, script: &[u8], archive: &ramfs::Archive<'_>, depth: usize) -> ! {
-    if depth > 4 {
-        console_write("init script recursion limit reached\n");
+    console_write("RAMFS mounted; loading ring-3 ELF programs\n");
+    let mut programs = Vec::new();
+    if programs.try_reserve_exact(3).is_err() {
+        console_write("Kernel heap exhausted while preparing init\n");
         halt();
     }
-    if path == "shell" {
-        console_write("Astrid getty ready. Type help for commands.\n> ");
-        shell(archive);
-    }
-    let Some(script) = core::str::from_utf8(script).ok() else {
-        console_write("init script is not valid UTF-8\n");
+    programs.push((init_elf, 1));
+    programs.push((getty_elf, 2));
+    programs.push((shell_elf, 3));
+    if process::init(&programs).is_err() {
+        console_write("ELF loader failed; stopping safely\n");
         halt();
-    };
-    for line in script.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some(message) = line.strip_prefix("echo ") {
-            console_write(message);
-            console_write("\n");
-        } else if let Some(program) = line.strip_prefix("exec /") {
-            let Some(program_script) = archive.find(program) else {
-                console_write("init requested a missing program\n");
-                halt();
-            };
-            run_script(program, program_script, archive, depth + 1);
-        } else {
-            console_write("unsupported command in init script\n");
-            halt();
-        }
     }
-    console_write("init exited without starting getty\n");
-    halt()
+    process::start()
 }
 
-fn shell(archive: &ramfs::Archive<'_>) -> ! {
-    let mut keyboard = keyboard::Keyboard::new();
-    let mut line = [0u8; 128];
-    let mut length = 0;
-
-    loop {
-        let character = keyboard.poll_char().or_else(serial_read_char);
-        let Some(character) = character else {
-            core::hint::spin_loop();
-            continue;
-        };
-
-        match character {
-            '\r' | '\n' => {
-                console_write("\n");
-                let command = core::str::from_utf8(&line[..length]).unwrap_or("");
-                execute_command(command, archive);
-                line.fill(0);
-                length = 0;
-                console_write("> ");
-            }
-            '\u{8}' | '\u{7f}' => {
-                if length > 0 {
-                    length -= 1;
-                    while length > 0 && line[length] & 0xc0 == 0x80 {
-                        length -= 1;
-                    }
-                    console_write("\u{8} \u{8}");
-                }
-            }
-            character if !character.is_control() => {
-                let mut encoded = [0u8; 4];
-                let bytes = character.encode_utf8(&mut encoded).as_bytes();
-                if length + bytes.len() <= line.len() {
-                    line[length..length + bytes.len()].copy_from_slice(bytes);
-                    length += bytes.len();
-                    framebuffer::write_char(character);
-                    serial_write(bytes);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn execute_command(command: &str, archive: &ramfs::Archive<'_>) {
-    match command {
-        "" => {}
-        "help" => console_write("help clear ls cat /init mem ps\n"),
-        "clear" => framebuffer::clear(),
-        "ls" => {
-            console_write("/init\n/getty\n/shell\n");
-            if archive.find("font.psf").is_some() {
-                console_write("/font.psf\n");
-            }
-        }
-        "cat /init" => console_write(
-            core::str::from_utf8(archive.find("init").unwrap_or_default())
-                .unwrap_or("invalid text\n"),
-        ),
-        "mem" => console_write("4 KiB frame allocator active\n"),
-        "ps" => console_write("PID 0  kernel bootstrap (single foreground task)\n"),
-        _ if command.starts_with("echo ") => {
-            console_write(&command[5..]);
-            console_write("\n");
-        }
-        _ => console_write("command not found\n"),
-    }
-}
-
-fn console_write(text: &str) {
+pub(crate) fn console_write(text: &str) {
     serial_write(text.as_bytes());
     framebuffer::write_str(text);
+}
+
+pub(crate) fn console_write_bytes(bytes: &[u8]) {
+    serial_write(bytes);
+    if let Ok(text) = core::str::from_utf8(bytes) {
+        framebuffer::write_str(text);
+    }
 }
 
 fn console_number(mut value: u64) {
@@ -294,16 +223,16 @@ unsafe fn in_port(port: u16) -> u8 {
     value
 }
 
-fn serial_read_char() -> Option<char> {
-    unsafe { (in_port(0x3fd) & 1 != 0).then(|| in_port(0x3f8) as char) }
-}
-
 fn halt() -> ! {
     loop {
         unsafe {
             asm!("hlt", options(nomem, nostack));
         }
     }
+}
+
+pub(crate) fn kernel_halt() -> ! {
+    halt()
 }
 
 #[panic_handler]

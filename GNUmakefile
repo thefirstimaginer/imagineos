@@ -4,20 +4,33 @@ TARGET := x86_64-unknown-none
 KERNEL := target/$(TARGET)/release/dreamcore
 ISO_DIR := .build/iso
 INITRD := .build/initrd.tar
+USER_PROGRAMS := .build/user/init.elf .build/user/getty.elf .build/user/shell.elf
 ISO_IMAGE := distro/dreamcore-$(shell date +%Y-%m-%d-%H-%M)-astrid.iso
 QEMU := qemu-system-x86_64
 OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE.fd
 
-.PHONY: all kernel iso run clean
+.PHONY: all kernel user-programs iso run clean
 
 all: kernel
 
-kernel:
+kernel: linker.ld
 	rustup run stable cargo build --release --target $(TARGET)
 
-$(INITRD): system/init system/getty system/shell
-	mkdir -p .build
-	tar --format=ustar -C system -cf $@ init getty shell
+$(INITRD): $(USER_PROGRAMS)
+	mkdir -p .build/initrd
+	cp .build/user/init.elf .build/initrd/init.elf
+	cp .build/user/getty.elf .build/initrd/getty.elf
+	cp .build/user/shell.elf .build/initrd/shell.elf
+	tar --format=ustar -C .build/initrd -cf $@ init.elf getty.elf shell.elf
+
+.PHONY: user-programs
+user-programs: $(USER_PROGRAMS)
+
+.build/user/%.elf: userspace/%.rs userspace/linker.ld
+	mkdir -p .build/user
+	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
+		-C panic=abort -C relocation-model=static \
+		-C link-arg=-Tuserspace/linker.ld $< -o $@
 
 iso: kernel $(INITRD)
 	command -v xorriso >/dev/null
