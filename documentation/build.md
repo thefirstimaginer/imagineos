@@ -2,73 +2,29 @@
 
 ## Dependencias
 
-O ambiente precisa fornecer:
-
-- GCC com suporte x86_64;
-- NASM;
-- GNU ld;
-- GRUB `grub-mkrescue`;
-- QEMU x86_64.
+- Rust stable e `rustup target add x86_64-unknown-none`;
+- GNU Make e `rustup` no `PATH`;
+- `xorriso`, `dosfstools` (`mkfs.vfat`) e `mtools` (`mmd`, `mcopy`) para gerar ISO;
+- `toolchain/limine-binary/BOOTX64.EFI`;
+- QEMU x86_64 e OVMF para testar o boot UEFI.
 
 ## Compilar a ISO
 
 Na raiz do repositorio:
 
 ```sh
-make clean
+make kernel
 make iso
 ```
 
-A ISO sera gerada em `distro/coreimage_imagine-astrid.iso`.
+A ISO UEFI sera gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
+O initrd USTAR e produzido de `system/init`, `system/getty` e `system/shell`.
 
-## Executar com janela QEMU
+## Executar com QEMU
 
 ```sh
 make run
 ```
 
-Ou:
-
-```sh
-make qemu
-```
-
-## Executar sem janela
-
-Para verificar se a VM permanece viva por um periodo curto:
-
-```sh
-timeout 8s qemu-system-x86_64 \
-  -no-reboot -display none -serial stdio \
-  -cdrom distro/coreimage_imagine-astrid.iso
-```
-
-O timeout `124` significa que o processo foi encerrado pelo `timeout`; nesse teste isso indica que a VM permaneceu executando. Status `0` inesperado pode indicar desligamento, reset ou falha no guest e deve ser investigado com logs.
-
-## Diagnostico de faults
-
-```sh
-qemu-system-x86_64 -no-reboot -display none \
-  -serial stdio -d cpu_reset,int \
-  -D /tmp/imagineos-qemu.log \
-  -cdrom distro/coreimage_imagine-astrid.iso
-```
-
-Procure por:
-
-- `Triple fault`;
-- `check_exception`;
-- `RIP=`;
-- `CR2=`;
-- `CR3=`.
-
-## Modulos
-
-O `Makefile` constroi e copia para a ISO:
-
-- `.build/imos.elf`;
-- `.build/init.elf`;
-- `.build/shell.elf`;
-- `.build/clear.elf`.
-
-Os nomes dos modulos precisam coincidir com os nomes procurados no loader e no script de init.
+Configure `OVMF_CODE` se o firmware nao estiver no caminho padrao. A imagem
+atual nao inclui boot BIOS.

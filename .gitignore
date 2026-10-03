@@ -9,6 +9,7 @@ main/distro/x86_64/main.iso
 targets/
 /.vscode
 /.build
+/target/
 /distro
 *.bin
 *.iso

@@ -2,65 +2,18 @@
 
 ## Boot
 
-O GRUB carrega o kernel e os programas de usuario como modulos Multiboot 2:
+Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/initrd.tar`. O entrypoint Rust valida a revisao Limine e consome HHDM, mapa de memoria e framebuffer. O initrd USTAR contem `/init`, `/getty` e `/shell`; os comandos `echo` e `exec /...` encadeiam init ate o shell integrado ao kernel.
 
-- `imos.elf`: kernel;
-- `init.elf`: primeiro programa de usuario;
-- `shell.elf`: shell;
-- `clear.elf`: utility de limpeza do terminal.
+## CPU e memoria
 
-O fluxo de boot e:
+`src/gdt.rs` instala GDT de kernel e TSS com stack ring 0 dedicada. `src/idt.rs` instala gates para excecoes 0 a 31; todas sao fatais e param a CPU com uma mensagem serial. Interrupcoes externas permanecem desabilitadas.
 
-1. O Assembly verifica Multiboot, CPUID e long mode.
-2. Paging inicial identity-mapped e ativado.
-3. O kernel configura syscall MSRs, TSS, video, processos, input, IDT e scheduler.
-4. `kernel/src/user.c` procura o modulo `init.elf`.
-5. O segmento ELF e copiado para a imagem de usuario em `0x400000`.
-6. Um espaco de endereco e criado e o processo init entra em ring 3.
+`src/memory.rs` percorre regioes `USABLE` do mapa Limine e oferece alocacao monotonica de frames de 4 KiB pelo HHDM. As tabelas de paging fornecidas pelo Limine permanecem ativas; nao ha page-table manager, heap, liberacao de frames ou isolamento entre processos.
 
-## Kernel
+## Console e entrada
 
-As responsabilidades principais estao organizadas assim:
+`src/framebuffer.rs` escreve pixels RGB32, inclui fonte 5x7 de fallback e carrega fontes PSF1/PSF2 com tabelas Unicode. `src/keyboard.rs` faz polling do controlador PS/2 set-1 e converte teclas US/AltGr em `char`; o shell serializa a entrada em UTF-8. COM1 continua disponivel para diagnostico e terminal QEMU.
 
-- `kernel/main.c`: inicializacao geral e entrada do kernel.
-- `kernel/src/user.c`: parser Multiboot, loader ELF e execucao de servicos.
-- `kernel/src/paging.c`: page tables, CR3 e imagem fisica dos processos.
-- `kernel/src/process.c`: PCB, estados, PID e ciclo de vida.
-- `kernel/src/scheduler.c`: ticks PIT e tentativa de escalonamento.
-- `kernel/src/syscall_dispatch.c`: dispatch de syscalls.
-- `drivers/src/print.c`: terminal VGA textual.
-- `kernel/src/input.c` e `drivers/src/ps2.c`: entrada PS/2.
+## Limites
 
-## Userspace
-
-A imagem de usuario e ligada em `0x400000`. A libc minima oferece wrappers para:
-
-- `read`, `read_nonblock` e `write`;
-- `exec_service`;
-- `fork`, `waitpid` e `exit`;
-- `get_ticks`.
-
-O `init` le a configuracao `userspace/init/initfile/initfile.ini`, embutida no
-ELF durante o link, e procura uma diretiva `SERVICE ($nome) START`. O nome
-`$getty` e convertido para `getty.service`. O getty inicia `login.service`, que
-aceita um nome de usuario em modo de desenvolvimento e inicia `shell.service`.
-Esses servicos usam o console padrao; ainda nao existe `/dev/tty` nem um
-filesystem de usuarios. A utility `clear` possui seu proprio ELF e implementa
-diretamente a syscall de limpeza.
-
-## Memoria
-
-Cada espaco de usuario possui tabelas estaticas com ate 16 slots. A imagem de usuario ocupa uma janela fisica de 2 MiB por slot, copiada a partir do staging virtual em `0x400000`.
-
-O espaco do kernel e identity-mapped. A imagem de usuario e mapeada como pagina grande com permissao de usuario. Este modelo e deliberadamente simples e ainda nao oferece protecao fina por segmento, heap dinamico ou alocacao de paginas sob demanda.
-
-## Syscalls e interrupcoes
-
-A entrada de syscall fica em `arch/x86_64/src/syscall_entry.asm`. O timer usa um frame de interrupcao definido em `kernel/include/scheduler.h` e wrappers em `arch/x86_64/src/idt_.asm`.
-
-A preservacao e restauracao desse frame ainda e uma area instavel. Um erro nessa fronteira pode corromper RIP, CR3 ou a pilha e produzir page fault, general protection fault ou triple fault.
-
-Os vetores de excecao 0 a 31 agora possuem handlers diagnosticos. Em especial,
-page fault imprime o vetor e o endereco em `CR2` e para a CPU. Isso evita que a
-causa seja mascarada imediatamente por um triple fault, embora ainda nao haja
-recuperacao do processo que falhou.
+O shell e uma tarefa foreground em ring 0, nao um programa ELF. Nao ha loader ELF, ring 3, syscalls, scheduler, timer/APIC, heap, VFS ou armazenamento persistente. O parser RAMFS le arquivos USTAR sem validar checksums; o initrd e um artefato confiavel construido junto da ISO.

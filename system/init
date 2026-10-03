@@ -1,0 +1,3 @@
+#!/astrid/init
+echo ImagineOS init: RAMFS mounted
+exec /getty

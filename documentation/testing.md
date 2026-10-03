@@ -1,66 +1,20 @@
-# Testes e criterio de estabilidade
+# Testes
 
-## Build
-
-```sh
-make clean && make iso
-```
-
-O build deve terminar sem erro de compilacao, link ou geracao da ISO.
-
-## Boot repetido
+## Compilacao e parser USTAR
 
 ```sh
-for attempt in 1 2 3 4 5; do
-    timeout 8s qemu-system-x86_64 \
-      -no-reboot -display none -serial stdio \
-      -cdrom distro/coreimage_imagine-astrid.iso
-    echo "status=$?"
-done
+rustup run stable cargo check --target x86_64-unknown-none
+rustup run stable cargo build --release --target x86_64-unknown-none
+rustup run stable rustc --test src/ramfs.rs -o /tmp/dreamcore-ramfs-tests
+/tmp/dreamcore-ramfs-tests
+make .build/initrd.tar
+tar -tf .build/initrd.tar
 ```
 
-Um status `124` significa que o processo foi encerrado pelo timeout. Qualquer status diferente deve ser investigado.
+Para criar a ISO, instale `xorriso`, `dosfstools` e `mtools`, depois rode `make iso`.
 
-## Diagnostico de reset
+## Boot manual
 
-```sh
-qemu-system-x86_64 -no-reboot -display none \
-  -serial stdio -d cpu_reset,int \
-  -D /tmp/imagineos-qemu.log \
-  -cdrom distro/coreimage_imagine-astrid.iso
-```
+Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. O prompt oferece `help`, `clear`, `ls`, `cat /init`, `mem`, `ps` e `echo`.
 
-Registrar sempre:
-
-- ultima mensagem do kernel;
-- RIP;
-- RSP;
-- CR2;
-- CR3;
-- vetor da excecao;
-- se ocorreu triple fault.
-
-## Teste manual do shell
-
-Depois que o prompt aparecer:
-
-```text
-help
-test
-echo hello
-clear
-proc-test
-```
-
-O resultado esperado de `proc-test` e:
-
-```text
-[OK] child process started
-[OK] fork/waitpid/exit test passed
-```
-
-No estado atual, qualquer reinicio durante esse comando e uma falha conhecida, nao um resultado valido.
-
-## Regra de validacao
-
-Nao considerar uma funcionalidade estavel por uma unica execucao bem-sucedida. Para processos e memoria, repetir o teste varias vezes e coletar logs de QEMU.
+Sem QEMU/OVMF ou sem as ferramentas de ISO, compilacao e testes locais nao comprovam um boot real.

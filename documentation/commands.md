@@ -1,14 +1,15 @@
-# Comandos do shell
+# Shell
 
-O shell atual e uma aplicacao em `userspace/shell/main.c`.
+O shell atual e um loop integrado ao kernel, executado em ring 0. A entrada vem do COM1 ou do teclado PS/2; comandos e caminhos sao intencionalmente pequenos.
 
-| Comando | Funcao | Estado |
-| --- | --- | --- |
-| `help` | Lista os comandos disponiveis | Funcional em execucoes estaveis |
-| `test` | Verifica que o shell esta em userspace | Funcional em execucoes estaveis |
-| `echo TEXT` | Imprime texto | Funcional em execucoes estaveis |
-| `clear` | Limpa o terminal por syscall | Funcional em execucoes estaveis |
-| `exit` | Encerra o shell | Depende do lifecycle de processos |
-| `proc-test` | Exercita `fork`, `waitpid` e `exit` | Instavel; pode reiniciar a VM |
+| Comando | Funcao |
+| --- | --- |
+| `help` | Lista comandos disponiveis |
+| `clear` | Limpa o framebuffer |
+| `ls` | Lista arquivos basicos do initrd |
+| `cat /init` | Mostra o script de init |
+| `mem` | Informa que o allocator de frames esta ativo |
+| `ps` | Identifica a tarefa foreground atual |
+| `echo texto` | Escreve texto no console |
 
-O parser atual e intencionalmente simples. Ainda nao ha argumentos gerais, redirecionamento, pipes, historico ou filesystem.
+Os scripts `/init` e `/getty` aceitam `echo` e `exec /arquivo`. Isso ainda nao e execucao de processos ELF.
