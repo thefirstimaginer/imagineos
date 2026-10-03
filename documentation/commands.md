@@ -1,14 +1,13 @@
-# Comandos do shell
+# Shell
 
-O shell atual e uma aplicacao em `userspace/shell/main.c`.
+O shell e um ELF x86_64 em ring 3. A entrada vem dos syscalls `read` via COM1 ou teclado PS/2; comandos e caminhos sao intencionalmente pequenos.
 
-| Comando | Funcao | Estado |
-| --- | --- | --- |
-| `help` | Lista os comandos disponiveis | Funcional em execucoes estaveis |
-| `test` | Verifica que o shell esta em userspace | Funcional em execucoes estaveis |
-| `echo TEXT` | Imprime texto | Funcional em execucoes estaveis |
-| `clear` | Limpa o terminal por syscall | Funcional em execucoes estaveis |
-| `exit` | Encerra o shell | Depende do lifecycle de processos |
-| `proc-test` | Exercita `fork`, `waitpid` e `exit` | Instavel; pode reiniciar a VM |
+| Comando | Funcao |
+| --- | --- |
+| `help` | Lista comandos disponiveis |
+| `clear` | Limpa o framebuffer |
+| `pid` | Mostra o PID do shell |
+| `echo texto` | Escreve texto no console |
+| `exit` | Encerra o shell e o kernel quando nao restam tarefas |
 
-O parser atual e intencionalmente simples. Ainda nao ha argumentos gerais, redirecionamento, pipes, historico ou filesystem.
+`init` e `getty` tambem sao ELFs em ring 3; os tres usam a ABI `int 0x80`.

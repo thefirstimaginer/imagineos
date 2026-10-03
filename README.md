@@ -1,54 +1,26 @@
-# Imagine Operating System <img width="200" height="auto" align="right" alt="imagine3w" src="https://github.com/user-attachments/assets/e406f860-0038-4076-8014-8fe5f7ff955e" />
+# Imagine Operating System
 
-ImagineOS is an experimental and educational x86_64 operating system. The current
-release is vR1, codenamed **Astrid**.
-
-The project is under construction and unstable. It currently boots through GRUB
-and Multiboot2, starts a freestanding 64-bit kernel, and provides a VGA text-mode
-shell for testing kernel and userspace components.
-
-## Version Release 1 - Alpha 1 (R1-alpha1)
-
-ImagineOS is an experimental operating system and is still unstable. The
-current image is generated as `distro/imos.iso`.
+ImagineOS is an experimental educational x86_64 operating system, codenamed **Astrid**. The kernel is freestanding Rust and uses the Limine boot protocol. This is an early bring-up, not yet a general-purpose OS.
 
 ## Build
 
-Requirements: GCC, NASM, GNU ld, `grub-mkrescue`, and QEMU.
+Requirements: Rust stable with the `x86_64-unknown-none` target, GNU Make, Limine's x86_64 UEFI executable at `toolchain/limine-binary/BOOTX64.EFI`, `xorriso`, `dosfstools`, `mtools`, and QEMU with OVMF for boot testing.
 
 ```sh
-make clean
+rustup target add x86_64-unknown-none
+make kernel
 make iso
 ```
 
-The generated ISO is:
+The UEFI-only image is written to `distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`.
 
-```text
-distro/imos.iso
-```
+## Boot State
 
-## Run
+The kernel consumes Limine's HHDM, memory map, framebuffer, and initrd responses. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, then loads three ELF64 programs from a USTAR RAMFS. `init`, `getty`, and `shell` run in ring 3 with separate page-table roots.
 
-Run the ISO with the Makefile target:
+The kernel provides `int 0x80` syscalls for console I/O, yield, exit, PID, and clear. Scheduling is cooperative round-robin; timer preemption, heap reclamation, full W^X permissions, VFS, and persistent storage are not implemented yet.
 
-```sh
-make run
-```
-
-For a headless run:
-
-```sh
-timeout 8s qemu-system-x86_64 \
-    -no-reboot -display none -serial stdio \
-    -cdrom distro/imos.iso
-```
-
-The current system can boot the kernel, load userspace ELF modules, and run a
-text shell in successful executions. Userspace process lifecycle and paging
-remain under development; `init.elf` and `proc-test` can still cause faults or
-restart QEMU.
-
-More detailed documentation is available in [documentation/README.md](documentation/README.md).
+More details: [documentation/README.md](documentation/README.md).
 
 ## Copyright
 

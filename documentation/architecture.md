@@ -2,65 +2,20 @@
 
 ## Boot
 
-O GRUB carrega o kernel e os programas de usuario como modulos Multiboot 2:
+Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/initrd.tar`. O kernel e linkado em `0xffffffff80000000` com PADDRs a partir de 1 MiB, para satisfazer a regra do Limine contra PHDRs lower-half. O initrd USTAR contem `init.elf`, `getty.elf` e `shell.elf`.
 
-- `imos.elf`: kernel;
-- `init.elf`: primeiro programa de usuario;
-- `shell.elf`: shell;
-- `clear.elf`: utility de limpeza do terminal.
+## CPU e memoria
 
-O fluxo de boot e:
+`src/gdt.rs` instala GDT de kernel/user e TSS com stack ring 0 dedicada por processo. `src/idt.rs` instala gates para excecoes 0 a 31 e um gate DPL3 em `int 0x80`; o handler registra vetor, error code, RIP, CS e CR2. O PIC legado e mascarado e IF fica desabilitado ate haver remapeamento/controlador de interrupcoes.
 
-1. O Assembly verifica Multiboot, CPUID e long mode.
-2. Paging inicial identity-mapped e ativado.
-3. O kernel configura syscall MSRs, TSS, video, processos, input, IDT e scheduler.
-4. `kernel/src/user.c` procura o modulo `init.elf`.
-5. O segmento ELF e copiado para a imagem de usuario em `0x400000`.
-6. Um espaco de endereco e criado e o processo init entra em ring 3.
+`src/memory.rs` percorre regioes `USABLE` do mapa Limine e oferece alocacao monotonica de frames de 4 KiB pelo HHDM. `src/paging.rs` clona as mappings superiores do Limine e cria page tables de usuario independentes. `src/heap.rs` fornece um bump allocator global de 1 MiB; `dealloc` e intencionalmente no-op.
 
-## Kernel
+`src/elf.rs` valida ELF64 little-endian x86_64 ET_EXEC, bounds da tabela de programas, segmentos `PT_LOAD` e entrypoint executavel. `src/process.rs` mapeia segmentos/BSS e stack em cada CR3, inicia ring 3 via `iretq` (carregando RSP antes do seletor em AX) e escalona cooperativamente em `yield`/`exit`. O frame `int 0x80` suporta `write`, `read`, `yield`, `exit`, `getpid` e `clear`; `write` traduz cada pagina do ponteiro user antes de copiar.
 
-As responsabilidades principais estao organizadas assim:
+## Console e entrada
 
-- `kernel/main.c`: inicializacao geral e entrada do kernel.
-- `kernel/src/user.c`: parser Multiboot, loader ELF e execucao de servicos.
-- `kernel/src/paging.c`: page tables, CR3 e imagem fisica dos processos.
-- `kernel/src/process.c`: PCB, estados, PID e ciclo de vida.
-- `kernel/src/scheduler.c`: ticks PIT e tentativa de escalonamento.
-- `kernel/src/syscall_dispatch.c`: dispatch de syscalls.
-- `drivers/src/print.c`: terminal VGA textual.
-- `kernel/src/input.c` e `drivers/src/ps2.c`: entrada PS/2.
+`src/framebuffer.rs` escreve pixels RGB32, inclui fonte 5x7 de fallback e carrega fontes PSF1/PSF2 com tabelas Unicode. `src/keyboard.rs` faz polling do controlador PS/2 set-1 e converte teclas US/AltGr em `char`; o shell serializa a entrada em UTF-8. COM1 continua disponivel para diagnostico e terminal QEMU.
 
-## Userspace
+## Limites
 
-A imagem de usuario e ligada em `0x400000`. A libc minima oferece wrappers para:
-
-- `read`, `read_nonblock` e `write`;
-- `exec_service`;
-- `fork`, `waitpid` e `exit`;
-- `get_ticks`.
-
-O `init` le a configuracao `userspace/init/initfile/initfile.ini`, embutida no
-ELF durante o link, e procura uma diretiva `SERVICE ($nome) START`. O nome
-`$getty` e convertido para `getty.service`. O getty inicia `login.service`, que
-aceita um nome de usuario em modo de desenvolvimento e inicia `shell.service`.
-Esses servicos usam o console padrao; ainda nao existe `/dev/tty` nem um
-filesystem de usuarios. A utility `clear` possui seu proprio ELF e implementa
-diretamente a syscall de limpeza.
-
-## Memoria
-
-Cada espaco de usuario possui tabelas estaticas com ate 16 slots. A imagem de usuario ocupa uma janela fisica de 2 MiB por slot, copiada a partir do staging virtual em `0x400000`.
-
-O espaco do kernel e identity-mapped. A imagem de usuario e mapeada como pagina grande com permissao de usuario. Este modelo e deliberadamente simples e ainda nao oferece protecao fina por segmento, heap dinamico ou alocacao de paginas sob demanda.
-
-## Syscalls e interrupcoes
-
-A entrada de syscall fica em `arch/x86_64/src/syscall_entry.asm`. O timer usa um frame de interrupcao definido em `kernel/include/scheduler.h` e wrappers em `arch/x86_64/src/idt_.asm`.
-
-A preservacao e restauracao desse frame ainda e uma area instavel. Um erro nessa fronteira pode corromper RIP, CR3 ou a pilha e produzir page fault, general protection fault ou triple fault.
-
-Os vetores de excecao 0 a 31 agora possuem handlers diagnosticos. Em especial,
-page fault imprime o vetor e o endereco em `CR2` e para a CPU. Isso evita que a
-causa seja mascarada imediatamente por um triple fault, embora ainda nao haja
-recuperacao do processo que falhou.
+O scheduler e cooperativo e nao ha timer/APIC ou preempcao. Todas as paginas user sao writable/executable; nao existe W^X, reclaim de frames, heap user ou validacao de checksum USTAR. O sistema nao tem VFS nem armazenamento persistente. O initrd e tratado como artefato confiavel.
