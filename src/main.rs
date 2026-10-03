@@ -51,7 +51,7 @@ pub extern "C" fn _start() -> ! {
     mask_legacy_pic();
     gdt::init();
     idt::init();
-    serial_write(b"ImagineOS Astrid Rust kernel\r\n");
+    serial_write(b"ImagineOS Astrid Dreamcore Kernel\r\n");
 
     if !BASE_REVISION.is_supported() {
         serial_write(b"Limine protocol revision unsupported\r\n");
@@ -81,7 +81,7 @@ pub extern "C" fn _start() -> ! {
             .get_response()
             .and_then(|response| response.framebuffers().next()),
     );
-    console_write("ImagineOS Astrid Rust kernel\n");
+    console_write("ImagineOS Astrid Dreamcore Kernel\n");
     console_write("Frame allocator ready; usable frames: ");
     console_number(frame_count.saturating_sub(1) as u64);
     console_write("; reserved boot frame at physical 0x");
