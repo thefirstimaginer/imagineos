@@ -41,11 +41,6 @@ endif
 # ------------------------------------------------------------------
 
 KERNEL_BIN := $(BUILD_DIR)/dreamcore.elf
-INIT_BIN   := $(BUILD_DIR)/init.elf
-SHELL_BIN  := $(BUILD_DIR)/shell.elf
-CLEAR_BIN  := $(BUILD_DIR)/clear.elf
-GETTY_BIN  := $(BUILD_DIR)/getty.elf
-LOGIN_BIN  := $(BUILD_DIR)/login.elf
 
 # ------------------------------------------------------------------
 # Compiler flags
@@ -80,8 +75,7 @@ override CPPFLAGS += \
     -Ikernel/include \
     -Ilib/common/include \
     -Ilib/libc/include \
-    -Ilib/libkern/include \
-    -Iuserspace/include
+    -Ilib/libkern/include
 
 override NASMFLAGS += \
     -f elf64 \
@@ -97,7 +91,7 @@ override LDFLAGS += \
 # Automatic source discovery
 # ------------------------------------------------------------------
 
-override SRCFILES := $(shell find arch drivers kernel lib userspace -type f | sort)
+override SRCFILES := $(shell find arch drivers kernel lib -type f | sort)
 
 override CFILES := $(filter %.c,$(SRCFILES))
 override ASMFILES := $(filter %.asm,$(SRCFILES))
@@ -115,10 +109,7 @@ KERNEL_C_OBJS := \
     $(BUILD_DIR)/arch/x86_64/src/idt.o \
     $(BUILD_DIR)/arch/x86_64/src/pic.o \
     $(BUILD_DIR)/arch/x86_64/src/port.o \
-    $(BUILD_DIR)/drivers/src/print.o \
-    $(BUILD_DIR)/drivers/src/ps2.o \
     $(BUILD_DIR)/drivers/src/rtc.o \
-    $(BUILD_DIR)/drivers/src/video.o \
     $(BUILD_DIR)/kernel/kernel/main.o \
 	$(BUILD_DIR)/kernel/kernel/start.o \
     $(BUILD_DIR)/kernel/src/process.o \

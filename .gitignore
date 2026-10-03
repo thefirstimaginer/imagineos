@@ -7,11 +7,9 @@
 /main/distro/x86_64/main.iso
 main/distro/x86_64/main.iso
 targets/
-/toolchain
 /.vscode
 /.build
 /distro
 *.bin
 *.iso
 *.o
-*.notused
