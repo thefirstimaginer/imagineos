@@ -12,6 +12,7 @@ struct Console {
     blue_shift: u8,
     cursor_x: usize,
     cursor_y: usize,
+    cursor_visible: bool,
     font: *const u8,
     font_size: usize,
     font_width: usize,
@@ -35,6 +36,7 @@ impl Console {
             blue_shift: 0,
             cursor_x: 0,
             cursor_y: 0,
+            cursor_visible: false,
             font: ptr::null(),
             font_size: 0,
             font_width: 6,
@@ -137,13 +139,20 @@ pub fn write_char(character: char) {
     if console.address.is_null() {
         return;
     }
+    draw_cursor(console, false);
     match character {
         '\n' => {
             console.cursor_x = 0;
             console.cursor_y += console.font_height;
         }
         '\r' => console.cursor_x = 0,
-        '\u{8}' => console.cursor_x = console.cursor_x.saturating_sub(console.font_width),
+        '\u{8}' => {
+            let previous_x = console.cursor_x;
+            console.cursor_x = console.cursor_x.saturating_sub(console.font_width);
+            if console.cursor_x != previous_x {
+                erase_cell(console, console.cursor_x, console.cursor_y);
+            }
+        }
         '\t' => console.cursor_x += console.font_width * 4,
         _ => draw_glyph(console, character),
     }
@@ -170,6 +179,34 @@ pub(crate) fn clear() {
     }
     console.cursor_x = 0;
     console.cursor_y = 0;
+    console.cursor_visible = false;
+}
+
+pub(crate) fn set_cursor_visible(visible: bool) {
+    let console = unsafe { &mut *CONSOLE.0.get() };
+    draw_cursor(console, visible);
+}
+
+fn draw_cursor(console: &mut Console, visible: bool) {
+    if console.address.is_null() || console.cursor_visible == visible {
+        return;
+    }
+    let row = console.cursor_y + console.font_height.saturating_sub(2);
+    let color = if visible { 0xdce8e8 } else { 0x101820 };
+    for column in 1..console.font_width.saturating_sub(1) {
+        pixel(console, console.cursor_x + column, row, color);
+    }
+    console.cursor_visible = visible;
+}
+
+fn erase_cell(console: &Console, x: usize, y: usize) {
+    let width = console.font_width.min(console.width.saturating_sub(x));
+    let height = console.font_height.min(console.height.saturating_sub(y));
+    for row in y..y + height {
+        for column in x..x + width {
+            pixel(console, column, row, 0x101820);
+        }
+    }
 }
 
 fn draw_glyph(console: &mut Console, character: char) {
