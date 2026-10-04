@@ -6,6 +6,61 @@ pub struct Archive<'a> {
     bytes: &'a [u8],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FsError {
+    InvalidPath,
+    NotFound,
+    NotDirectory,
+    IsDirectory,
+    AlreadyExists,
+    DirectoryNotEmpty,
+    NoSpace,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NodeKind {
+    Empty,
+    File,
+    Directory,
+    OpaqueDirectory,
+    Whiteout,
+}
+
+#[derive(Clone, Copy)]
+struct OverlayNode {
+    path: [u8; 256],
+    path_length: usize,
+    kind: NodeKind,
+}
+
+impl OverlayNode {
+    const EMPTY: Self = Self {
+        path: [0; 256],
+        path_length: 0,
+        kind: NodeKind::Empty,
+    };
+
+    fn path(&self) -> &str {
+        core::str::from_utf8(&self.path[..self.path_length]).unwrap_or("")
+    }
+}
+
+const MAX_OVERLAY_NODES: usize = 128;
+
+struct RamFs {
+    archive: Option<Archive<'static>>,
+    overlay: [OverlayNode; MAX_OVERLAY_NODES],
+}
+
+impl RamFs {
+    const fn new() -> Self {
+        Self {
+            archive: None,
+            overlay: [OverlayNode::EMPTY; MAX_OVERLAY_NODES],
+        }
+    }
+}
+
 impl<'a> Archive<'a> {
     pub const fn new(bytes: &'a [u8]) -> Self {
         Self { bytes }
@@ -235,43 +290,339 @@ impl<'a> Archive<'a> {
     }
 }
 
-struct SharedArchive(UnsafeCell<Option<Archive<'static>>>);
-unsafe impl Sync for SharedArchive {}
-static MOUNTED_RAMFS: SharedArchive = SharedArchive(UnsafeCell::new(None));
+struct SharedRamFs(UnsafeCell<RamFs>);
+unsafe impl Sync for SharedRamFs {}
+static MOUNTED_RAMFS: SharedRamFs = SharedRamFs(UnsafeCell::new(RamFs::new()));
 
 pub fn mount(bytes: &'static [u8]) {
-    unsafe {
-        *MOUNTED_RAMFS.0.get() = Some(Archive::new(bytes));
-    }
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    fs.archive = Some(Archive::new(bytes));
+    fs.overlay = [OverlayNode::EMPTY; MAX_OVERLAY_NODES];
 }
 
 pub fn read(path: &str) -> Option<&'static [u8]> {
-    let archive = unsafe { &*MOUNTED_RAMFS.0.get() };
-    archive.as_ref()?.find(path)
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    let path = canonical_path(path)?;
+    if is_hidden(fs, path) {
+        return None;
+    }
+    match find_overlay_node(fs, path).map(|node| node.kind) {
+        Some(NodeKind::File) => Some(&[]),
+        Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => None,
+        Some(NodeKind::Empty) | None => fs.archive.as_ref()?.find(path),
+    }
 }
 
 pub fn find_font() -> Option<&'static [u8]> {
-    let archive = unsafe { &*MOUNTED_RAMFS.0.get() };
-    archive.as_ref()?.find_font()
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    fs.archive.as_ref()?.find_font()
 }
 
 pub fn is_directory(path: &str) -> bool {
-    let archive = unsafe { &*MOUNTED_RAMFS.0.get() };
-    archive
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    let Some(path) = canonical_path(path) else {
+        return false;
+    };
+    match find_overlay_node(fs, path).map(|node| node.kind) {
+        Some(NodeKind::Directory | NodeKind::OpaqueDirectory) => return true,
+        Some(NodeKind::File | NodeKind::Whiteout) => return false,
+        Some(NodeKind::Empty) | None => {}
+    }
+    if is_hidden(fs, path) {
+        return false;
+    }
+    fs.archive
         .as_ref()
         .is_some_and(|archive| archive.is_directory(path))
+        || fs.overlay.iter().any(|node| {
+            matches!(
+                node.kind,
+                NodeKind::File | NodeKind::Directory | NodeKind::OpaqueDirectory
+            ) && is_child_path(node.path(), path)
+        })
 }
 
 pub fn is_file(path: &str) -> bool {
-    let archive = unsafe { &*MOUNTED_RAMFS.0.get() };
-    archive
-        .as_ref()
-        .is_some_and(|archive| archive.is_file(path))
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    let Some(path) = canonical_path(path) else {
+        return false;
+    };
+    if is_hidden(fs, path) {
+        return false;
+    }
+    match find_overlay_node(fs, path).map(|node| node.kind) {
+        Some(NodeKind::File) => true,
+        Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => false,
+        Some(NodeKind::Empty) | None => fs
+            .archive
+            .as_ref()
+            .is_some_and(|archive| archive.is_file(path)),
+    }
 }
 
 pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
-    let archive = unsafe { &*MOUNTED_RAMFS.0.get() };
-    archive.as_ref()?.list_directory(path, output)
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    let path = canonical_path(path)?;
+    if !is_directory(path) {
+        return None;
+    }
+    let opaque =
+        find_overlay_node(fs, path).is_some_and(|node| node.kind == NodeKind::OpaqueDirectory);
+    let mut entries = [0u8; 4096];
+    let mut written = 0usize;
+    if !opaque {
+        if let Some(archive) = fs.archive.as_ref() {
+            if archive.is_directory(path) {
+                if let Some(base_length) = archive.list_directory(path, &mut entries) {
+                    for name in entries[..base_length].split(|byte| *byte == b'\n') {
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let mut child = [0u8; 256];
+                        let child_length = join_child(path, name, &mut child)?;
+                        if !is_hidden(fs, core::str::from_utf8(&child[..child_length]).ok()?) {
+                            append_name(output, &mut written, name)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for node in fs.overlay.iter().filter(|node| {
+        matches!(
+            node.kind,
+            NodeKind::File | NodeKind::Directory | NodeKind::OpaqueDirectory
+        )
+    }) {
+        if let Some(Some(name)) = immediate_child(node.path(), path) {
+            append_name(output, &mut written, name)?;
+        }
+    }
+    Some(written)
+}
+
+pub fn create_file(path: &str) -> Result<(), FsError> {
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path.is_empty() {
+        return Err(FsError::IsDirectory);
+    }
+    if is_file(path) {
+        return Ok(());
+    }
+    if is_directory(path) {
+        return Err(FsError::IsDirectory);
+    }
+    ensure_parent_directory(path)?;
+    insert_overlay(path, NodeKind::File)
+}
+
+pub fn create_directory(path: &str) -> Result<(), FsError> {
+    create_directory_with_parents(path, false)
+}
+
+pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), FsError> {
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path.is_empty() {
+        return Err(FsError::AlreadyExists);
+    }
+    if parents {
+        let mut current = [0u8; 256];
+        let mut current_length = 0usize;
+        for component in path.split('/') {
+            if current_length != 0 {
+                current[current_length] = b'/';
+                current_length += 1;
+            }
+            if current_length + component.len() > current.len() {
+                return Err(FsError::InvalidPath);
+            }
+            current[current_length..current_length + component.len()]
+                .copy_from_slice(component.as_bytes());
+            current_length += component.len();
+            let current_path = core::str::from_utf8(&current[..current_length])
+                .map_err(|_| FsError::InvalidPath)?;
+            if is_directory(current_path) {
+                continue;
+            }
+            if is_file(current_path) {
+                return Err(FsError::AlreadyExists);
+            }
+            create_directory_one(current_path)?;
+        }
+        return Ok(());
+    }
+    create_directory_one(path)
+}
+
+fn create_directory_one(path: &str) -> Result<(), FsError> {
+    if is_file(path) || is_directory(path) {
+        return Err(FsError::AlreadyExists);
+    }
+    ensure_parent_directory(path)?;
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    let hides_archive = fs
+        .archive
+        .as_ref()
+        .is_some_and(|archive| archive.is_directory(path));
+    insert_overlay(
+        path,
+        if hides_archive {
+            NodeKind::OpaqueDirectory
+        } else {
+            NodeKind::Directory
+        },
+    )
+}
+
+pub fn remove(path: &str, recursive: bool) -> Result<(), FsError> {
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path.is_empty() {
+        return Err(FsError::InvalidPath);
+    }
+    if !is_file(path) && !is_directory(path) {
+        return Err(FsError::NotFound);
+    }
+    if is_directory(path) {
+        let mut children = [0u8; 4096];
+        if list_directory(path, &mut children).unwrap_or(0) != 0 && !recursive {
+            return Err(FsError::DirectoryNotEmpty);
+        }
+    }
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    let exists_in_archive = fs
+        .archive
+        .as_ref()
+        .is_some_and(|archive| archive.is_file(path) || archive.is_directory(path));
+    if exists_in_archive {
+        insert_overlay(path, NodeKind::Whiteout)?;
+    } else {
+        for node in fs.overlay.iter_mut() {
+            if node.kind != NodeKind::Empty
+                && (node.path() == path || is_child_path(node.path(), path))
+            {
+                *node = OverlayNode::EMPTY;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn find_overlay_node<'a>(fs: &'a RamFs, path: &str) -> Option<&'a OverlayNode> {
+    fs.overlay
+        .iter()
+        .find(|node| node.kind != NodeKind::Empty && node.path() == path)
+}
+
+fn is_hidden(fs: &RamFs, path: &str) -> bool {
+    if let Some(node) = find_overlay_node(fs, path) {
+        return node.kind == NodeKind::Whiteout;
+    }
+    fs.overlay.iter().any(|node| {
+        (node.kind == NodeKind::Whiteout
+            && (node.path() == path || is_child_path(path, node.path())))
+            || (node.kind == NodeKind::OpaqueDirectory && is_child_path(path, node.path()))
+    })
+}
+
+fn is_child_path(path: &str, parent: &str) -> bool {
+    if parent.is_empty() {
+        return !path.is_empty();
+    }
+    path.strip_prefix(parent)
+        .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn canonical_path(path: &str) -> Option<&str> {
+    if path.is_empty() {
+        return Some(path);
+    }
+    let path = path.strip_prefix('/').unwrap_or(path);
+    if path.is_empty() {
+        return Some(path);
+    }
+    if path
+        .split('/')
+        .any(|component| component.is_empty() || component == "." || component == "..")
+    {
+        return None;
+    }
+    Some(path)
+}
+
+fn ensure_parent_directory(path: &str) -> Result<(), FsError> {
+    let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+    if is_directory(parent) {
+        Ok(())
+    } else {
+        Err(FsError::NotDirectory)
+    }
+}
+
+fn insert_overlay(path: &str, kind: NodeKind) -> Result<(), FsError> {
+    if path.len() > 256 {
+        return Err(FsError::InvalidPath);
+    }
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    let slot = fs
+        .overlay
+        .iter()
+        .position(|node| node.kind != NodeKind::Empty && node.path() == path)
+        .or_else(|| {
+            fs.overlay
+                .iter()
+                .position(|node| node.kind == NodeKind::Empty)
+        })
+        .ok_or(FsError::NoSpace)?;
+    let mut node = OverlayNode::EMPTY;
+    node.path[..path.len()].copy_from_slice(path.as_bytes());
+    node.path_length = path.len();
+    node.kind = kind;
+    fs.overlay[slot] = node;
+    Ok(())
+}
+
+fn join_child(parent: &str, name: &[u8], output: &mut [u8]) -> Option<usize> {
+    let prefix = parent.len() + usize::from(!parent.is_empty());
+    if prefix + name.len() > output.len() {
+        return None;
+    }
+    output[..parent.len()].copy_from_slice(parent.as_bytes());
+    if !parent.is_empty() {
+        output[parent.len()] = b'/';
+    }
+    output[prefix..prefix + name.len()].copy_from_slice(name);
+    Some(prefix + name.len())
+}
+
+fn immediate_child<'a>(path: &'a str, parent: &str) -> Option<Option<&'a [u8]>> {
+    let relative = if parent.is_empty() {
+        path
+    } else if path == parent {
+        return Some(None);
+    } else {
+        path.strip_prefix(parent)?.strip_prefix('/')?
+    };
+    if relative.is_empty() {
+        return Some(None);
+    }
+    Some(Some(relative.split('/').next()?.as_bytes()))
+}
+
+fn append_name(output: &mut [u8], written: &mut usize, name: &[u8]) -> Option<()> {
+    if output[..*written]
+        .split(|byte| *byte == b'\n')
+        .any(|existing| existing == name)
+    {
+        return Some(());
+    }
+    let end = written.checked_add(name.len())?.checked_add(1)?;
+    if end > output.len() {
+        return None;
+    }
+    output[*written..*written + name.len()].copy_from_slice(name);
+    output[end - 1] = b'\n';
+    *written = end;
+    Some(())
 }
 
 fn field(bytes: &[u8]) -> &[u8] {
@@ -353,5 +704,46 @@ mod tests {
             .list_directory("/bin", &mut entries)
             .unwrap();
         assert_eq!(&entries[..length], b"init\n");
+    }
+
+    #[test]
+    fn writable_overlay_creates_lists_and_removes_nodes() {
+        let empty_archive: &'static [u8] = Box::leak(vec![0u8; 1024].into_boxed_slice());
+        super::mount(empty_archive);
+        assert_eq!(
+            super::create_directory_with_parents("/var/log/app", true),
+            Ok(())
+        );
+        assert_eq!(super::create_file("/var/log/app/empty.txt"), Ok(()));
+        assert_eq!(super::create_file("/var/log/app/empty.txt"), Ok(()));
+        assert_eq!(super::read("/var/log/app/empty.txt"), Some(&[][..]));
+        assert_eq!(
+            super::create_file("/missing/file"),
+            Err(super::FsError::NotDirectory)
+        );
+
+        let mut entries = [0u8; 128];
+        let length = super::list_directory("/var/log/app", &mut entries).unwrap();
+        assert_eq!(&entries[..length], b"empty.txt\n");
+        assert_eq!(
+            super::remove("/var/log/app", false),
+            Err(super::FsError::DirectoryNotEmpty)
+        );
+        assert_eq!(super::remove("/var/log/app/empty.txt", false), Ok(()));
+        assert_eq!(super::is_file("/var/log/app/empty.txt"), false);
+        assert_eq!(super::remove("/var/log/app", true), Ok(()));
+        assert_eq!(super::is_directory("/var/log/app"), false);
+        assert_eq!(
+            super::create_directory_with_parents("/tmp/a/b", true),
+            Ok(())
+        );
+        assert!(super::is_directory("/tmp/a/b"));
+
+        let lower_file: &'static [u8] =
+            Box::leak(archive_with_file(b"bin", b"legacy", b"read-only").into_boxed_slice());
+        super::mount(lower_file);
+        assert_eq!(super::read("/bin/legacy"), Some(&b"read-only"[..]));
+        assert_eq!(super::remove("/bin/legacy", false), Ok(()));
+        assert_eq!(super::read("/bin/legacy"), None);
     }
 }

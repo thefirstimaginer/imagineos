@@ -5,6 +5,9 @@ pub const SYS_WRITE: u64 = 1;
 pub const SYS_EXIT: u64 = 4;
 pub const SYS_READ_FILE: u64 = 10;
 pub const SYS_READDIR: u64 = 11;
+pub const SYS_MKDIR: u64 = 12;
+pub const SYS_TOUCH: u64 = 13;
+pub const SYS_REMOVE: u64 = 14;
 
 pub unsafe fn argument(argv: *const *const u8, index: usize) -> Option<&'static [u8]> {
     let pointer = *argv.add(index);
@@ -89,6 +92,32 @@ pub fn list_directory(path: &[u8], output: &mut [u8]) -> i64 {
     }
 }
 
+pub fn mkdir(path: &[u8], parents: bool) -> i64 {
+    unsafe {
+        syscall3(
+            SYS_MKDIR,
+            path.as_ptr() as u64,
+            path.len() as u64,
+            parents as u64,
+        ) as i64
+    }
+}
+
+pub fn touch(path: &[u8]) -> i64 {
+    unsafe { syscall2(SYS_TOUCH, path.as_ptr() as u64, path.len() as u64) as i64 }
+}
+
+pub fn remove(path: &[u8], recursive: bool) -> i64 {
+    unsafe {
+        syscall3(
+            SYS_REMOVE,
+            path.as_ptr() as u64,
+            path.len() as u64,
+            recursive as u64,
+        ) as i64
+    }
+}
+
 pub fn exit(status: u64) -> ! {
     unsafe {
         syscall3(SYS_EXIT, status, 0, 0);
@@ -106,6 +135,17 @@ unsafe fn syscall3(number: u64, first: u64, second: u64, third: u64) -> u64 {
         in("rdi") first,
         in("rsi") second,
         in("rdx") third,
+    );
+    result
+}
+
+unsafe fn syscall2(number: u64, first: u64, second: u64) -> u64 {
+    let result: u64;
+    asm!(
+        "int 0x80",
+        inout("rax") number => result,
+        in("rdi") first,
+        in("rsi") second,
     );
     result
 }

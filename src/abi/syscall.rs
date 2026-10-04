@@ -16,6 +16,9 @@ pub const SYS_ISDIR: u64 = 8;
 pub const SYS_ISFILE: u64 = 9;
 pub const SYS_READ_FILE: u64 = 10;
 pub const SYS_READDIR: u64 = 11;
+pub const SYS_MKDIR: u64 = 12;
+pub const SYS_TOUCH: u64 = 13;
+pub const SYS_REMOVE: u64 = 14;
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
 unsafe impl Sync for SharedKeyboard {}
@@ -245,10 +248,58 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             }
             frame
         }
+        SYS_MKDIR | SYS_TOUCH | SYS_REMOVE => {
+            let mut path_buffer = [0u8; 256];
+            let path = match copy_user_path(frame_ref.rdi, frame_ref.rsi, &mut path_buffer) {
+                Ok(path) => path,
+                Err(error) => {
+                    frame_ref.rax = error as u64;
+                    return frame;
+                }
+            };
+            let result = match frame_ref.rax {
+                SYS_MKDIR if frame_ref.rdx != 0 => {
+                    crate::ramfs::create_directory_with_parents(path, true)
+                }
+                SYS_MKDIR => crate::ramfs::create_directory(path),
+                SYS_TOUCH => crate::ramfs::create_file(path),
+                SYS_REMOVE => crate::ramfs::remove(path, frame_ref.rdx != 0),
+                _ => unreachable!(),
+            };
+            frame_ref.rax = result.map_or_else(fs_error_code, |_| 0) as u64;
+            frame
+        }
         _ => {
             frame_ref.rax = u64::MAX;
             frame
         }
+    }
+}
+
+fn copy_user_path<'a>(
+    address: u64,
+    length: u64,
+    buffer: &'a mut [u8; 256],
+) -> Result<&'a str, i64> {
+    let length = usize::try_from(length).map_err(|_| -22i64)?;
+    if length == 0 || length > buffer.len() {
+        return Err(-22);
+    }
+    if !process::copy_from_current_user(address, &mut buffer[..length]) {
+        return Err(-14);
+    }
+    core::str::from_utf8(&buffer[..length]).map_err(|_| -22)
+}
+
+fn fs_error_code(error: crate::ramfs::FsError) -> i64 {
+    match error {
+        crate::ramfs::FsError::InvalidPath => -22,
+        crate::ramfs::FsError::NotFound => -2,
+        crate::ramfs::FsError::NotDirectory => -20,
+        crate::ramfs::FsError::IsDirectory => -21,
+        crate::ramfs::FsError::AlreadyExists => -17,
+        crate::ramfs::FsError::DirectoryNotEmpty => -39,
+        crate::ramfs::FsError::NoSpace => -28,
     }
 }
 

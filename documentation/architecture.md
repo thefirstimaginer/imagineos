@@ -12,7 +12,7 @@ Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/ramfs.tar`
 
 `src/exec/elf.rs` valida ELF64 little-endian x86_64 ET_EXEC, bounds da tabela de programas, segmentos `PT_LOAD` e entrypoint executavel. `src/exec/process.rs` mapeia segmentos/BSS, `argv`, `envp` e stack em cada CR3; inicia ring 3 via `iretq` (carregando RSP antes do seletor em AX) e executa novos binarios do RAMFS. O frame `int 0x80` inclui I/O, `yield`, `exit`, PID, `clear`, `exec`, consulta de arquivos/diretorios, leitura de arquivo e listagem de diretorio. Copias entre user/kernel sao traduzidas pagina a pagina.
 
-`src/fs/ramfs.rs` monta o USTAR e expoe paths, leitura e listagem de diretorios. As imagens executaveis sao construidas no staging do Make e empacotadas dentro de `ramfs.tar`, nunca copiadas separadamente ao ESP. O shell tem built-ins de sessao, expande variaveis simples, e procura comandos externos nos diretorios de `PATH`.
+`src/fs/ramfs.rs` monta o USTAR e expoe paths, leitura e listagem de diretorios. Um overlay fixo de ate 128 nos representa arquivos vazios, diretorios e whiteouts mutaveis; `mkdir`, `touch` e `rm` alteram somente esse overlay em RAM, sem escrever no tar. As alteracoes desaparecem no reboot. As imagens executaveis sao construidas no staging do Make e empacotadas dentro de `ramfs.tar`, nunca copiadas separadamente ao ESP. O shell tem built-ins de sessao, expande variaveis simples, e procura comandos externos nos diretorios de `PATH`.
 
 ## Console e entrada
 
