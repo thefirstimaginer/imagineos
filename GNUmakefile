@@ -9,6 +9,7 @@ KERNEL := target/$(TARGET)/release/dreamcore
 ISO_DIR := .build/iso
 RAMFS_IMAGE := .build/ramfs.tar
 USER_UTILITIES := cat grep ls
+RAMFS_DIRS := bin home system/fonts tmp usr
 USER_PROGRAMS := .build/user/init.elf .build/user/getty.elf .build/user/shell.elf \
 	$(addprefix .build/user/utilities/,$(addsuffix .elf,$(USER_UTILITIES)))
 RAMFS_FILES := $(shell find ramfs -type f | sort)
@@ -25,7 +26,7 @@ kernel: linker.ld
 
 $(RAMFS_IMAGE): $(USER_PROGRAMS) $(RAMFS_FILES)
 	rm -rf .build/ramfs
-	mkdir -p .build/ramfs
+	mkdir -p $(addprefix .build/ramfs/,$(RAMFS_DIRS))
 	cp -a ramfs/. .build/ramfs/
 	cp .build/user/init.elf .build/ramfs/bin/init
 	cp .build/user/getty.elf .build/ramfs/bin/getty

@@ -18,7 +18,7 @@
 
 ## Ainda ausente ou nao validado
 
-- ISO atual: `distro/dreamcore-2026-10-04-19-33-astrid.iso` (UEFI). O ESP contem apenas kernel e `ramfs.tar` em `/boot`, alem dos arquivos obrigatorios de boot Limine. O boot interativo desta versao ainda precisa ser validado em QEMU.
+- ISO atual: `distro/dreamcore-2026-10-04-19-49-astrid.iso` (UEFI). O ESP contem apenas kernel e `ramfs.tar` em `/boot`, alem dos arquivos obrigatorios de boot Limine. O boot interativo desta versao ainda precisa ser validado em QEMU.
 - O `#GP` observado no vetor 13 ocorria no `iretq`: `RAX` continha o ponteiro do TrapFrame, mas era sobrescrito com `0x33` antes de carregar `RSP`. A ordem foi corrigida e verificada no disassembly.
 - Os escritores COM1 agora convertem LF isolado em CRLF, mantendo mensagens uma por linha.
 - O PIC legado continua mascarado e IF desabilitado em ring 3 ate existir timer/APIC.
