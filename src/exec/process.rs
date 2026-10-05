@@ -342,6 +342,10 @@ pub fn current_pid() -> usize {
     scheduler.processes[scheduler.current].pid
 }
 
+pub fn current_slot() -> usize {
+    unsafe { (*SCHEDULER.0.get()).current }
+}
+
 pub fn yield_current(frame: *mut TrapFrame) -> *mut TrapFrame {
     schedule(frame, false)
 }
@@ -421,6 +425,7 @@ pub fn spawn_current(
         }
     };
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    crate::syscall::reset_open_files(slot);
     scheduler.processes[slot] = process;
     scheduler.count = scheduler.count.max(slot + 1);
     unsafe {

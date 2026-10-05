@@ -12,5 +12,12 @@ int strcmp(const char *left, const char *right);
 int strncmp(const char *left, const char *right, size_t count);
 char *strcpy(char *destination, const char *source);
 char *strncpy(char *destination, const char *source, size_t count);
+char *strchr(const char *text, int character);
+char *strrchr(const char *text, int character);
+char *strpbrk(const char *text, const char *accept);
+char *strcat(char *destination, const char *source);
+char *strdup(const char *text);
+char *strerror(int number);
+char *strtok(char *text, const char *delimiters);
 
 #endif

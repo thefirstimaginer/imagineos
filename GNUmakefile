@@ -11,7 +11,8 @@ RAMFS_IMAGE := .build/ramfs.tar
 USER_UTILITIES := cat grep ls mkdir rm touch
 USER_C_APPS ?= vim
 RAMFS_DIRS := bin home system/fonts tmp usr
-USER_PROGRAMS := .build/user/init.elf .build/user/getty.elf .build/user/shell.elf \
+
+USER_PROGRAMS := .build/user/init.elf .build/user/getty.elf .build/user/shell.elf .build/user/tcc.elf \
 	$(addprefix .build/user/utilities/,$(addsuffix .elf,$(USER_UTILITIES))) \
 	$(addprefix .build/user/c/,$(addsuffix .elf,$(USER_C_APPS)))
 
@@ -38,6 +39,7 @@ $(RAMFS_IMAGE): $(USER_PROGRAMS) $(RAMFS_FILES)
 	cp .build/user/init.elf .build/ramfs/bin/init
 	cp .build/user/getty.elf .build/ramfs/bin/getty
 	cp .build/user/shell.elf .build/ramfs/bin/shell
+	cp .build/user/tcc.elf .build/ramfs/bin/tcc
 	for utility in $(USER_UTILITIES); do cp .build/user/utilities/$$utility.elf .build/ramfs/bin/$$utility; done
 	for app in $(USER_C_APPS); do cp .build/user/c/$$app.elf .build/ramfs/bin/$$app; done
 	tar --format=ustar -C .build/ramfs -cf $@ bin home system tmp usr
@@ -69,6 +71,11 @@ musl-source: $(MUSL_SOURCE)/README
 		-C panic=abort -C relocation-model=static \
 		-C link-arg=-Tuserspace/linker.ld $< -o $@
 
+.build/user/tcc.elf: userspace/tcc.c userspace/libc/include/dreamcore.h userspace/libc/include/string.h userspace/libc/include/stdio.h userspace/libc/include/stdlib.h userspace/libc/include/unistd.h userspace/libc/include/fcntl.h .build/user/crt0.o .build/user/unistd.o .build/user/string.o .build/user/stdio.o .build/user/stdlib.o $(TCC_HOST) $(TCC_SOURCE)/libtcc1.a userspace/linker.ld
+	mkdir -p .build/user
+	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o .build/user/tcc.o
+	$(CC) -nostdlib -static -no-pie -Wl,-Tuserspace/linker.ld -Wl,--build-id=none .build/user/tcc.o .build/user/crt0.o .build/user/unistd.o .build/user/string.o .build/user/stdio.o .build/user/stdlib.o $(TCC_SOURCE)/libtcc1.a -o $@
+
 .build/user/utilities/%.elf: userspace/utilities/%.rs userspace/utilities/common.rs userspace/linker.ld
 	mkdir -p .build/user/utilities
 	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
@@ -84,7 +91,7 @@ musl-source: $(MUSL_SOURCE)/README
 $(TCC_SOURCE)/libtcc1.a: $(TCC_HOST)
 	@test -f $@
 
-.build/user/unistd.o: userspace/libc/unistd.c userspace/libc/include/unistd.h userspace/libc/include/dreamcore.h
+.build/user/unistd.o: userspace/libc/unistd.c userspace/libc/include/unistd.h userspace/libc/include/fcntl.h userspace/libc/include/dreamcore.h
 	mkdir -p .build/user
 	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o $@
 
@@ -104,7 +111,7 @@ $(TCC_SOURCE)/libtcc1.a: $(TCC_HOST)
 	mkdir -p .build/user
 	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o $@
 
-.build/user/c/%.elf: ramfs/home/%.c userspace/libc/include/dreamcore.h userspace/libc/include/string.h userspace/libc/include/stdio.h userspace/libc/include/stdlib.h userspace/libc/include/unistd.h .build/user/crt0.o .build/user/unistd.o .build/user/string.o .build/user/stdio.o .build/user/stdlib.o $(TCC_HOST) $(TCC_SOURCE)/libtcc1.a userspace/linker.ld
+.build/user/c/%.elf: ramfs/home/%.c userspace/libc/include/dreamcore.h userspace/libc/include/string.h userspace/libc/include/stdio.h userspace/libc/include/stdlib.h userspace/libc/include/unistd.h userspace/libc/include/fcntl.h .build/user/crt0.o .build/user/unistd.o .build/user/string.o .build/user/stdio.o .build/user/stdlib.o $(TCC_HOST) $(TCC_SOURCE)/libtcc1.a userspace/linker.ld
 	mkdir -p .build/user/c
 	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o .build/user/c/$*.o
 	$(CC) -nostdlib -static -no-pie -Wl,-Tuserspace/linker.ld -Wl,--build-id=none .build/user/c/$*.o .build/user/crt0.o .build/user/unistd.o .build/user/string.o .build/user/stdio.o .build/user/stdlib.o $(TCC_SOURCE)/libtcc1.a -o $@

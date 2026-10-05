@@ -1,4 +1,5 @@
 #include "dreamcore.h"
+#include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -46,13 +47,43 @@ static void redraw(const char *mode)
 
 static int save_document(void)
 {
-    long result = dc_write_file(filename, document, document_length);
-    if (result < 0) {
+    int descriptor = open(filename, O_WRONLY | O_TRUNC);
+    if (descriptor < 0 && errno == 2) {
+        descriptor = open(filename, O_WRONLY | O_CREAT, 0666);
+    }
+    if (descriptor < 0) {
         write_text("\nErro ao salvar (arquivo limitado a 4096 bytes).\n");
         return 0;
     }
+    unsigned long written = 0;
+    while (written < document_length) {
+        long result = write(descriptor, document + written, document_length - written);
+        if (result <= 0) {
+            close(descriptor);
+            write_text("\nErro ao salvar (arquivo limitado a 4096 bytes).\n");
+            return 0;
+        }
+        written += (unsigned long)result;
+    }
+    close(descriptor);
     write_text("\nArquivo salvo.\n");
     return 1;
+}
+
+static void load_document(void)
+{
+    int descriptor = open(filename, O_RDONLY);
+    if (descriptor < 0 && errno == 2) {
+        descriptor = open(filename, O_CREAT | O_RDWR, 0666);
+    }
+    if (descriptor < 0) return;
+    while (document_length < BUFFER_CAPACITY) {
+        long result = read(descriptor, document + document_length,
+                           BUFFER_CAPACITY - document_length);
+        if (result <= 0) break;
+        document_length += (unsigned long)result;
+    }
+    close(descriptor);
 }
 
 static int read_command(char *command)
@@ -105,8 +136,7 @@ int main(int argc, char **argv)
     }
     for (unsigned long index = 0; index <= path_length; index++) filename[index] = requested_path[index];
 
-    long existing_length = dc_read_file(filename, document, BUFFER_CAPACITY);
-    if (existing_length > 0) document_length = (unsigned long)existing_length;
+    load_document();
     redraw("NORMAL");
 
     int inserting = 0;

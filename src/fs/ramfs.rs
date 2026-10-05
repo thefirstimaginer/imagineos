@@ -351,6 +351,19 @@ pub fn read_file_into(path: &str, output: &mut [u8]) -> Result<usize, FsError> {
     Ok(contents.len())
 }
 
+pub fn file_size(path: &str) -> Option<usize> {
+    let path = canonical_path(path)?;
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    if is_hidden(fs, path) {
+        return None;
+    }
+    match find_overlay_node(fs, path).map(|node| node.kind) {
+        Some(NodeKind::File) => find_overlay_node(fs, path).map(|node| node.data_length),
+        Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => None,
+        Some(NodeKind::Empty) | None => fs.archive.as_ref()?.find(path).map(|bytes| bytes.len()),
+    }
+}
+
 pub fn find_font() -> Option<&'static [u8]> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     fs.archive.as_ref()?.find_font()
