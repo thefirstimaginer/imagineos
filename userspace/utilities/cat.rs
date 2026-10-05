@@ -1,3 +1,15 @@
+/*
+    Simple implementation of the `cat` command in Rust for a no_std environment.
+    (C) 2026 The Imagine Project. All rights reserved.
+    ----------
+    DNU Public License v1.0 (DNU-PLv1)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the DNU Public License as published by
+    The Imagine Project, either version 1 of the License, or (at your option) 
+    any later version.
+*/
+
 #![no_std]
 #![no_main]
 
