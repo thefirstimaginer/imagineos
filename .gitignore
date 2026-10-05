@@ -1,6 +1,7 @@
 targets/
 /.vscode
 /.build
+third_party
 /target/
 /userspace/target/
 /distro
@@ -8,3 +9,8 @@ targets/
 *.iso
 *.o
 /ramfs
+!/ramfs/
+ramfs/*
+!/ramfs/home/
+ramfs/home/*
+!/ramfs/home/*.c

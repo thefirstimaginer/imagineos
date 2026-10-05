@@ -108,6 +108,9 @@ impl<'a> Elf64<'a> {
         let file_size = usize::try_from(read_u64(self.bytes, header + 32)?)
             .map_err(|_| Error::InvalidSegment)?;
         let memory_size = read_u64(self.bytes, header + 40)?;
+        if file_size == 0 && memory_size == 0 {
+            return Ok(None);
+        }
         let file_end = file_offset
             .checked_add(file_size)
             .ok_or(Error::InvalidSegment)?;
@@ -174,8 +177,8 @@ fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, Error> {
 mod tests {
     use super::{Elf64, Error};
 
-    fn valid_elf() -> [u8; 128] {
-        let mut bytes = [0u8; 128];
+    fn valid_elf() -> [u8; 184] {
+        let mut bytes = [0u8; 184];
         bytes[..4].copy_from_slice(b"\x7fELF");
         bytes[4] = 2;
         bytes[5] = 1;
@@ -187,15 +190,16 @@ mod tests {
         bytes[32..40].copy_from_slice(&64u64.to_le_bytes());
         bytes[52..54].copy_from_slice(&64u16.to_le_bytes());
         bytes[54..56].copy_from_slice(&56u16.to_le_bytes());
-        bytes[56..58].copy_from_slice(&1u16.to_le_bytes());
+        bytes[56..58].copy_from_slice(&2u16.to_le_bytes());
         bytes[64..68].copy_from_slice(&1u32.to_le_bytes());
         bytes[68..72].copy_from_slice(&1u32.to_le_bytes());
-        bytes[72..80].copy_from_slice(&120u64.to_le_bytes());
+        bytes[72..80].copy_from_slice(&176u64.to_le_bytes());
         bytes[80..88].copy_from_slice(&0x400000u64.to_le_bytes());
         bytes[96..104].copy_from_slice(&8u64.to_le_bytes());
         bytes[104..112].copy_from_slice(&8u64.to_le_bytes());
         bytes[112..120].copy_from_slice(&4096u64.to_le_bytes());
-        bytes[120..128].copy_from_slice(b"testcode");
+        bytes[120..124].copy_from_slice(&1u32.to_le_bytes());
+        bytes[176..184].copy_from_slice(b"testcode");
         bytes
     }
 

@@ -1,6 +1,7 @@
 use core::cell::UnsafeCell;
 
 const BLOCK_SIZE: usize = 512;
+const OVERLAY_DATA_CAPACITY: usize = 1024 * 1024;
 
 pub struct Archive<'a> {
     bytes: &'a [u8],
@@ -31,6 +32,8 @@ struct OverlayNode {
     path: [u8; 256],
     path_length: usize,
     kind: NodeKind,
+    data_start: usize,
+    data_length: usize,
 }
 
 impl OverlayNode {
@@ -38,6 +41,8 @@ impl OverlayNode {
         path: [0; 256],
         path_length: 0,
         kind: NodeKind::Empty,
+        data_start: 0,
+        data_length: 0,
     };
 
     fn path(&self) -> &str {
@@ -50,6 +55,8 @@ const MAX_OVERLAY_NODES: usize = 128;
 struct RamFs {
     archive: Option<Archive<'static>>,
     overlay: [OverlayNode; MAX_OVERLAY_NODES],
+    file_data: [u8; OVERLAY_DATA_CAPACITY],
+    file_data_used: usize,
 }
 
 impl RamFs {
@@ -57,6 +64,8 @@ impl RamFs {
         Self {
             archive: None,
             overlay: [OverlayNode::EMPTY; MAX_OVERLAY_NODES],
+            file_data: [0; OVERLAY_DATA_CAPACITY],
+            file_data_used: 0,
         }
     }
 }
@@ -298,6 +307,7 @@ pub fn mount(bytes: &'static [u8]) {
     let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
     fs.archive = Some(Archive::new(bytes));
     fs.overlay = [OverlayNode::EMPTY; MAX_OVERLAY_NODES];
+    fs.file_data_used = 0;
 }
 
 pub fn read(path: &str) -> Option<&'static [u8]> {
@@ -306,11 +316,39 @@ pub fn read(path: &str) -> Option<&'static [u8]> {
     if is_hidden(fs, path) {
         return None;
     }
-    match find_overlay_node(fs, path).map(|node| node.kind) {
+    let overlay_node = find_overlay_node(fs, path);
+    match overlay_node.map(|node| node.kind) {
         Some(NodeKind::File) => Some(&[]),
         Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => None,
         Some(NodeKind::Empty) | None => fs.archive.as_ref()?.find(path),
     }
+}
+
+pub fn read_file_into(path: &str, output: &mut [u8]) -> Result<usize, FsError> {
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    if path.is_empty() || is_hidden(fs, path) {
+        return Err(FsError::NotFound);
+    }
+    let contents = match find_overlay_node(fs, path).map(|node| node.kind) {
+        Some(NodeKind::File) => {
+            let node = find_overlay_node(fs, path).ok_or(FsError::NotFound)?;
+            &fs.file_data[node.data_start..node.data_start + node.data_length]
+        }
+        Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => {
+            return Err(FsError::NotFound);
+        }
+        Some(NodeKind::Empty) | None => fs
+            .archive
+            .as_ref()
+            .and_then(|archive| archive.find(path))
+            .ok_or(FsError::NotFound)?,
+    };
+    if contents.len() > output.len() {
+        return Err(FsError::NoSpace);
+    }
+    output[..contents.len()].copy_from_slice(contents);
+    Ok(contents.len())
 }
 
 pub fn find_font() -> Option<&'static [u8]> {
@@ -414,6 +452,64 @@ pub fn create_file(path: &str) -> Result<(), FsError> {
     }
     ensure_parent_directory(path)?;
     insert_overlay(path, NodeKind::File)
+}
+
+pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path.is_empty() {
+        return Err(FsError::IsDirectory);
+    }
+    if path.len() > 256 || is_directory(path) {
+        return Err(if path.len() > 256 {
+            FsError::InvalidPath
+        } else {
+            FsError::IsDirectory
+        });
+    }
+    ensure_parent_directory(path)?;
+
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    let existing_slot = fs
+        .overlay
+        .iter()
+        .position(|node| node.kind == NodeKind::File && node.path() == path);
+    let reusable = existing_slot.is_some_and(|slot| contents.len() <= fs.overlay[slot].data_length);
+    if !reusable && contents.len() > OVERLAY_DATA_CAPACITY - fs.file_data_used {
+        return Err(FsError::NoSpace);
+    }
+    let slot = existing_slot
+        .or_else(|| {
+            fs.overlay
+                .iter()
+                .position(|node| node.kind != NodeKind::Empty && node.path() == path)
+        })
+        .or_else(|| {
+            fs.overlay
+                .iter()
+                .position(|node| node.kind == NodeKind::Empty)
+        })
+        .ok_or(FsError::NoSpace)?;
+
+    let data_start = if reusable {
+        fs.overlay[slot].data_start
+    } else {
+        let start = fs.file_data_used;
+        let end = start + contents.len();
+        fs.file_data[start..end].copy_from_slice(contents);
+        fs.file_data_used = end;
+        start
+    };
+    if reusable {
+        fs.file_data[data_start..data_start + contents.len()].copy_from_slice(contents);
+    }
+    let mut node = fs.overlay[slot];
+    node.path[..path.len()].copy_from_slice(path.as_bytes());
+    node.path_length = path.len();
+    node.kind = NodeKind::File;
+    node.data_start = data_start;
+    node.data_length = contents.len();
+    fs.overlay[slot] = node;
+    Ok(())
 }
 
 pub fn create_directory(path: &str) -> Result<(), FsError> {
@@ -718,6 +814,19 @@ mod tests {
         assert_eq!(super::create_file("/var/log/app/empty.txt"), Ok(()));
         assert_eq!(super::read("/var/log/app/empty.txt"), Some(&[][..]));
         assert_eq!(
+            super::write_file("/var/log/app/empty.txt", b"first version"),
+            Ok(())
+        );
+        let mut output = [0u8; 32];
+        let length = super::read_file_into("/var/log/app/empty.txt", &mut output).unwrap();
+        assert_eq!(&output[..length], b"first version");
+        assert_eq!(
+            super::write_file("/var/log/app/empty.txt", b"saved"),
+            Ok(())
+        );
+        let length = super::read_file_into("/var/log/app/empty.txt", &mut output).unwrap();
+        assert_eq!(&output[..length], b"saved");
+        assert_eq!(
             super::create_file("/missing/file"),
             Err(super::FsError::NotDirectory)
         );
@@ -743,6 +852,9 @@ mod tests {
             Box::leak(archive_with_file(b"bin", b"legacy", b"read-only").into_boxed_slice());
         super::mount(lower_file);
         assert_eq!(super::read("/bin/legacy"), Some(&b"read-only"[..]));
+        assert_eq!(super::write_file("/bin/legacy", b"modified"), Ok(()));
+        let length = super::read_file_into("/bin/legacy", &mut output).unwrap();
+        assert_eq!(&output[..length], b"modified");
         assert_eq!(super::remove("/bin/legacy", false), Ok(()));
         assert_eq!(super::read("/bin/legacy"), None);
     }

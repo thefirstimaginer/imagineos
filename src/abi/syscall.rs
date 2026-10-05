@@ -19,6 +19,7 @@ pub const SYS_READDIR: u64 = 11;
 pub const SYS_MKDIR: u64 = 12;
 pub const SYS_TOUCH: u64 = 13;
 pub const SYS_REMOVE: u64 = 14;
+pub const SYS_WRITE_FILE: u64 = 15;
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
 unsafe impl Sync for SharedKeyboard {}
@@ -223,16 +224,21 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             };
             let mut buffer = [0u8; 4096];
             let length = if frame_ref.rax == SYS_READ_FILE {
-                let Some(bytes) = crate::ramfs::read(path) else {
-                    frame_ref.rax = (-2i64) as u64;
-                    return frame;
-                };
-                if bytes.len() > capacity {
-                    frame_ref.rax = (-75i64) as u64;
-                    return frame;
+                match crate::ramfs::read_file_into(path, &mut buffer[..capacity]) {
+                    Ok(length) => length,
+                    Err(crate::ramfs::FsError::NotFound) => {
+                        frame_ref.rax = (-2i64) as u64;
+                        return frame;
+                    }
+                    Err(crate::ramfs::FsError::NoSpace) => {
+                        frame_ref.rax = (-75i64) as u64;
+                        return frame;
+                    }
+                    Err(error) => {
+                        frame_ref.rax = fs_error_code(error) as u64;
+                        return frame;
+                    }
                 }
-                buffer[..bytes.len()].copy_from_slice(bytes);
-                bytes.len()
             } else {
                 let Some(length) = crate::ramfs::list_directory(path, &mut buffer[..capacity])
                 else {
@@ -246,6 +252,29 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             } else {
                 frame_ref.rax = length as u64;
             }
+            frame
+        }
+        SYS_WRITE_FILE => {
+            let mut path_buffer = [0u8; 256];
+            let path = match copy_user_path(frame_ref.rdi, frame_ref.rsi, &mut path_buffer) {
+                Ok(path) => path,
+                Err(error) => {
+                    frame_ref.rax = error as u64;
+                    return frame;
+                }
+            };
+            let length = (frame_ref.r10 as usize).min(4097);
+            if length > 4096 {
+                frame_ref.rax = (-75i64) as u64;
+                return frame;
+            }
+            let mut contents = [0u8; 4096];
+            if !process::copy_from_current_user(frame_ref.rdx, &mut contents[..length]) {
+                frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            frame_ref.rax = crate::ramfs::write_file(path, &contents[..length])
+                .map_or_else(fs_error_code, |_| length as i64) as u64;
             frame
         }
         SYS_MKDIR | SYS_TOUCH | SYS_REMOVE => {
