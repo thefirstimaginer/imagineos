@@ -21,7 +21,8 @@ extern "C" fn _start(
     _envc: usize,
     _envp: *const *const u8,
 ) -> ! {
-    write("Astrid getty: console ready\n");
+    write("Astrid getty: console ready");
+    write("\n\nWelcome to Imagine Operating System!\n\n");
     exec("/bin/shell");
     syscall0(SYS_EXIT);
     loop {
