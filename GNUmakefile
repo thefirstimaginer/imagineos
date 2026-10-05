@@ -1,232 +1,80 @@
-# ------------------------------------------------------------------
-# Global configuration
-# ------------------------------------------------------------------
+SHELL := /bin/sh
 
-.SUFFIXES:
-.DELETE_ON_ERROR:
+KERNEL_NAME := dreamcore
+CODENAME := astrid
 
-override OUTPUT := dreamcore
-
-BUILD_DIR := .build
-ISO_DIR := distro/iso
-ISO_IMAGE := distro/dreamcore.iso
-
+TARGET := x86_64-unknown-none
+KERNEL_FEATURES ?=
+KERNEL := target/$(TARGET)/release/dreamcore
+ISO_DIR := .build/iso
+RAMFS_IMAGE := .build/ramfs.tar
+USER_UTILITIES := cat grep ls mkdir rm touch
+RAMFS_DIRS := bin home system/fonts tmp usr
+USER_PROGRAMS := .build/user/init.elf .build/user/getty.elf .build/user/shell.elf \
+	$(addprefix .build/user/utilities/,$(addsuffix .elf,$(USER_UTILITIES)))
+RAMFS_FILES := $(shell find ramfs -type f | sort)
+ISO_IMAGE := distro/$(KERNEL_NAME)-$(shell date +%Y-%m-%d-%H-%M)-$(CODENAME).iso
 QEMU := qemu-system-x86_64
+OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE.fd
 
-# ------------------------------------------------------------------
-# Toolchain
-# ------------------------------------------------------------------
+.PHONY: all kernel user-programs iso run clean
 
-TOOLCHAIN :=
-TOOLCHAIN_PREFIX :=
+all: kernel
 
-ifneq ($(TOOLCHAIN),)
-    ifeq ($(TOOLCHAIN_PREFIX),)
-        TOOLCHAIN_PREFIX := $(TOOLCHAIN)-
-    endif
-endif
+kernel: linker.ld
+	rustup run stable cargo build --release --target $(TARGET) $(if $(KERNEL_FEATURES),--features $(KERNEL_FEATURES),)
 
-CC := $(if $(TOOLCHAIN_PREFIX),$(TOOLCHAIN_PREFIX)gcc,gcc)
-LD := $(TOOLCHAIN_PREFIX)ld
-NASM := nasm
+$(RAMFS_IMAGE): $(USER_PROGRAMS) $(RAMFS_FILES)
+	rm -rf .build/ramfs
+	mkdir -p $(addprefix .build/ramfs/,$(RAMFS_DIRS))
+	cp -a ramfs/. .build/ramfs/
+	cp .build/user/init.elf .build/ramfs/bin/init
+	cp .build/user/getty.elf .build/ramfs/bin/getty
+	cp .build/user/shell.elf .build/ramfs/bin/shell
+	for utility in $(USER_UTILITIES); do cp .build/user/utilities/$$utility.elf .build/ramfs/bin/$$utility; done
+	tar --format=ustar -C .build/ramfs -cf $@ bin home system tmp usr
 
+.PHONY: user-programs
+user-programs: $(USER_PROGRAMS)
 
-ifeq ($(TOOLCHAIN),llvm)
-    CC := clang
-    LD := ld.lld
-endif
+.build/user/%.elf: userspace/%.rs userspace/linker.ld
+	mkdir -p .build/user
+	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
+		-C panic=abort -C relocation-model=static \
+		-C link-arg=-Tuserspace/linker.ld $< -o $@
 
-# ------------------------------------------------------------------
-# Output binaries
-# ------------------------------------------------------------------
+.build/user/utilities/%.elf: userspace/utilities/%.rs userspace/utilities/common.rs userspace/linker.ld
+	mkdir -p .build/user/utilities
+	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
+		-C panic=abort -C relocation-model=static \
+		-C link-arg=-Tuserspace/linker.ld $< -o $@
 
-KERNEL_BIN := $(BUILD_DIR)/dreamcore.elf
-INIT_BIN   := $(BUILD_DIR)/init.elf
-SHELL_BIN  := $(BUILD_DIR)/shell.elf
-CLEAR_BIN  := $(BUILD_DIR)/clear.elf
-GETTY_BIN  := $(BUILD_DIR)/getty.elf
-LOGIN_BIN  := $(BUILD_DIR)/login.elf
-
-# ------------------------------------------------------------------
-# Compiler flags
-# ------------------------------------------------------------------
-
-override CFLAGS += \
-    -g \
-    -O2 \
-    -Wall \
-    -Wextra \
-    -std=gnu11 \
-    -ffreestanding \
-    -fno-stack-protector \
-    -fno-stack-check \
-    -fno-lto \
-    -fno-pie \
-    -fno-PIC \
-    -ffunction-sections \
-    -fdata-sections \
-    -m64 \
-    -march=x86-64 \
-    -mabi=sysv \
-    -mno-red-zone \
-    -mcmodel=kernel \
-    -fcf-protection=none
-
-override CPPFLAGS += \
-    -MMD \
-    -MP \
-    -Iarch/x86_64/include \
-    -Idrivers/include \
-    -Ikernel/include \
-    -Ilib/common/include \
-    -Ilib/libc/include \
-    -Ilib/libkern/include \
-    -Iuserspace/include
-
-override NASMFLAGS += \
-    -f elf64 \
-    -Wall
-
-override LDFLAGS += \
-    -m elf_x86_64 \
-    -nostdlib \
-    -static \
-    --gc-sections
-
-# ------------------------------------------------------------------
-# Automatic source discovery
-# ------------------------------------------------------------------
-
-override SRCFILES := $(shell find arch drivers kernel lib userspace -type f | sort)
-
-override CFILES := $(filter %.c,$(SRCFILES))
-override ASMFILES := $(filter %.asm,$(SRCFILES))
-
-override C_OBJS := $(addprefix $(BUILD_DIR)/,$(CFILES:.c=.o))
-override ASM_OBJS := $(addprefix $(BUILD_DIR)/,$(ASMFILES:.asm=.o))
-
-override HEADER_DEPS := $(C_OBJS:.o=.d)
-
-# ------------------------------------------------------------------
-# Kernel object selection
-# ------------------------------------------------------------------
-
-KERNEL_C_OBJS := \
-    $(BUILD_DIR)/arch/x86_64/src/idt.o \
-    $(BUILD_DIR)/arch/x86_64/src/pic.o \
-    $(BUILD_DIR)/arch/x86_64/src/port.o \
-    $(BUILD_DIR)/drivers/src/print.o \
-    $(BUILD_DIR)/drivers/src/ps2.o \
-    $(BUILD_DIR)/drivers/src/rtc.o \
-    $(BUILD_DIR)/drivers/src/video.o \
-    $(BUILD_DIR)/kernel/kernel/main.o \
-	$(BUILD_DIR)/kernel/kernel/start.o \
-    $(BUILD_DIR)/kernel/src/process.o \
-    $(BUILD_DIR)/kernel/src/scheduler.o \
-    $(BUILD_DIR)/kernel/src/syscall_dispatch.o \
-    $(BUILD_DIR)/kernel/src/input.o \
-    $(BUILD_DIR)/kernel/src/paging.o \
-    $(BUILD_DIR)/kernel/src/user.o \
-	$(BUILD_DIR)/kernel/src/hcf.o \
-    $(BUILD_DIR)/lib/libkern/src/kprintf.o \
-    $(BUILD_DIR)/lib/libkern/src/kmalloc.o \
-    $(BUILD_DIR)/lib/libkern/src/kassert.o \
-    $(BUILD_DIR)/lib/common/src/string.o \
-    $(BUILD_DIR)/arch/x86_64/src/syscall_msr.o \
-    $(BUILD_DIR)/arch/x86_64/src/tss.o \
-	$(BUILD_DIR)/arch/x86_64/src/gdt.o
-
-KERNEL_ASM_OBJS := \
-    $(BUILD_DIR)/arch/x86_64/src/idt_.o \
-    $(BUILD_DIR)/arch/x86_64/src/port_.o \
-    $(BUILD_DIR)/arch/x86_64/src/syscall_entry.o \
-    $(BUILD_DIR)/arch/x86_64/src/user_entry.o
-
-# ------------------------------------------------------------------
-# Main targets
-# ------------------------------------------------------------------
-
-.PHONY: all
-all: $(KERNEL_BIN)
-
--include $(HEADER_DEPS)
-
-$(KERNEL_BIN): $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS) arch/x86_64/boot/linker.lds
-	mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) \
-	-T arch/x86_64/boot/linker.lds \
-	-o $@ \
-	$(KERNEL_ASM_OBJS) \
-	$(KERNEL_C_OBJS)
-
-# ------------------------------------------------------------------
-# Generic rules
-# ------------------------------------------------------------------
-
-$(BUILD_DIR)/%.o: %.c
-	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/%.o: %.asm
-	mkdir -p $(dir $@)
-	$(NASM) $(NASMFLAGS) $< -o $@
-
-# ------------------------------------------------------------------
-# Limine ISO
-# ------------------------------------------------------------------
-
-.PHONY: iso
-
-iso: $(KERNEL_BIN)
-
-	mkdir -p distro/iso/boot
-	mkdir -p distro/iso/boot/limine
-	mkdir -p distro/iso/EFI/BOOT
-
-	cp $(KERNEL_BIN) distro/iso/boot/dreamcore.elf
-
-	cp arch/x86_64/boot/limine.conf distro/iso/boot/limine/
-
-	cp toolchain/limine-binary/limine-bios-cd.bin distro/iso/boot/limine/
-	cp toolchain/limine-binary/limine-bios.sys    distro/iso/boot/limine/
-	cp toolchain/limine-binary/limine-uefi-cd.bin distro/iso/boot/limine/
-
-	cp toolchain/limine-binary/BOOTX64.EFI distro/iso/EFI/BOOT/
-	cp toolchain/limine-binary/BOOTIA32.EFI distro/iso/EFI/BOOT/
-
-	xorriso -as mkisofs \
-	    -b boot/limine/limine-bios-cd.bin \
-	    -no-emul-boot \
-	    -boot-load-size 4 \
-	    -boot-info-table \
-	    --efi-boot EFI/BOOT/BOOTX64.EFI \
-	    -efi-boot-part \
-	    --efi-boot-image \
-	    --protective-msdos-label \
-	    distro/iso \
-	    -o distro/dreamcore.iso	
-
-	toolchain/limine-binary/limine bios-install $(ISO_IMAGE)
-
-# ------------------------------------------------------------------
-# QEMU
-# ------------------------------------------------------------------
-
-.PHONY: run
+iso: kernel $(RAMFS_IMAGE)
+	command -v xorriso >/dev/null
+	command -v mkfs.vfat >/dev/null
+	command -v mcopy >/dev/null
+	command -v mmd >/dev/null
+	rm -rf $(ISO_DIR)
+	mkdir -p $(ISO_DIR)/EFI/BOOT $(ISO_DIR)/boot distro
+	cp $(KERNEL) $(ISO_DIR)/boot/kernel.elf
+	cp $(RAMFS_IMAGE) $(ISO_DIR)/boot/ramfs.tar
+	cp limine.conf $(ISO_DIR)/limine.conf
+	cp toolchain/limine-binary/BOOTX64.EFI $(ISO_DIR)/EFI/BOOT/BOOTX64.EFI
+	dd if=/dev/zero of=$(ISO_DIR)/efi.img bs=1M count=16
+	mkfs.vfat $(ISO_DIR)/efi.img
+	mmd -i $(ISO_DIR)/efi.img ::/EFI ::/EFI/BOOT ::/boot
+	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/limine.conf ::/limine.conf
+	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/boot/kernel.elf ::/boot/kernel.elf
+	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/boot/ramfs.tar ::/boot/ramfs.tar
+	xorriso -as mkisofs -R -r -J -V DREAMCORE \
+		--efi-boot efi.img -efi-boot-part --efi-boot-image \
+		--protective-msdos-label $(ISO_DIR) -o $(ISO_IMAGE)
+	@printf 'ISO gerada: %s\n' '$(ISO_IMAGE)'
 
 run: iso
-	$(QEMU) \
-	    -M q35 \
-	    -m 512M \
-	    -serial stdio \
-	    -cdrom $(ISO_IMAGE)
-
-# ------------------------------------------------------------------
-# Clean
-# ------------------------------------------------------------------
-
-.PHONY: clean
+	test -f "$(OVMF_CODE)"
+	$(QEMU) -machine q35 -m 512M -serial stdio -bios "$(OVMF_CODE)" -cdrom $(ISO_IMAGE)
 
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -rf distro
+	rm -rf target .build

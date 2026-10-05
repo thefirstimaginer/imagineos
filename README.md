@@ -1,54 +1,28 @@
-# Imagine Operating System <img width="200" height="auto" align="right" alt="imagine3w" src="https://github.com/user-attachments/assets/e406f860-0038-4076-8014-8fe5f7ff955e" />
+# Imagine Operating System
 
-ImagineOS is an experimental and educational x86_64 operating system. The current
-release is R1, codenamed **Astrid**.
-
-The project is under construction and unstable. It currently boots through GRUB
-and Multiboot2, starts a freestanding 64-bit kernel, and provides a VGA text-mode
-shell for testing kernel and userspace components.
-
-## Version Release 1 - Alpha 1 (R1-alpha1)
-
-ImagineOS is an experimental operating system and is still unstable. The
-current image is generated as `distro/coreimage_imagine-astrid.iso`.
+ImagineOS is an experimental educational x86_64 operating system, codenamed **Astrid**. The kernel is freestanding Rust and uses the Limine boot protocol. This is an early bring-up, not yet a general-purpose OS.
 
 ## Build
 
-Requirements: GCC, NASM, GNU ld, `grub-mkrescue`, and QEMU.
+Requirements: Rust stable with the `x86_64-unknown-none` target, GNU Make, Limine's x86_64 UEFI executable at `toolchain/limine-binary/BOOTX64.EFI`, `xorriso`, `dosfstools`, `mtools`, and QEMU with OVMF for boot testing.
 
 ```sh
-make clean
+rustup target add x86_64-unknown-none
+make kernel
 make iso
 ```
 
-The generated ISO is:
+The UEFI-only image is written to `distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`.
 
-```text
-distro/coreimage_imagine-astrid.iso
-```
+## Boot State
 
-## Run
+The kernel consumes Limine's HHDM, memory map, framebuffer, and RAMFS module. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, mounts the USTAR archive, and loads `/bin/init`. Init starts `/bin/getty`, which starts `/bin/shell`; the shell resolves external commands under `/bin`.
 
-Run the ISO with the Makefile target:
+The shell provides `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type`, and `exit`. External commands are searched through `PATH` and launched from `/bin`; utilities include `ls`, `cat`, fixed-string `grep`, `mkdir`, `touch`, and `rm`. `argv` and exported environment entries are passed to child ELFs. PSF/PSF2 fonts are searched in `ramfs/system/fonts`; a built-in framebuffer font is used when none can be loaded. The prompt cursor blinks while input is polled.
 
-```sh
-make run
-```
+This is a small shell, not a full POSIX language implementation: pipelines, redirection, aliases, functions, and control-flow syntax are not supported. Rust `std` is unnecessary: the kernel remains `no_std` and exposes OS operations through its own syscalls. The USTAR base stays immutable; `mkdir`, `touch`, and `rm` update a bounded in-memory overlay and changes disappear at reboot. Scheduling is cooperative round-robin; timer preemption, heap reclamation, and full W^X permissions are also pending.
 
-For a headless run:
-
-```sh
-timeout 8s qemu-system-x86_64 \
-    -no-reboot -display none -serial stdio \
-    -cdrom distro/coreimage_imagine-astrid.iso
-```
-
-The current system can boot the kernel, load userspace ELF modules, and run a
-text shell in successful executions. Userspace process lifecycle and paging
-remain under development; `init.elf` and `proc-test` can still cause faults or
-restart QEMU.
-
-More detailed documentation is available in [documentation/README.md](documentation/README.md).
+More details: [documentation/README.md](documentation/README.md).
 
 ## Copyright
 

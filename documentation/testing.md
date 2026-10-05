@@ -1,66 +1,26 @@
-# Testes e criterio de estabilidade
+# Testes
 
-## Build
-
-```sh
-make clean && make iso
-```
-
-O build deve terminar sem erro de compilacao, link ou geracao da ISO.
-
-## Boot repetido
+## Compilacao e parser USTAR
 
 ```sh
-for attempt in 1 2 3 4 5; do
-    timeout 8s qemu-system-x86_64 \
-      -no-reboot -display none -serial stdio \
-      -cdrom distro/coreimage_imagine-astrid.iso
-    echo "status=$?"
-done
+rustup run stable cargo check --target x86_64-unknown-none
+rustup run stable cargo build --release --target x86_64-unknown-none
+rustup run stable rustc --edition 2021 --test src/fs/ramfs.rs -o /tmp/dreamcore-ramfs-tests
+/tmp/dreamcore-ramfs-tests
+rustup run stable rustc --edition 2021 --test src/exec/elf.rs -o /tmp/dreamcore-elf-tests
+/tmp/dreamcore-elf-tests
+make user-programs
+make .build/ramfs.tar
+tar -tf .build/ramfs.tar
 ```
 
-Um status `124` significa que o processo foi encerrado pelo timeout. Qualquer status diferente deve ser investigado.
+O tar deve conter `bin/init`, `bin/getty`, `bin/shell`, `bin/ls`, `bin/cat`, `bin/grep` e `system/fonts/default8x9.psf`.
 
-## Diagnostico de reset
+Para criar a ISO, instale `xorriso`, `dosfstools` e `mtools`, depois rode `make iso`.
+Para reativar logs de cada etapa de carregamento: `make KERNEL_FEATURES=kernel-debug iso`.
 
-```sh
-qemu-system-x86_64 -no-reboot -display none \
-  -serial stdio -d cpu_reset,int \
-  -D /tmp/imagineos-qemu.log \
-  -cdrom distro/coreimage_imagine-astrid.iso
-```
+## Boot manual
 
-Registrar sempre:
+Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Teste `pwd`, `cd /bin`, `ls` (deve listar o `/bin` atual), `ls .`, `cd /home` (vazio no RAMFS inicial), `export X=astrid`, `echo "$X"`, `type ls`, `cat /bin/init`, `grep Astrid /bin/init` e `read NAME`. No prompt, backspace deve remover o glifo inteiro, incluindo caracteres UTF-8.
 
-- ultima mensagem do kernel;
-- RIP;
-- RSP;
-- CR2;
-- CR3;
-- vetor da excecao;
-- se ocorreu triple fault.
-
-## Teste manual do shell
-
-Depois que o prompt aparecer:
-
-```text
-help
-test
-echo hello
-clear
-proc-test
-```
-
-O resultado esperado de `proc-test` e:
-
-```text
-[OK] child process started
-[OK] fork/waitpid/exit test passed
-```
-
-No estado atual, qualquer reinicio durante esse comando e uma falha conhecida, nao um resultado valido.
-
-## Regra de validacao
-
-Nao considerar uma funcionalidade estavel por uma unica execucao bem-sucedida. Para processos e memoria, repetir o teste varias vezes e coletar logs de QEMU.
+Sem QEMU/OVMF ou sem as ferramentas de ISO, compilacao e testes locais nao comprovam um boot real.
