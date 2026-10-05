@@ -13,6 +13,22 @@ const KERNEL_STACK_SIZE: usize = 16 * 1024;
 const USER_STACK_SIZE: u64 = 8 * 4096;
 pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_0000;
 const PAGE_SIZE: u64 = 4096;
+pub const MAX_EXEC_ARGS: usize = 12;
+pub const MAX_EXEC_ENV: usize = 12;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct UserArg {
+    pub address: u64,
+    pub length: u64,
+}
+
+impl UserArg {
+    pub const EMPTY: Self = Self {
+        address: 0,
+        length: 0,
+    };
+}
 
 #[repr(align(16))]
 struct KernelStacks([[u8; KERNEL_STACK_SIZE]; MAX_PROCESSES]);
@@ -68,17 +84,22 @@ pub enum LoadError {
 }
 
 pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
-    crate::console_write("process: initializing scheduler\n");
+    debug_log("process: initializing scheduler\n");
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
     scheduler.processes = [Process::EMPTY; MAX_PROCESSES];
     scheduler.count = 0;
     scheduler.current = 0;
 
     for &(image, pid) in programs.iter().take(MAX_PROCESSES) {
-        crate::console_write("process: loading PID ");
-        crate::console_write_number(pid as u64);
-        crate::console_write(" ELF\n");
-        let process = load_elf(image, pid)?;
+        #[cfg(feature = "kernel-debug")]
+        {
+            crate::console_write("process: loading PID ");
+            crate::console_write_number(pid as u64);
+            crate::console_write(" ELF\n");
+        }
+        let slot = scheduler.count;
+        let arguments: [&[u8]; 1] = [b"/bin/init"];
+        let process = load_elf(image, pid, slot, &arguments, &[])?;
         scheduler.processes[scheduler.count] = process;
         scheduler.count += 1;
     }
@@ -88,17 +109,23 @@ pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
     Ok(())
 }
 
-fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
-    crate::console_write("elf: validating header\n");
+fn load_elf(
+    image: &[u8],
+    pid: usize,
+    slot: usize,
+    arguments: &[&[u8]],
+    environment: &[&[u8]],
+) -> Result<Process, LoadError> {
+    debug_log("elf: validating header\n");
     let elf = Elf64::parse(image).map_err(LoadError::InvalidElf)?;
-    crate::console_write("elf: creating user page tables\n");
+    debug_log("elf: creating user page tables\n");
     let address_space = AddressSpace::new_user().ok_or(LoadError::OutOfMemory)?;
 
     for index in 0..elf.program_header_count() {
         let Some(segment) = elf.segment(index).map_err(LoadError::InvalidElf)? else {
             continue;
         };
-        crate::console_write("elf: mapping LOAD segment\n");
+        debug_log("elf: mapping LOAD segment\n");
         let segment_end = segment
             .virtual_address
             .checked_add(segment.memory_size)
@@ -135,13 +162,15 @@ fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
             .map_err(|_| LoadError::OutOfMemory)?;
         page += PAGE_SIZE;
     }
-    crate::console_write("elf: user stack mapped\n");
+    let (user_stack, user_argv, user_envp) =
+        prepare_user_stack(&address_space, arguments, environment)?;
+    debug_log("elf: user stack mapped\n");
     if address_space.translate(elf.entry).is_none() {
         return Err(LoadError::InvalidMapping);
     }
 
     let stacks = unsafe { &mut *KERNEL_STACKS.0.get() };
-    let kernel_stack_top = stacks.0[pid].as_mut_ptr() as u64 + KERNEL_STACK_SIZE as u64;
+    let kernel_stack_top = stacks.0[slot].as_mut_ptr() as u64 + KERNEL_STACK_SIZE as u64;
     let frame = (kernel_stack_top as usize - size_of::<TrapFrame>()) as *mut TrapFrame;
     unsafe {
         frame.write(TrapFrame {
@@ -154,17 +183,17 @@ fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
             r9: 0,
             r8: 0,
             rbp: 0,
-            rdi: 0,
-            rsi: 0,
-            rdx: 0,
-            rcx: 0,
+            rdx: environment.len() as u64,
+            rcx: user_envp,
             rbx: 0,
             rax: 0,
             rip: elf.entry,
             cs: gdt::USER_CODE_SELECTOR,
             rflags: 0x2,
-            rsp: USER_STACK_TOP - 16,
+            rsp: user_stack,
             ss: gdt::USER_DATA_SELECTOR,
+            rdi: arguments.len() as u64,
+            rsi: user_argv,
         });
     }
     Ok(Process {
@@ -173,6 +202,83 @@ fn load_elf(image: &[u8], pid: usize) -> Result<Process, LoadError> {
         frame,
         address_space: Some(address_space),
     })
+}
+
+fn prepare_user_stack(
+    space: &AddressSpace,
+    arguments: &[&[u8]],
+    environment: &[&[u8]],
+) -> Result<(u64, u64, u64), LoadError> {
+    if arguments.len() > MAX_EXEC_ARGS || environment.len() > MAX_EXEC_ENV {
+        return Err(LoadError::InvalidMapping);
+    }
+    let mut stack_pointer = USER_STACK_TOP;
+    let mut argument_pointers = [0u64; MAX_EXEC_ARGS];
+    let mut environment_pointers = [0u64; MAX_EXEC_ENV];
+    for (index, argument) in arguments.iter().enumerate() {
+        stack_pointer = stack_pointer
+            .checked_sub(argument.len() as u64 + 1)
+            .ok_or(LoadError::InvalidMapping)?;
+        copy_to_user(space, stack_pointer, argument)?;
+        copy_to_user(space, stack_pointer + argument.len() as u64, &[0])?;
+        argument_pointers[index] = stack_pointer;
+    }
+    for (index, entry) in environment.iter().enumerate() {
+        stack_pointer = stack_pointer
+            .checked_sub(entry.len() as u64 + 1)
+            .ok_or(LoadError::InvalidMapping)?;
+        copy_to_user(space, stack_pointer, entry)?;
+        copy_to_user(space, stack_pointer + entry.len() as u64, &[0])?;
+        environment_pointers[index] = stack_pointer;
+    }
+
+    let environment_vector_size = (environment.len() + 1)
+        .checked_mul(size_of::<u64>())
+        .ok_or(LoadError::InvalidMapping)? as u64;
+    let environment_vector = stack_pointer
+        .checked_sub(environment_vector_size)
+        .ok_or(LoadError::InvalidMapping)?
+        & !0xf;
+    for (index, pointer) in environment_pointers
+        .iter()
+        .take(environment.len())
+        .enumerate()
+    {
+        copy_to_user(
+            space,
+            environment_vector + (index * size_of::<u64>()) as u64,
+            &pointer.to_le_bytes(),
+        )?;
+    }
+    copy_to_user(
+        space,
+        environment_vector + (environment.len() * size_of::<u64>()) as u64,
+        &0u64.to_le_bytes(),
+    )?;
+
+    let argument_vector_size = (arguments.len() + 1)
+        .checked_mul(size_of::<u64>())
+        .ok_or(LoadError::InvalidMapping)? as u64;
+    stack_pointer = environment_vector
+        .checked_sub(argument_vector_size)
+        .ok_or(LoadError::InvalidMapping)?
+        & !0xf;
+    for (index, pointer) in argument_pointers.iter().take(arguments.len()).enumerate() {
+        copy_to_user(
+            space,
+            stack_pointer + (index * size_of::<u64>()) as u64,
+            &pointer.to_le_bytes(),
+        )?;
+    }
+    copy_to_user(
+        space,
+        stack_pointer + (arguments.len() * size_of::<u64>()) as u64,
+        &0u64.to_le_bytes(),
+    )?;
+    let entry_stack = stack_pointer
+        .checked_sub(8)
+        .ok_or(LoadError::InvalidMapping)?;
+    Ok((entry_stack, stack_pointer, environment_vector))
 }
 
 fn zero_user_range(space: &AddressSpace, address: u64, size: u64) -> Result<(), LoadError> {
@@ -211,9 +317,8 @@ pub fn start() -> ! {
     let process = scheduler.processes[0];
     scheduler.current = 0;
     let address_space = process.address_space.expect("process address space");
-    let kernel_stack_top = unsafe {
-        (*KERNEL_STACKS.0.get()).0[process.pid].as_ptr() as u64 + KERNEL_STACK_SIZE as u64
-    };
+    let kernel_stack_top =
+        unsafe { (*KERNEL_STACKS.0.get()).0[0].as_ptr() as u64 + KERNEL_STACK_SIZE as u64 };
     gdt::set_kernel_stack(kernel_stack_top);
     paging::switch(address_space);
     unsafe {
@@ -253,14 +358,14 @@ fn schedule(frame: *mut TrapFrame, exiting: bool) -> *mut TrapFrame {
         scheduler.processes[current].active = false;
     }
 
-    for distance in 1..=scheduler.count {
-        let candidate = (current + distance) % scheduler.count;
+    for distance in 1..=MAX_PROCESSES {
+        let candidate = (current + distance) % MAX_PROCESSES;
         if scheduler.processes[candidate].active {
             scheduler.current = candidate;
             let next = scheduler.processes[candidate];
             let address_space = next.address_space.expect("process address space");
             let kernel_stack_top = unsafe {
-                (*KERNEL_STACKS.0.get()).0[next.pid].as_ptr() as u64 + KERNEL_STACK_SIZE as u64
+                (*KERNEL_STACKS.0.get()).0[candidate].as_ptr() as u64 + KERNEL_STACK_SIZE as u64
             };
             gdt::set_kernel_stack(kernel_stack_top);
             paging::switch(address_space);
@@ -269,6 +374,59 @@ fn schedule(frame: *mut TrapFrame, exiting: bool) -> *mut TrapFrame {
     }
 
     crate::kernel_halt()
+}
+
+pub fn spawn_current(
+    path: &str,
+    arguments: &[&[u8]],
+    environment: &[&[u8]],
+    frame: *mut TrapFrame,
+) -> *mut TrapFrame {
+    let Some(image) = crate::ramfs::read(path) else {
+        unsafe {
+            (*frame).rax = (-2i64) as u64;
+        }
+        return frame;
+    };
+
+    let (slot, pid) = {
+        let scheduler = unsafe { &*SCHEDULER.0.get() };
+        let Some(slot) = scheduler
+            .processes
+            .iter()
+            .position(|process| !process.active)
+        else {
+            unsafe {
+                (*frame).rax = (-11i64) as u64;
+            }
+            return frame;
+        };
+        let pid = scheduler
+            .processes
+            .iter()
+            .map(|process| process.pid)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        (slot, pid)
+    };
+
+    let process = match load_elf(image, pid, slot, arguments, environment) {
+        Ok(process) => process,
+        Err(_) => {
+            unsafe {
+                (*frame).rax = (-8i64) as u64;
+            }
+            return frame;
+        }
+    };
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    scheduler.processes[slot] = process;
+    scheduler.count = scheduler.count.max(slot + 1);
+    unsafe {
+        (*frame).rax = pid as u64;
+    }
+    schedule(frame, false)
 }
 
 pub fn with_current_space<T>(operation: impl FnOnce(AddressSpace) -> T) -> T {
@@ -299,4 +457,32 @@ pub fn copy_from_current_user(address: u64, output: &mut [u8]) -> bool {
         }
         true
     })
+}
+
+pub fn copy_to_current_user(address: u64, input: &[u8]) -> bool {
+    with_current_space(|space| {
+        let mut copied = 0usize;
+        while copied < input.len() {
+            let Some(current) = address.checked_add(copied as u64) else {
+                return false;
+            };
+            let Some(destination) = space.translate(current) else {
+                return false;
+            };
+            let available =
+                ((PAGE_SIZE - (current & (PAGE_SIZE - 1))) as usize).min(input.len() - copied);
+            unsafe {
+                ptr::copy_nonoverlapping(input.as_ptr().add(copied), destination, available);
+            }
+            copied += available;
+        }
+        true
+    })
+}
+
+fn debug_log(message: &str) {
+    #[cfg(feature = "kernel-debug")]
+    crate::console_write(message);
+    #[cfg(not(feature = "kernel-debug"))]
+    let _ = message;
 }

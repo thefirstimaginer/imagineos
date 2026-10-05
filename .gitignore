@@ -1,11 +1,3 @@
-/main/build
-/main/distro
-/main/tools
-/main/targets/x86_64/iso/boot/kernel.bin
-/videodrv
-/learning
-/main/distro/x86_64/main.iso
-main/distro/x86_64/main.iso
 targets/
 /.vscode
 /.build
@@ -15,3 +7,4 @@ targets/
 *.bin
 *.iso
 *.o
+/ramfs

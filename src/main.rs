@@ -1,24 +1,32 @@
 #![no_std]
 #![no_main]
 
-extern crate alloc;
-
-use alloc::vec::Vec;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
 use limine::BaseRevision;
 
+#[path = "exec/elf.rs"]
 mod elf;
+#[path = "console/framebuffer.rs"]
 mod framebuffer;
+#[path = "arch/x86_64/gdt.rs"]
 mod gdt;
+#[path = "mm/heap.rs"]
 mod heap;
+#[path = "arch/x86_64/idt.rs"]
 mod idt;
+#[path = "drivers/keyboard.rs"]
 mod keyboard;
+#[path = "mm/memory.rs"]
 mod memory;
+#[path = "arch/x86_64/paging.rs"]
 mod paging;
+#[path = "exec/process.rs"]
 mod process;
+#[path = "fs/ramfs.rs"]
 mod ramfs;
+#[path = "abi/syscall.rs"]
 mod syscall;
 
 #[used]
@@ -51,7 +59,7 @@ pub extern "C" fn _start() -> ! {
     mask_legacy_pic();
     gdt::init();
     idt::init();
-    serial_write(b"ImagineOS Astrid Dreamcore Kernel\r\n");
+    serial_write(b"ImagineOS Astrid w/ Dreamcore Kernel\r\n");
 
     if !BASE_REVISION.is_supported() {
         serial_write(b"Limine protocol revision unsupported\r\n");
@@ -81,56 +89,44 @@ pub extern "C" fn _start() -> ! {
             .get_response()
             .and_then(|response| response.framebuffers().next()),
     );
-    console_write("ImagineOS Astrid Dreamcore Kernel\n");
+    console_write("ImagineOS Astrid w/ Dreamcore Kernel\n");
     console_write("Frame allocator ready; usable frames: ");
     console_number(frame_count.saturating_sub(1) as u64);
-    console_write("; reserved boot frame at physical 0x");
+    console_write(";\n reserved boot frame at physical 0x");
     console_hex(boot_frame.physical_address);
     console_write("\n");
 
-    let archive = MODULE_REQUEST
+    let ramfs_image: Option<&'static [u8]> = MODULE_REQUEST
         .get_response()
         .and_then(|response| {
             response
                 .modules()
                 .iter()
-                .find(|module| module.path().to_bytes().ends_with(b"initrd.tar"))
+                .find(|module| module.path().to_bytes().ends_with(b"ramfs.tar"))
         })
         .map(|module| unsafe {
             core::slice::from_raw_parts(module.addr(), module.size() as usize)
         });
 
-    let Some(archive_bytes) = archive else {
-        console_write("RAMFS initrd.tar missing; stopping safely\n");
+    let Some(ramfs_image) = ramfs_image else {
+        console_write("RAMFS ramfs.tar missing; stopping safely\n");
         halt();
     };
-    let archive = ramfs::Archive::new(archive_bytes);
-    let Some(init_elf) = archive.find("init.elf") else {
-        console_write("RAMFS has no /init.elf; stopping safely\n");
-        halt();
-    };
-    let Some(getty_elf) = archive.find("getty.elf") else {
-        console_write("RAMFS has no /getty.elf; stopping safely\n");
-        halt();
-    };
-    let Some(shell_elf) = archive.find("shell.elf") else {
-        console_write("RAMFS has no /shell.elf; stopping safely\n");
+    ramfs::mount(ramfs_image);
+    let Some(init_elf) = ramfs::read("/bin/init") else {
+        console_write("RAMFS has no /bin/init; stopping safely\n");
         halt();
     };
 
-    if let Some(font) = archive.find("font.psf") {
-        framebuffer::load_font(font);
+    if let Some(font) = ramfs::find_font() {
+        if !framebuffer::load_font(font) {
+            console_write("RAMFS font invalid; using framebuffer built-in font\n");
+        }
+    } else {
+        console_write("RAMFS font not found; using framebuffer built-in font\n");
     }
-    console_write("RAMFS mounted; loading ring-3 ELF programs\n");
-    let mut programs = Vec::new();
-    if programs.try_reserve_exact(3).is_err() {
-        console_write("Kernel heap exhausted while preparing init\n");
-        halt();
-    }
-    programs.push((init_elf, 1));
-    programs.push((getty_elf, 2));
-    programs.push((shell_elf, 3));
-    if process::init(&programs).is_err() {
+    console_write("RAMFS mounted; loading /bin/init in ring 3\n");
+    if process::init(&[(init_elf, 1)]).is_err() {
         console_write("ELF loader failed; stopping safely\n");
         halt();
     }
@@ -168,6 +164,7 @@ fn console_number(mut value: u64) {
     }
 }
 
+#[cfg(feature = "kernel-debug")]
 pub(crate) fn console_write_number(value: u64) {
     console_number(value);
 }

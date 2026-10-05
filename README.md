@@ -16,9 +16,11 @@ The UEFI-only image is written to `distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`
 
 ## Boot State
 
-The kernel consumes Limine's HHDM, memory map, framebuffer, and initrd responses. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, then loads three ELF64 programs from a USTAR RAMFS. `init`, `getty`, and `shell` run in ring 3 with separate page-table roots.
+The kernel consumes Limine's HHDM, memory map, framebuffer, and RAMFS module. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, mounts the USTAR archive, and loads `/bin/init`. Init starts `/bin/getty`, which starts `/bin/shell`; the shell resolves external commands under `/bin`.
 
-The kernel provides `int 0x80` syscalls for console I/O, yield, exit, PID, and clear. Scheduling is cooperative round-robin; timer preemption, heap reclamation, full W^X permissions, VFS, and persistent storage are not implemented yet.
+The shell provides `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type`, and `exit`. External commands are searched through `PATH` and launched from `/bin`; utilities include `ls`, `cat`, fixed-string `grep`, `mkdir`, `touch`, and `rm`. `argv` and exported environment entries are passed to child ELFs. PSF/PSF2 fonts are searched in `ramfs/system/fonts`; a built-in framebuffer font is used when none can be loaded. The prompt cursor blinks while input is polled.
+
+This is a small shell, not a full POSIX language implementation: pipelines, redirection, aliases, functions, and control-flow syntax are not supported. Rust `std` is unnecessary: the kernel remains `no_std` and exposes OS operations through its own syscalls. The USTAR base stays immutable; `mkdir`, `touch`, and `rm` update a bounded in-memory overlay and changes disappear at reboot. Scheduling is cooperative round-robin; timer preemption, heap reclamation, and full W^X permissions are also pending.
 
 More details: [documentation/README.md](documentation/README.md).
 

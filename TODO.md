@@ -20,5 +20,14 @@
 
 - [ ] Implementar interrupcoes externas e timer APIC.
 - [ ] Ampliar layout PS/2 e validar entrada UTF-8 em QEMU.
-- [ ] Empacotar uma fonte PSF2 no initrd.
+- [x] Empacotar e carregar a fonte PSF1 de `ramfs/system/fonts`.
+- [x] Fazer o shell resolver comandos ELF dentro de `/bin`.
 - [ ] Adicionar armazenamento e filesystem persistente.
+
+## Shell
+
+- [x] Implementar built-ins `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `type` e `exit`.
+- [x] Procurar ELFs externos por `PATH` e passar `argv`/ambiente.
+- [x] Fornecer `ls`, `cat` e `grep` como programas separados em `/bin`.
+- [ ] Adicionar pipes/redirecionamento e suporte a scripts/controle de fluxo.
+- [ ] Implementar escrita no filesystem antes de fornecer `cp`, `mv` e `rm`.

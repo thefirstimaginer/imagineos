@@ -18,7 +18,8 @@ make iso
 ```
 
 A ISO UEFI sera gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
-O initrd USTAR e produzido de `system/init`, `system/getty` e `system/shell`.
+O arquivo USTAR `ramfs.tar` e produzido da arvore `ramfs/`; os ELFs compilados
+de `userspace/*.rs` sao colocados em `ramfs/bin/` no staging antes do tar.
 
 ## Executar com QEMU
 
@@ -27,4 +28,5 @@ make run
 ```
 
 Configure `OVMF_CODE` se o firmware nao estiver no caminho padrao. A imagem
-atual nao inclui boot BIOS.
+atual nao inclui boot BIOS. O ESP contem o kernel e `ramfs.tar`; os programas
+userspace existem somente dentro do RAMFS.
