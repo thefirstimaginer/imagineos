@@ -8,10 +8,11 @@ KERNEL_FEATURES ?=
 KERNEL := target/$(TARGET)/release/dreamcore
 ISO_DIR := .build/iso
 RAMFS_IMAGE := .build/ramfs.tar
-USER_UTILITIES := cat grep ls mkdir rm touch
-RAMFS_DIRS := bin home system/fonts tmp usr
-USER_PROGRAMS := .build/user/init.elf .build/user/getty.elf .build/user/shell.elf \
-	$(addprefix .build/user/utilities/,$(addsuffix .elf,$(USER_UTILITIES)))
+USER_UTILITIES := cat grep ls mkdir rm touch hello
+RAMFS_DIRS := bin sbin home system/fonts tmp usr
+USER_PROGRAMS := .build/user/sbin/init .build/user/sbin/getty \
+	.build/user/bin/shell \
+	$(addprefix .build/user/utilities/,$(USER_UTILITIES))
 RAMFS_FILES := $(shell find ramfs -type f | sort)
 ISO_IMAGE := distro/$(KERNEL_NAME)-$(shell date +%Y-%m-%d-%H-%M)-$(CODENAME).iso
 QEMU := qemu-system-x86_64
@@ -28,26 +29,32 @@ $(RAMFS_IMAGE): $(USER_PROGRAMS) $(RAMFS_FILES)
 	rm -rf .build/ramfs
 	mkdir -p $(addprefix .build/ramfs/,$(RAMFS_DIRS))
 	cp -a ramfs/. .build/ramfs/
-	cp .build/user/init.elf .build/ramfs/bin/init
-	cp .build/user/getty.elf .build/ramfs/bin/getty
-	cp .build/user/shell.elf .build/ramfs/bin/shell
-	for utility in $(USER_UTILITIES); do cp .build/user/utilities/$$utility.elf .build/ramfs/bin/$$utility; done
-	tar --format=ustar -C .build/ramfs -cf $@ bin home system tmp usr
+	cp .build/user/sbin/init .build/ramfs/sbin/init
+	cp .build/user/sbin/getty .build/ramfs/sbin/getty
+	cp .build/user/bin/shell .build/ramfs/bin/shell
+	for utility in $(USER_UTILITIES); do cp .build/user/utilities/$$utility .build/ramfs/bin/$$utility; done
+	tar --format=ustar -C .build/ramfs -cf $@ bin sbin home system tmp usr
 
 .PHONY: user-programs
 user-programs: $(USER_PROGRAMS)
 
-.build/user/%.elf: userspace/%.rs userspace/linker.ld
-	mkdir -p .build/user
+.build/user/sbin/%: userland/%.rs userland/linker.ld
+	mkdir -p $(dir $@)
 	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
 		-C panic=abort -C relocation-model=static \
-		-C link-arg=-Tuserspace/linker.ld $< -o $@
+		-C link-arg=-Tuserland/linker.ld $< -o $@
 
-.build/user/utilities/%.elf: userspace/utilities/%.rs userspace/utilities/common.rs userspace/linker.ld
-	mkdir -p .build/user/utilities
+.build/user/bin/%: userland/%.rs userland/linker.ld
+	mkdir -p $(dir $@)
 	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
 		-C panic=abort -C relocation-model=static \
-		-C link-arg=-Tuserspace/linker.ld $< -o $@
+		-C link-arg=-Tuserland/linker.ld $< -o $@
+
+.build/user/utilities/%: userland/utilities/%.rs userland/utilities/common.rs userland/linker.ld
+	mkdir -p $(dir $@)
+	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
+		-C panic=abort -C relocation-model=static \
+		-C link-arg=-Tuserland/linker.ld $< -o $@
 
 iso: kernel $(RAMFS_IMAGE)
 	command -v xorriso >/dev/null
@@ -74,7 +81,9 @@ iso: kernel $(RAMFS_IMAGE)
 
 run: iso
 	test -f "$(OVMF_CODE)"
-	$(QEMU) -machine q35 -m 512M -serial stdio -bios "$(OVMF_CODE)" -cdrom $(ISO_IMAGE)
+	$(QEMU) -machine q35 -m 512M -serial stdio \
+		-drive if=pflash,format=raw,unit=0,readonly=on,file="$(OVMF_CODE)" \
+		-cdrom $(ISO_IMAGE)
 
 clean:
 	rm -rf target .build

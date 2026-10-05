@@ -27,6 +27,7 @@ extern "C" fn _start(
         common::write(b"usage: cat FILE...\n");
         common::exit(2);
     }
+    // Each file is read once, so output is limited to the 4 KiB buffer.
     let mut buffer = [0u8; 4096];
     for index in 1..argc {
         let Some(path) = (unsafe { common::argument(argv, index) }) else {

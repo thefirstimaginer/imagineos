@@ -5,7 +5,9 @@ ImagineOS e um sistema operacional experimental x86_64 com kernel freestanding e
 ## Conteudo
 
 - [Arquitetura](architecture.md)
+- [Fluxo de boot e processo init](boot-flow.md)
 - [Build e execucao](build.md)
+- [Criar programas para o userspace](userspace.md)
 - [Comandos do shell](commands.md)
 - [Testes](testing.md)
 - [Estado atual e limitacoes](status.md)
@@ -25,7 +27,7 @@ O sistema ja possui:
 - shell de usuario com `help`, `clear`, `pid`, `echo` e `exit`.
 - built-ins de sessao e utilitarios externos `ls`, `cat` e `grep` em `/bin`.
 
-Timer/APIC, preempcao, reclaim de frames, W^X, VFS e armazenamento persistente ainda nao existem. O boot precisa ser validado em QEMU/OVMF.
+Timer/APIC, preempção, reclaim de frames, W^X, VFS e armazenamento persistente ainda não existem. O fluxo de boot e as limitações estão descritos em [Fluxo de boot e processo init](boot-flow.md).
 
 ## Objetivo
 

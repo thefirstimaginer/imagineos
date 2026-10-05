@@ -2,7 +2,7 @@ targets/
 /.vscode
 /.build
 /target/
-/userspace/target/
+/userland/target/
 /distro
 *.bin
 *.iso

@@ -6,6 +6,10 @@ edition = "2021"
 [dependencies]
 limine = "0.5.0"
 
+[[bin]]
+name = "dreamcore"
+path = "dnu/main.rs"
+
 [features]
 kernel-debug = []
 

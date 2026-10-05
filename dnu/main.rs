@@ -113,8 +113,8 @@ pub extern "C" fn _start() -> ! {
         halt();
     };
     ramfs::mount(ramfs_image);
-    let Some(init_elf) = ramfs::read("/bin/init") else {
-        console_write("RAMFS has no /bin/init; stopping safely\n");
+    let Some(init_program) = ramfs::read("/sbin/init") else {
+        console_write("RAMFS has no /sbin/init; stopping safely\n");
         halt();
     };
 
@@ -125,8 +125,8 @@ pub extern "C" fn _start() -> ! {
     } else {
         console_write("RAMFS font not found; using framebuffer built-in font\n");
     }
-    console_write("RAMFS mounted; loading /bin/init in ring 3\n");
-    if process::init(&[(init_elf, 1)]).is_err() {
+    console_write("RAMFS mounted; loading /sbin/init as PID 1 in ring 3\n");
+    if process::init(&[(init_program, 1)]).is_err() {
         console_write("ELF loader failed; stopping safely\n");
         halt();
     }

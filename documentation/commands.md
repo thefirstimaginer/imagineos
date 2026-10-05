@@ -18,10 +18,10 @@ O shell e um ELF x86_64 em ring 3. A entrada vem dos syscalls `read` via COM1 ou
 | `type NAME` | Identifica builtin ou executavel encontrado por PATH |
 | `exit` | Encerra o shell e o kernel quando nao restam tarefas |
 
-Comandos externos sao procurados da esquerda para a direita em `PATH`, cujo valor inicial e `/bin` (o unico diretorio com executaveis no RAMFS atual). O RAMFS fornece `ls`, `cat` e `grep` em `/bin`; `grep` faz busca literal e os utilitarios de leitura usam buffers limitados.
+Comandos externos são procurados da esquerda para a direita em `PATH`, cujo valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch` e `rm` em `/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers limitados.
 
 `ls` sem argumento recebe o `PWD` atual; em um build normal as mensagens de checkpoint do loader ficam ocultas. O shell ainda mostra erros fatais do kernel.
 
-`init` e `getty` tambem sao ELFs em ring 3. Processos filhos recebem `argc`, `argv` e ambiente exportado pela ABI do kernel. Tokens aceitam aspas simples/duplas e escape com barra invertida; pipelines, redirecionamentos, aliases, funcoes e estruturas `if/for/while` ainda nao existem.
+`/sbin/init` e `/sbin/getty` tambem são programas ELF em ring 3; o kernel inicia `init` como PID 1. Processos filhos recebem `argc`, `argv` e ambiente exportado pela ABI do kernel. Tokens aceitam aspas simples/duplas e escape com barra invertida; pipelines, redirecionamentos, aliases, funções e estruturas `if/for/while` ainda não existem.
 
-O RAMFS USTAR e somente leitura. `cp`, `mv` e `rm` so devem ser adicionados quando houver uma camada gravavel, nao como falsos built-ins.
+O USTAR base do RAMFS é somente leitura; `mkdir`, `touch` e `rm` alteram apenas um overlay volátil em memória. `cp` e `mv` dependem de uma camada de escrita persistente.

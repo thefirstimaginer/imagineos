@@ -1,6 +1,6 @@
-# Build e execucao
+# Build e execução
 
-## Dependencias
+## Dependências
 
 - Rust stable e `rustup target add x86_64-unknown-none`;
 - GNU Make e `rustup` no `PATH`;
@@ -10,16 +10,21 @@
 
 ## Compilar a ISO
 
-Na raiz do repositorio:
+Na raiz do repositório, crie `ramfs/` caso ainda não exista. Essa pasta é a
+árvore de origem do filesystem incluído na imagem; a etapa de empacotamento
+falha se ela estiver ausente.
 
 ```sh
+mkdir -p ramfs
 make kernel
 make iso
 ```
 
-A ISO UEFI sera gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
-O arquivo USTAR `ramfs.tar` e produzido da arvore `ramfs/`; os ELFs compilados
-de `userspace/*.rs` sao colocados em `ramfs/bin/` no staging antes do tar.
+A ISO UEFI será gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
+O arquivo USTAR `ramfs.tar` é produzido a partir da árvore `ramfs/`. As fontes
+do kernel ficam em `dnu/`; os programas Rust de `userland/` são compilados no
+staging e incluídos sem extensão: `/sbin/init`, `/sbin/getty` e os comandos em
+`/bin/`.
 
 ## Executar com QEMU
 
@@ -27,6 +32,7 @@ de `userspace/*.rs` sao colocados em `ramfs/bin/` no staging antes do tar.
 make run
 ```
 
-Configure `OVMF_CODE` se o firmware nao estiver no caminho padrao. A imagem
-atual nao inclui boot BIOS. O ESP contem o kernel e `ramfs.tar`; os programas
-userspace existem somente dentro do RAMFS.
+Configure `OVMF_CODE` se o firmware não estiver no caminho padrão, por exemplo:
+`make run OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd`. A imagem atual não inclui
+boot BIOS. O ESP contém o kernel e `ramfs.tar`; os programas de userspace
+existem somente dentro do RAMFS.

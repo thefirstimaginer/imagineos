@@ -21,8 +21,8 @@ extern "C" fn _start(
     _envc: usize,
     _envp: *const *const u8,
 ) -> ! {
-    write("Astrid init: running as ELF in ring 3\n");
-    exec("/bin/getty");
+    write("Astrid init: PID 1 running in ring 3\n");
+    exec("/sbin/getty");
     syscall0(SYS_EXIT);
     loop {
         core::hint::spin_loop();

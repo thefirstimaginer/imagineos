@@ -688,20 +688,20 @@ mod tests {
     }
 
     #[test]
-    fn finds_bin_program_and_nested_psf_font() {
-        let program = archive_with_file(b"bin", b"init", b"ELF");
-        assert_eq!(Archive::new(&program).find("/bin/init"), Some(&b"ELF"[..]));
-        assert!(Archive::new(&program).is_directory("bin"));
+    fn finds_sbin_init_and_nested_psf_font() {
+        let program = archive_with_file(b"sbin", b"init", b"ELF");
+        assert_eq!(Archive::new(&program).find("/sbin/init"), Some(&b"ELF"[..]));
+        assert!(Archive::new(&program).is_directory("sbin"));
 
         let font = archive_with_file(b"system/fonts", b"default8x9.psf", b"PSF");
         assert_eq!(Archive::new(&font).find_font(), Some(&b"PSF"[..]));
         assert!(Archive::new(&font).is_directory("system/fonts"));
         assert!(!Archive::new(&font).is_directory("sbin"));
 
-        let program = archive_with_file(b"bin", b"init", b"ELF");
+        let program = archive_with_file(b"sbin", b"init", b"ELF");
         let mut entries = [0u8; 32];
         let length = Archive::new(&program)
-            .list_directory("/bin", &mut entries)
+            .list_directory("/sbin", &mut entries)
             .unwrap();
         assert_eq!(&entries[..length], b"init\n");
     }

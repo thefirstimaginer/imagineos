@@ -98,7 +98,7 @@ pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
             crate::console_write(" ELF\n");
         }
         let slot = scheduler.count;
-        let arguments: [&[u8]; 1] = [b"/bin/init"];
+        let arguments: [&[u8]; 1] = [b"/sbin/init"];
         let process = load_elf(image, pid, slot, &arguments, &[])?;
         scheduler.processes[scheduler.count] = process;
         scheduler.count += 1;
