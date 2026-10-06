@@ -29,13 +29,18 @@ tar -tf .build/ramfs.tar
 
 O tar deve conter `sbin/init`, `sbin/getty`, `bin/shell`, `bin/ls`, `bin/cat`,
 `bin/grep`, `bin/globalconf`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
-`bin/hello`, `home/.global/global.conf` e `system/fonts/zap-light16.psf`.
+`bin/hello`, `bin/fdtest`, `home/.global/global.conf` e
+`system/fonts/zap-light16.psf`.
 
 Para criar a ISO, instale `xorriso`, `dosfstools` e `mtools`, depois rode `make iso`.
 Para reativar os logs de cada etapa de carregamento: `make KERNEL_FEATURES=kernel-debug iso`.
 
 ## Boot manual
 
-Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty/shell. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `cat /home/readme.txt`, `grep ImagineOS /home/readme.txt` e `read NAME`. Com o layout ABNT2, teste `ç`, `á`, `ã`, `ê` e as setas no editor; no prompt, Backspace deve remover o glifo inteiro.
+Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty/shell. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `fdtest`, `cat /home/readme.txt`,
+`grep ImagineOS /home/readme.txt` e `read NAME`. `fdtest` verifica stdio,
+abertura, leitura, escrita, append, fechamento e erro de descritor fechado.
+Com o layout ABNT2, teste `ç`, `á`, `ã`, `ê` e as setas no editor; no prompt,
+Backspace deve remover o glifo inteiro.
 
 Sem QEMU/OVMF ou sem as ferramentas para gerar a ISO, a compilação e os testes locais não comprovam que o sistema inicializa corretamente.

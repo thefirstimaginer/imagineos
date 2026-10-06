@@ -5,9 +5,10 @@ use crate::keyboard::Keyboard;
 use crate::process::UserArg;
 use crate::{framebuffer, process};
 use imagineos_abi::{
-    SYS_ABI_VERSION, SYS_CLEAR, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_ISDIR, SYS_ISFILE, SYS_MKDIR,
-    SYS_READ, SYS_READDIR, SYS_READ_FILE, SYS_REMOVE, SYS_TOUCH, SYS_WRITE, SYS_WRITE_FILE,
-    SYS_YIELD,
+    OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION, SYS_CLEAR,
+    SYS_CLOSE, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_ISDIR, SYS_ISFILE, SYS_MKDIR, SYS_OPEN,
+    SYS_READ, SYS_READDIR, SYS_READ_FD, SYS_READ_FILE, SYS_REMOVE, SYS_TOUCH, SYS_WRITE,
+    SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
 };
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
@@ -63,7 +64,7 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             frame
         }
         SYS_WRITE => {
-            let length = (frame_ref.rsi as usize).min(512);
+            let length = (frame_ref.rsi as usize).min(imagineos_abi::MAX_CONSOLE_WRITE);
             let mut buffer = [0u8; 512];
             if process::copy_from_current_user(frame_ref.rdi, &mut buffer[..length]) {
                 crate::console_write_bytes(&buffer[..length]);
@@ -344,6 +345,21 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             }
             frame
         }
+        SYS_OPEN => open_file(frame_ref),
+        SYS_READ_FD => read_fd(frame_ref),
+        SYS_WRITE_FD => write_fd(frame_ref),
+        SYS_CLOSE => {
+            let Ok(fd) = usize::try_from(frame_ref.rdi) else {
+                frame_ref.rax = (-9i64) as u64;
+                return frame;
+            };
+            frame_ref.rax = if process::close_descriptor(fd) {
+                0
+            } else {
+                (-9i64) as u64
+            };
+            frame
+        }
         SYS_MKDIR | SYS_TOUCH | SYS_REMOVE => {
             let mut path_buffer = [0u8; 256];
             let path = match copy_user_path(frame_ref.rdi, frame_ref.rsi, &mut path_buffer) {
@@ -385,6 +401,185 @@ fn copy_user_path<'a>(
         return Err(-14);
     }
     core::str::from_utf8(&buffer[..length]).map_err(|_| -22)
+}
+
+fn open_file(frame: &mut TrapFrame) -> *mut TrapFrame {
+    let mut path_buffer = [0u8; imagineos_abi::MAX_MUTABLE_PATH];
+    let path = match copy_user_path(frame.rdi, frame.rsi, &mut path_buffer) {
+        Ok(path) => path,
+        Err(error) => {
+            frame.rax = error as u64;
+            return frame;
+        }
+    };
+    let flags = frame.rdx;
+    let known_flags = OPEN_READ | OPEN_WRITE | OPEN_CREATE | OPEN_TRUNCATE | OPEN_APPEND;
+    if flags & !known_flags != 0
+        || flags & (OPEN_READ | OPEN_WRITE) == 0
+        || flags & (OPEN_TRUNCATE | OPEN_APPEND) != 0 && flags & OPEN_WRITE == 0
+        || flags & OPEN_TRUNCATE != 0 && flags & OPEN_APPEND != 0
+    {
+        frame.rax = (-22i64) as u64;
+        return frame;
+    }
+
+    if crate::ramfs::is_directory(path) {
+        frame.rax = (-21i64) as u64;
+        return frame;
+    }
+    if !crate::ramfs::is_file(path) {
+        if flags & OPEN_CREATE == 0 {
+            frame.rax = (-2i64) as u64;
+            return frame;
+        }
+        if let Err(error) = crate::ramfs::create_file(path) {
+            frame.rax = fs_error_code(error) as u64;
+            return frame;
+        }
+    }
+    if flags & OPEN_TRUNCATE != 0 {
+        if let Err(error) = crate::ramfs::write_file(path, &[]) {
+            frame.rax = fs_error_code(error) as u64;
+            return frame;
+        }
+    }
+    let offset = if flags & OPEN_APPEND != 0 {
+        match crate::ramfs::file_len(path) {
+            Ok(length) => length,
+            Err(error) => {
+                frame.rax = fs_error_code(error) as u64;
+                return frame;
+            }
+        }
+    } else {
+        0
+    };
+    let descriptor = process::Descriptor::file(path, flags, offset);
+    frame.rax = process::allocate_descriptor(descriptor).map_or((-24i64) as u64, |fd| fd as u64);
+    frame
+}
+
+fn read_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
+    let (Ok(fd), Ok(capacity)) = (usize::try_from(frame.rdi), usize::try_from(frame.rdx)) else {
+        frame.rax = (-22i64) as u64;
+        return frame;
+    };
+    if capacity > imagineos_abi::MAX_READ_BUFFER {
+        frame.rax = (-22i64) as u64;
+        return frame;
+    }
+    if capacity == 0 {
+        frame.rax = 0;
+        return frame;
+    }
+    let Some(mut descriptor) = process::descriptor(fd) else {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    };
+    let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
+    let length = match descriptor.kind {
+        process::DescriptorKind::Stdin => {
+            if descriptor.input_offset == descriptor.input_length {
+                let mut encoded = [0u8; 4];
+                let character = read_character();
+                let value = char::from_u32(character).unwrap_or('\u{fffd}');
+                let bytes = value.encode_utf8(&mut encoded).as_bytes();
+                descriptor.input[..bytes.len()].copy_from_slice(bytes);
+                descriptor.input_length = bytes.len();
+                descriptor.input_offset = 0;
+            }
+            let length = capacity.min(descriptor.input_length - descriptor.input_offset);
+            buffer[..length].copy_from_slice(
+                &descriptor.input[descriptor.input_offset..descriptor.input_offset + length],
+            );
+            descriptor.input_offset += length;
+            length
+        }
+        process::DescriptorKind::File if descriptor.flags & OPEN_READ != 0 => {
+            let path = core::str::from_utf8(&descriptor.path[..descriptor.path_length])
+                .expect("descriptor path is validated on open");
+            match crate::ramfs::read_at(path, descriptor.offset, &mut buffer[..capacity]) {
+                Ok(length) => {
+                    descriptor.offset += length;
+                    length
+                }
+                Err(error) => {
+                    frame.rax = fs_error_code(error) as u64;
+                    return frame;
+                }
+            }
+        }
+        process::DescriptorKind::File => {
+            frame.rax = (-9i64) as u64;
+            return frame;
+        }
+        _ => {
+            frame.rax = (-9i64) as u64;
+            return frame;
+        }
+    };
+    if !process::copy_to_current_user(frame.rsi, &buffer[..length]) {
+        frame.rax = (-14i64) as u64;
+    } else if !process::update_descriptor(fd, descriptor) {
+        frame.rax = (-9i64) as u64;
+    } else {
+        frame.rax = length as u64;
+    }
+    frame
+}
+
+fn write_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
+    let (Ok(fd), Ok(length)) = (usize::try_from(frame.rdi), usize::try_from(frame.rdx)) else {
+        frame.rax = (-22i64) as u64;
+        return frame;
+    };
+    if length > imagineos_abi::MAX_READ_BUFFER {
+        frame.rax = (-22i64) as u64;
+        return frame;
+    }
+    let Some(mut descriptor) = process::descriptor(fd) else {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    };
+    let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
+    if !process::copy_from_current_user(frame.rsi, &mut buffer[..length]) {
+        frame.rax = (-14i64) as u64;
+        return frame;
+    }
+    match descriptor.kind {
+        process::DescriptorKind::Stdout | process::DescriptorKind::Stderr => {
+            crate::console_write_bytes(&buffer[..length]);
+            frame.rax = length as u64;
+        }
+        process::DescriptorKind::File if descriptor.flags & OPEN_WRITE != 0 => {
+            let path = core::str::from_utf8(&descriptor.path[..descriptor.path_length])
+                .expect("descriptor path is validated on open");
+            let offset = if descriptor.flags & OPEN_APPEND != 0 {
+                match crate::ramfs::file_len(path) {
+                    Ok(offset) => offset,
+                    Err(error) => {
+                        frame.rax = fs_error_code(error) as u64;
+                        return frame;
+                    }
+                }
+            } else {
+                descriptor.offset
+            };
+            match crate::ramfs::write_at(path, offset, &buffer[..length]) {
+                Ok(written) => {
+                    descriptor.offset = offset + written;
+                    if !process::update_descriptor(fd, descriptor) {
+                        frame.rax = (-9i64) as u64;
+                    } else {
+                        frame.rax = written as u64;
+                    }
+                }
+                Err(error) => frame.rax = fs_error_code(error) as u64,
+            }
+        }
+        _ => frame.rax = (-9i64) as u64,
+    }
+    frame
 }
 
 fn fs_error_code(error: crate::ramfs::FsError) -> i64 {

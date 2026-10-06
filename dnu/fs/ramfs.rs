@@ -451,6 +451,55 @@ pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
     Ok(())
 }
 
+pub fn file_len(path: &str) -> Result<usize, FsError> {
+    if is_directory(path) {
+        return Err(FsError::IsDirectory);
+    }
+    read(path)
+        .map(|contents| contents.len())
+        .ok_or(FsError::NotFound)
+}
+
+pub fn read_at(path: &str, offset: usize, output: &mut [u8]) -> Result<usize, FsError> {
+    if is_directory(path) {
+        return Err(FsError::IsDirectory);
+    }
+    let contents = read(path).ok_or(FsError::NotFound)?;
+    if offset >= contents.len() {
+        return Ok(0);
+    }
+    let length = output.len().min(contents.len() - offset);
+    output[..length].copy_from_slice(&contents[offset..offset + length]);
+    Ok(length)
+}
+
+pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsError> {
+    let end = offset.checked_add(input.len()).ok_or(FsError::NoSpace)?;
+    if end > MAX_WRITE_FILE_SIZE {
+        return Err(FsError::NoSpace);
+    }
+    let mut contents = [0u8; MAX_WRITE_FILE_SIZE];
+    let length = match read(path) {
+        Some(existing) => {
+            if offset > existing.len() {
+                return Err(FsError::InvalidPath);
+            }
+            contents[..existing.len()].copy_from_slice(existing);
+            existing.len()
+        }
+        None => {
+            if offset != 0 {
+                return Err(FsError::NotFound);
+            }
+            0
+        }
+    };
+    contents[offset..end].copy_from_slice(input);
+    let new_length = length.max(end);
+    write_file(path, &contents[..new_length])?;
+    Ok(input.len())
+}
+
 pub fn create_directory(path: &str) -> Result<(), FsError> {
     create_directory_with_parents(path, false)
 }
@@ -769,6 +818,22 @@ mod tests {
         assert_eq!(
             super::read("/var/log/app/empty.txt"),
             Some(&b"replacement"[..])
+        );
+        assert_eq!(super::file_len("/var/log/app/empty.txt"), Ok(11));
+        let mut range = [0u8; 5];
+        assert_eq!(
+            super::read_at("/var/log/app/empty.txt", 3, &mut range),
+            Ok(5)
+        );
+        assert_eq!(&range, b"lacem");
+        assert_eq!(super::write_at("/var/log/app/empty.txt", 11, b"!"), Ok(1));
+        assert_eq!(
+            super::read("/var/log/app/empty.txt"),
+            Some(&b"replacement!"[..])
+        );
+        assert_eq!(
+            super::write_at("/var/log/app/empty.txt", 4096, b"x"),
+            Err(super::FsError::NoSpace)
         );
         assert_eq!(
             super::write_file(

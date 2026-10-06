@@ -16,6 +16,78 @@ pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_0000;
 const PAGE_SIZE: u64 = 4096;
 pub const MAX_EXEC_ARGS: usize = imagineos_abi::MAX_EXEC_ARGS;
 pub const MAX_EXEC_ENV: usize = imagineos_abi::MAX_EXEC_ENV;
+pub const MAX_OPEN_FDS: usize = imagineos_abi::MAX_OPEN_FDS;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DescriptorKind {
+    Closed,
+    Stdin,
+    Stdout,
+    Stderr,
+    File,
+}
+
+#[derive(Clone, Copy)]
+pub struct Descriptor {
+    pub kind: DescriptorKind,
+    pub path: [u8; imagineos_abi::MAX_MUTABLE_PATH],
+    pub path_length: usize,
+    pub offset: usize,
+    pub flags: u64,
+    pub input: [u8; 4],
+    pub input_length: usize,
+    pub input_offset: usize,
+}
+
+impl Descriptor {
+    const CLOSED: Self = Self::new(DescriptorKind::Closed);
+
+    const fn new(kind: DescriptorKind) -> Self {
+        Self {
+            kind,
+            path: [0; imagineos_abi::MAX_MUTABLE_PATH],
+            path_length: 0,
+            offset: 0,
+            flags: 0,
+            input: [0; 4],
+            input_length: 0,
+            input_offset: 0,
+        }
+    }
+
+    pub fn file(path: &str, flags: u64, offset: usize) -> Self {
+        let mut descriptor = Self::new(DescriptorKind::File);
+        descriptor.path[..path.len()].copy_from_slice(path.as_bytes());
+        descriptor.path_length = path.len();
+        descriptor.flags = flags;
+        descriptor.offset = offset;
+        descriptor
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct DescriptorTable([Descriptor; MAX_OPEN_FDS]);
+
+impl DescriptorTable {
+    const fn new() -> Self {
+        let mut descriptors = [Descriptor::CLOSED; MAX_OPEN_FDS];
+        descriptors[0] = Descriptor::new(DescriptorKind::Stdin);
+        descriptors[1] = Descriptor::new(DescriptorKind::Stdout);
+        descriptors[2] = Descriptor::new(DescriptorKind::Stderr);
+        Self(descriptors)
+    }
+
+    fn allocate(&mut self, descriptor: Descriptor) -> Option<usize> {
+        let slot = (3..self.0.len()).find(|&index| self.0[index].kind == DescriptorKind::Closed)?;
+        self.0[slot] = descriptor;
+        Some(slot)
+    }
+}
+
+struct SharedDescriptorTables(UnsafeCell<[DescriptorTable; MAX_PROCESSES]>);
+unsafe impl Sync for SharedDescriptorTables {}
+static DESCRIPTOR_TABLES: SharedDescriptorTables =
+    SharedDescriptorTables(UnsafeCell::new([DescriptorTable::new(); MAX_PROCESSES]));
 
 #[repr(align(16))]
 struct KernelStacks([[u8; KERNEL_STACK_SIZE]; MAX_PROCESSES]);
@@ -76,6 +148,9 @@ pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
     scheduler.processes = [Process::EMPTY; MAX_PROCESSES];
     scheduler.count = 0;
     scheduler.current = 0;
+    unsafe {
+        *DESCRIPTOR_TABLES.0.get() = [DescriptorTable::new(); MAX_PROCESSES];
+    }
 
     for &(image, pid) in programs.iter().take(MAX_PROCESSES) {
         #[cfg(feature = "kernel-debug")]
@@ -376,7 +451,7 @@ pub fn spawn_current(
         return frame;
     };
 
-    let (slot, pid) = {
+    let (slot, pid, parent_slot) = {
         let scheduler = unsafe { &*SCHEDULER.0.get() };
         let Some(slot) = scheduler
             .processes
@@ -395,7 +470,7 @@ pub fn spawn_current(
             .max()
             .unwrap_or(0)
             + 1;
-        (slot, pid)
+        (slot, pid, scheduler.current)
     };
 
     let process = match load_elf(image, pid, slot, arguments, environment) {
@@ -407,6 +482,12 @@ pub fn spawn_current(
             return frame;
         }
     };
+    unsafe {
+        let tables = &mut *DESCRIPTOR_TABLES.0.get();
+        for index in 0..MAX_OPEN_FDS {
+            tables[slot].0[index] = tables[parent_slot].0[index];
+        }
+    }
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
     scheduler.processes[slot] = process;
     scheduler.count = scheduler.count.max(slot + 1);
@@ -414,6 +495,50 @@ pub fn spawn_current(
         (*frame).rax = pid as u64;
     }
     schedule(frame, false)
+}
+
+pub fn descriptor(fd: usize) -> Option<Descriptor> {
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    (unsafe { &*DESCRIPTOR_TABLES.0.get() })[scheduler.current]
+        .0
+        .get(fd)
+        .copied()
+        .filter(|descriptor| descriptor.kind != DescriptorKind::Closed)
+}
+
+pub fn allocate_descriptor(descriptor: Descriptor) -> Option<usize> {
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    (unsafe { &mut *DESCRIPTOR_TABLES.0.get() })[scheduler.current].allocate(descriptor)
+}
+
+pub fn update_descriptor(fd: usize, descriptor: Descriptor) -> bool {
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let Some(slot) = (unsafe { &mut *DESCRIPTOR_TABLES.0.get() })[scheduler.current]
+        .0
+        .get_mut(fd)
+    else {
+        return false;
+    };
+    if slot.kind == DescriptorKind::Closed {
+        return false;
+    }
+    *slot = descriptor;
+    true
+}
+
+pub fn close_descriptor(fd: usize) -> bool {
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let Some(slot) = (unsafe { &mut *DESCRIPTOR_TABLES.0.get() })[scheduler.current]
+        .0
+        .get_mut(fd)
+    else {
+        return false;
+    };
+    if slot.kind == DescriptorKind::Closed {
+        return false;
+    }
+    *slot = Descriptor::CLOSED;
+    true
 }
 
 pub fn with_current_space<T>(operation: impl FnOnce(AddressSpace) -> T) -> T {

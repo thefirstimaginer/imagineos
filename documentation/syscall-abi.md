@@ -43,6 +43,10 @@ chamadas recebem novos números.
 | 14 | `remove` | `RDI=caminho`, `RSI=tamanho`, `RDX=recursivo` | `0` |
 | 15 | `write_file` | `RDI=caminho`, `RSI=tamanho do caminho`, `RDX=conteúdo`, `R10=tamanho` | bytes gravados |
 | 16 | `abi_version` | nenhum | versão ABI (`1`) |
+| 17 | `open` | `RDI=caminho`, `RSI=tamanho`, `RDX=flags` | descritor aberto |
+| 18 | `read_fd` | `RDI=fd`, `RSI=destino`, `RDX=capacidade` | bytes lidos; `0` no EOF |
+| 19 | `write_fd` | `RDI=fd`, `RSI=bytes`, `RDX=tamanho` | bytes escritos |
+| 20 | `close` | `RDI=fd` | `0` |
 
 `UserArg` é uma estrutura `#[repr(C)]` composta por dois `u64`: endereço e
 comprimento. `exec` aceita até 12 argumentos e 12 entradas de ambiente, cada
@@ -50,11 +54,25 @@ uma com até 128 bytes; o caminho também tem limite de 128 bytes. Consultas de
 arquivo/diretório aceitam caminhos de até 128 bytes e buffers de até 4 KiB.
 Operações mutáveis de RAMFS aceitam caminhos de até 256 bytes; `write_file`
 aceita até 4 KiB por arquivo. Valores além desses limites são rejeitados.
+Cada processo tem 16 slots de descritor: `0` stdin, `1` stdout, `2` stderr e
+13 descritores adicionais. A tabela é copiada para processos iniciados por
+`exec`; descritores de arquivo herdam caminho, flags e offset por cópia, não
+como uma descrição de arquivo compartilhada. Stdin lê caracteres Unicode do
+console e os entrega em UTF-8; stdout/stderr escrevem no console/framebuffer.
+Os arquivos abertos são arquivos do RAMFS; escrita faz copy-up para o overlay
+volátil e cada arquivo continua limitado a 4 KiB.
+
+Flags aceitas por `open`: `OPEN_READ=1`, `OPEN_WRITE=2`, `OPEN_CREATE=4`,
+`OPEN_TRUNCATE=8` e `OPEN_APPEND=16`. É necessário solicitar leitura ou escrita;
+truncate e append exigem escrita e não podem ser combinados. O kernel ainda
+não oferece diretórios como streams, seek, pipes, sockets, dispositivos por
+FD, permissões ou compartilhamento atômico de offsets entre processos.
 
 Erros usados atualmente incluem `EINVAL=22`, `EFAULT=14`, `ENOENT=2`,
 `E2BIG=7`, `ENOEXEC=8`, `EAGAIN=11`, `ENOSPC=28`, `ENOSYS=38`,
-`ENOTDIR=20`, `EISDIR=21`, `EEXIST=17`, `ENOTEMPTY=39` e `EOVERFLOW=75`.
-A crate preserva errno desconhecidos em `Error::code()`.
+`ENOTDIR=20`, `EISDIR=21`, `EEXIST=17`, `EMFILE=24`, `EBADF=9`,
+`ENOTEMPTY=39` e `EOVERFLOW=75`. A crate preserva errno
+desconhecidos em `Error::code()`.
 `exec` retorna `ENOEXEC` quando o ELF não pode ser carregado; `EOVERFLOW`
 indica que a leitura ou listagem não coube no buffer informado.
 
@@ -78,6 +96,6 @@ let pid = imagineos::process::exec(
 
 Os utilitários existentes são construídos contra essa crate por `make
 user-programs`; `userland/utilities/common.rs` preserva uma fachada de transição
-para as chamadas antigas. Um utilitário mínimo (`hello`) usa diretamente a
-nova API. A crate não implementa `std`, alocação dinâmica, descritores de
-arquivo POSIX, threads ou persistência.
+para as chamadas antigas. Utilitários `hello` e `fdtest` exercitam diretamente
+a nova API. A crate não implementa `std`, alocação dinâmica, a semântica
+completa de descritores POSIX, threads ou persistência.

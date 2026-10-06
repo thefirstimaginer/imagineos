@@ -18,6 +18,21 @@ pub const SYS_TOUCH: u64 = 13;
 pub const SYS_REMOVE: u64 = 14;
 pub const SYS_WRITE_FILE: u64 = 15;
 pub const SYS_ABI_VERSION: u64 = 16;
+pub const SYS_OPEN: u64 = 17;
+pub const SYS_READ_FD: u64 = 18;
+pub const SYS_WRITE_FD: u64 = 19;
+pub const SYS_CLOSE: u64 = 20;
+
+pub const FD_STDIN: u64 = 0;
+pub const FD_STDOUT: u64 = 1;
+pub const FD_STDERR: u64 = 2;
+pub const MAX_OPEN_FDS: usize = 16;
+
+pub const OPEN_READ: u64 = 1 << 0;
+pub const OPEN_WRITE: u64 = 1 << 1;
+pub const OPEN_CREATE: u64 = 1 << 2;
+pub const OPEN_TRUNCATE: u64 = 1 << 3;
+pub const OPEN_APPEND: u64 = 1 << 4;
 
 pub const MAX_EXEC_ARGS: usize = 12;
 pub const MAX_EXEC_ENV: usize = 12;

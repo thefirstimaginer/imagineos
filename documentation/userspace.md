@@ -90,7 +90,9 @@ estão em [Testes](testing.md).
   `fs`, `process` e `args`, além dos tipos `Result` e `Error`. A API atual
   oferece `console::write_all`, `console::read_char`, `fs::read_file`,
   `fs::write_file`, `fs::list_directory`, operações de diretório e arquivos,
-  `process::pid`, `process::yield_now`, `process::exec` e `process::exit`.
+  `fs::open` com `OpenOptions`, leitura/escrita/fechamento de descritores,
+  stdin/stdout/stderr, `process::pid`, `process::yield_now`, `process::exec` e
+  `process::exit`.
 - A implementação de transição atual
   oferece `argument`, `environment_value`, `resolve_path`, `write`,
   `read_char`, `clear`, `read_file`, `write_file`, `list_directory`, `mkdir`,
@@ -111,11 +113,10 @@ estão em [Testes](testing.md).
   x86_64 e executáveis estáticos `ET_EXEC`. O fluxo do Makefile compila Rust
   `no_std` usando a crate `imagineos`; não há biblioteca padrão, libc, linker
   dinâmico, PIE nem suporte documentado a toolchains de outras linguagens.
-- **Entrada e execução:** o programa não recebe stdin/stdout/stderr como
-  descritores de arquivo. Há chamadas para console, leitura de caractere,
-  yield, exit e criação de processos, mas não há pipes, redirecionamento,
-  sinais, espera/coleta de processo ou um contrato POSIX. O shell também não
-  implementa pipes nem redirecionamento.
+- **Entrada e execução:** stdin/stdout/stderr e arquivos do RAMFS agora podem
+  ser acessados por descritores. Ainda não há pipes, redirecionamento, sockets,
+  descritores de dispositivos, seek, sinais, espera/coleta de processo ou um
+  contrato POSIX. O shell também não implementa pipes nem redirecionamento.
 - **Recursos de processo:** há no máximo quatro slots de processo, incluindo
   processos ativos; o scheduler é cooperativo, sem preempção por timer. Um
   programa que não cede a execução pode impedir que outros avancem.
@@ -124,15 +125,20 @@ estão em [Testes](testing.md).
   gerenciamento de memória, mas não devem presumir alocação dinâmica. As
   páginas de userspace não têm proteção W^X e não há recuperação de frames
   após o término de um processo.
-- **Limites de ABI:** `exec` aceita até 12 argumentos e 12 entradas de
+- **Limites de ABI:** cada processo tem 16 descritores, dos quais 13 podem ser
+  abertos pelo aplicativo. A tabela é copiada em `exec`, inclusive offsets de
+  arquivos, e descritores não compartilham offsets entre processos. `exec`
+  aceita até 12 argumentos e 12 entradas de
   ambiente, com até 128 bytes por item e caminho. A stack de userspace tem
   32 KiB. Escritas ao console são limitadas a 512 bytes por chamada; leitura
   de arquivo e listagem de diretório têm buffers de até 4 KiB. Wrappers de
   utilitários também podem impor limites menores.
 - **Arquivos e persistência:** o conteúdo base do RAMFS é um arquivo USTAR
   somente de leitura. `mkdir`, `touch`, `remove` e gravações de até 4 KiB
-  alteram apenas um overlay volátil em memória; não há armazenamento
-  persistente nem acesso a disco ou rede. Alterações desaparecem ao reiniciar.
+  alteram apenas um overlay volátil em memória. Arquivos USTAR abertos para
+  escrita são copiados para esse overlay; cada arquivo continua limitado a
+  4 KiB. Não há armazenamento persistente nem acesso a disco ou rede.
+  Alterações desaparecem ao reiniciar.
 - **Estado de validação:** a implementação é experimental. Compilar e
   empacotar um programa não comprova que ele funciona no boot real; teste a
   ISO em QEMU/OVMF e verifique o comportamento no shell.
