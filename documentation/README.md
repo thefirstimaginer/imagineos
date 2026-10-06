@@ -26,6 +26,8 @@ O sistema ja possui:
 - page tables de usuario, heap bump de kernel, syscalls `int 0x80` e scheduler cooperativo;
 - logs do kernel com tempo decorrido, framebuffer com fonte PSF embutida de
   fallback e carregador PSF1/PSF2;
+- `dzImage` LZ4 com bootstrap ELF Limine, verificação CRC32 e progresso de
+  descompressão atualizado na mesma linha;
 - teclado PS/2 por polling com conversao UTF-8 para algumas teclas AltGr;
 - shell de usuario com `help`, `clear`, `pid`, `echo` e `exit`.
 - built-ins de sessao e utilitarios externos `ls`, `cat` e `grep` em `/bin`.

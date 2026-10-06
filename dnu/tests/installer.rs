@@ -111,7 +111,8 @@ fn installs_a_gpt_esp_and_boot_payload() {
     let disk = SparseDisk::new(300_000);
     installer::install(
         &disk,
-        b"kernel image",
+        b"bootstrap image",
+        b"compressed kernel",
         b"ramfs archive",
         b"efi loader",
         b"limine config",
@@ -140,7 +141,8 @@ fn installs_a_gpt_esp_and_boot_payload() {
     assert_eq!(&root[32..43], b"BOOT       ");
     assert_eq!(root[64 + 11], 0x0f);
     assert_eq!(&root[96..107], b"LIMINE  CNF");
-    assert_eq!(&root[128..139], b"STARTUP NSH");
+    assert_eq!(root[128 + 11], 0x0f);
+    assert_eq!(&root[160..171], b"STARTUP NSH");
 
     let limine_cluster = u16::from_le_bytes([root[96 + 26], root[96 + 27]]) as u64;
     let data_start = 2048 + 1 + 128 * 2 + 32;
@@ -148,6 +150,16 @@ fn installs_a_gpt_esp_and_boot_payload() {
     disk.read_sector(data_start + (limine_cluster - 2) * 8, &mut payload)
         .unwrap();
     assert_eq!(&payload[..13], b"limine config");
+
+    let mut boot_directory = [0; SECTOR_SIZE];
+    disk.read_sector(data_start + 2 * 8, &mut boot_directory)
+        .unwrap();
+    assert_eq!(boot_directory[64 + 11], 0x0f);
+    assert_eq!(&boot_directory[96..107], b"BOOT    ELF");
+    assert_eq!(boot_directory[128 + 11], 0x0f);
+    assert_eq!(&boot_directory[160..171], b"DZIMAGE    ");
+    assert_eq!(boot_directory[192 + 11], 0x0f);
+    assert_eq!(&boot_directory[224..235], b"RAMFS   TAR");
 
     let mut protective_mbr = [0; SECTOR_SIZE];
     disk.read_sector(0, &mut protective_mbr).unwrap();
@@ -158,7 +170,7 @@ fn installs_a_gpt_esp_and_boot_payload() {
 #[test]
 fn refuses_a_disk_too_small_before_writing() {
     let disk = SparseDisk::new(100_000);
-    let result = installer::install(&disk, b"k", b"r", b"e", b"c", b"s");
+    let result = installer::install(&disk, b"b", b"d", b"r", b"e", b"c", b"s");
     assert_eq!(result, Err(installer::InstallError::DiskTooSmall));
     assert!(disk.contents.borrow().is_empty());
 }

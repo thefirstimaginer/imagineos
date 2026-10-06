@@ -47,6 +47,7 @@ struct DirectoryEntry {
 
 struct FileToInstall<'a> {
     name: [u8; 11],
+    long_name: &'static str,
     contents: &'a [u8],
     first_cluster: u16,
     cluster_count: u16,
@@ -57,18 +58,29 @@ pub fn install_primary_master() -> Result<(), InstallError> {
     if device.sector_count() == 0 {
         return Err(InstallError::NoDisk);
     }
-    let kernel = ramfs::read("/system/install/kernel.elf").ok_or(InstallError::MissingPayload)?;
+    let bootstrap =
+        ramfs::read("/system/install/bootstrap.elf").ok_or(InstallError::MissingPayload)?;
+    let dz_image = ramfs::read("/system/install/dzImage").ok_or(InstallError::MissingPayload)?;
     let efi = ramfs::read("/system/install/BOOTX64.EFI").ok_or(InstallError::MissingPayload)?;
     let config = ramfs::read("/system/install/limine.conf").ok_or(InstallError::MissingPayload)?;
     let startup = ramfs::read("/system/install/startup.nsh").ok_or(InstallError::MissingPayload)?;
     let ramfs_image =
         ramfs::read("/system/install/ramfs-installed.tar").ok_or(InstallError::MissingPayload)?;
-    install(&device, kernel, ramfs_image, efi, config, startup)
+    install(
+        &device,
+        bootstrap,
+        dz_image,
+        ramfs_image,
+        efi,
+        config,
+        startup,
+    )
 }
 
 pub fn install(
     device: &impl BlockDevice,
-    kernel: &[u8],
+    bootstrap: &[u8],
+    dz_image: &[u8],
     ramfs_image: &[u8],
     efi: &[u8],
     config: &[u8],
@@ -77,7 +89,8 @@ pub fn install(
     if device.sector_count() < MIN_DISK_SECTORS {
         return Err(InstallError::DiskTooSmall);
     }
-    if kernel.is_empty()
+    if bootstrap.is_empty()
+        || dz_image.is_empty()
         || efi.is_empty()
         || config.is_empty()
         || startup.is_empty()
@@ -89,30 +102,42 @@ pub fn install(
     let mut files = [
         FileToInstall {
             name: *b"LIMINE  CNF",
+            long_name: "limine.conf",
             contents: config,
             first_cluster: 0,
             cluster_count: 0,
         },
         FileToInstall {
             name: *b"BOOTX64 EFI",
+            long_name: "BOOTX64.EFI",
             contents: efi,
             first_cluster: 0,
             cluster_count: 0,
         },
         FileToInstall {
-            name: *b"KERNEL  ELF",
-            contents: kernel,
+            name: *b"BOOT    ELF",
+            long_name: "bootstrap.elf",
+            contents: bootstrap,
+            first_cluster: 0,
+            cluster_count: 0,
+        },
+        FileToInstall {
+            name: *b"DZIMAGE    ",
+            long_name: "dzImage",
+            contents: dz_image,
             first_cluster: 0,
             cluster_count: 0,
         },
         FileToInstall {
             name: *b"RAMFS   TAR",
+            long_name: "ramfs.tar",
             contents: ramfs_image,
             first_cluster: 0,
             cluster_count: 0,
         },
         FileToInstall {
             name: *b"STARTUP NSH",
+            long_name: "startup.nsh",
             contents: startup,
             first_cluster: 0,
             cluster_count: 0,
@@ -356,16 +381,12 @@ fn format_fat16(
         cluster: 4,
         size: 0,
     };
-    let startup_file = directory_entry_for(&files[4]);
-    write_root_directory(
+    write_directory_with_files(
         device,
         root_start,
-        &[
-            efi_dir,
-            boot_dir,
-            directory_entry_for(&files[0]),
-            startup_file,
-        ],
+        ESP_ROOT_SECTORS as usize,
+        &[efi_dir, boot_dir],
+        &[&files[0], &files[5]],
     )?;
 
     let efi_cluster_lba = data_start;
@@ -380,34 +401,27 @@ fn format_fat16(
             size: 0,
         },
     ];
-    let efi_boot_entries = [
-        dot_entry(b".          ", 3),
-        dot_entry(b"..         ", 2),
-        directory_entry_for(&files[1]),
-    ];
-    let system_boot_entries = [
-        dot_entry(b".          ", 4),
-        dot_entry(b"..         ", 0),
-        directory_entry_for(&files[2]),
-        directory_entry_for(&files[3]),
-    ];
+    let efi_boot_entries = [dot_entry(b".          ", 3), dot_entry(b"..         ", 2)];
+    let system_boot_entries = [dot_entry(b".          ", 4), dot_entry(b"..         ", 0)];
     write_directory(
         device,
         efi_cluster_lba,
         SECTORS_PER_CLUSTER as usize,
         &efi_entries,
     )?;
-    write_directory(
+    write_directory_with_files(
         device,
         data_start + SECTORS_PER_CLUSTER,
         SECTORS_PER_CLUSTER as usize,
         &efi_boot_entries,
+        &[&files[1]],
     )?;
-    write_directory(
+    write_directory_with_files(
         device,
         system_boot_cluster_lba,
         SECTORS_PER_CLUSTER as usize,
         &system_boot_entries,
+        &[&files[2], &files[3], &files[4]],
     )?;
 
     for file in files {
@@ -454,19 +468,36 @@ fn write_directory(
     Ok(())
 }
 
-fn write_root_directory(
+fn write_directory_with_files(
     device: &impl BlockDevice,
     first_lba: u64,
+    sector_count: usize,
     entries: &[DirectoryEntry],
+    files: &[&FileToInstall<'_>],
 ) -> Result<(), InstallError> {
-    for sector_index in 0..ESP_ROOT_SECTORS as usize {
+    let entry_count = entries.len() + files.len() * 2;
+    if entry_count > sector_count * 16 || files.iter().any(|file| file.long_name.len() > 13) {
+        return Err(InstallError::PayloadTooLarge);
+    }
+    for sector_index in 0..sector_count {
         let mut sector = [0; SECTOR_SIZE];
-        if sector_index == 0 {
-            write_directory_entry(&mut sector, 0, &entries[0]);
-            write_directory_entry(&mut sector, 32, &entries[1]);
-            write_lfn_entry(&mut sector, 64, "limine.conf", &entries[2].name);
-            write_directory_entry(&mut sector, 96, &entries[2]);
-            write_directory_entry(&mut sector, 128, &entries[3]);
+        for slot in 0..16 {
+            let global_index = sector_index * 16 + slot;
+            if global_index >= entry_count {
+                break;
+            }
+            let offset = slot * 32;
+            if global_index < entries.len() {
+                write_directory_entry(&mut sector, offset, &entries[global_index]);
+                continue;
+            }
+            let file_index = (global_index - entries.len()) / 2;
+            let file = files[file_index];
+            if (global_index - entries.len()) % 2 == 0 {
+                write_lfn_entry(&mut sector, offset, file.long_name, &file.name);
+            } else {
+                write_directory_entry(&mut sector, offset, &directory_entry_for(file));
+            }
         }
         device
             .write_sector(first_lba + sector_index as u64, &sector)
@@ -620,30 +651,42 @@ mod tests {
         let files = [
             FileToInstall {
                 name: *b"LIMINE  CNF",
+                long_name: "limine.conf",
                 contents: b"boot",
                 first_cluster: 0,
                 cluster_count: 0,
             },
             FileToInstall {
                 name: *b"BOOTX64 EFI",
+                long_name: "BOOTX64.EFI",
                 contents: b"efi",
                 first_cluster: 0,
                 cluster_count: 0,
             },
             FileToInstall {
-                name: *b"KERNEL  ELF",
-                contents: b"kernel",
+                name: *b"BOOT    ELF",
+                long_name: "bootstrap.elf",
+                contents: b"bootstrap",
+                first_cluster: 0,
+                cluster_count: 0,
+            },
+            FileToInstall {
+                name: *b"DZIMAGE    ",
+                long_name: "dzImage",
+                contents: b"dzimage",
                 first_cluster: 0,
                 cluster_count: 0,
             },
             FileToInstall {
                 name: *b"RAMFS   TAR",
+                long_name: "ramfs.tar",
                 contents: b"ramfs",
                 first_cluster: 0,
                 cluster_count: 0,
             },
             FileToInstall {
                 name: *b"STARTUP NSH",
+                long_name: "startup.nsh",
                 contents: b"startup",
                 first_cluster: 0,
                 cluster_count: 0,

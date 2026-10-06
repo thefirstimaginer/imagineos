@@ -5,33 +5,40 @@
 ```text
 UEFI
   -> Limine
-  -> kernel DNU + ramfs.tar como módulo
-  -> inicialização de memória, console e tabelas CPU
-  -> montagem do USTAR em memória
+  -> bootstrap ELF + dzImage e ramfs.tar como módulos
+  -> descompressão LZ4 e carga dos segmentos ELF do kernel
+  -> repasse das respostas Limine e reservas de memória
+  -> montagem do USTAR em memória como raiz atual
   -> /sbin/init (PID 1, ring 3)
   -> /sbin/getty
   -> /bin/shell
 ```
 
 1. O firmware UEFI inicia o Limine. A configuração [`limine.conf`](../limine.conf)
-   aponta para o kernel e para o módulo `ramfs.tar`.
-2. Limine carrega o ELF do kernel em memória e fornece respostas às solicitações
-   de boot, incluindo mapa de memória, HHDM, framebuffer e módulo RAMFS. O kernel
-   não é compactado nem se descompacta durante esta etapa.
-3. O DNU inicializa o contador de tempo decorrido, as estruturas de CPU e
-   memória que já implementa, prepara o console com a fonte PSF2 de fallback
-   embutida no kernel e monta o USTAR fornecido pelo Limine.
-4. O USTAR serve como initramfs e também continua sendo a raiz atual: o kernel
+   aponta para `bootstrap.elf` e carrega `dzImage` e `ramfs.tar` como módulos.
+2. O bootstrap pede ao Limine o mapa de memória, HHDM, framebuffer e módulos.
+   Ele verifica o cabeçalho dzImage, descomprime o ELF do kernel com LZ4,
+   confere o CRC32 e atualiza `Unpacking Kernel - N%/100%` na mesma linha.
+3. O bootstrap valida os segmentos ELF64 `PT_LOAD`, aloca páginas físicas,
+   copia segmentos, zera BSS e mapeia os endereços virtuais do kernel nas
+   tabelas Limine. Também reserva a árvore de page tables ativa do Limine:
+   processos compartilham esses mapeamentos de kernel, então o frame allocator
+   não pode reutilizar as páginas que guardam essas tabelas. Passa ao kernel o
+   mapa, framebuffer, módulos e as regiões físicas reservadas.
+4. O kernel inicializa as estruturas de CPU e memória, prepara o console com
+   `tools/fonts/zap-vga16.psf` como fallback e monta o USTAR fornecido pelo
+   Limine.
+5. O USTAR serve como initramfs e também continua sendo a raiz atual: o kernel
    ainda não implementa DFS/VFS nem `switch_root`/`pivot_root`. A partição DFS
    pode ser identificada pela GPT, mas não é montada. A primeira fonte PSF1/PSF2
    de `system/fonts/` no RAMFS substitui a fonte de fallback; caso não exista,
-   permanece `tools/fonts/zap-vga32.psf`.
-5. O kernel procura `/sbin/init` no arquivo montado e inicia esse ELF em ring 3
+   permanece a fonte 8x16 `tools/fonts/zap-vga16.psf`.
+6. O kernel procura `/sbin/init` no arquivo montado e inicia esse ELF em ring 3
    com PID 1. `init` e `getty` são compilados dos fontes em `userland/`; o nome
    final dos arquivos no USTAR não tem sufixo `.elf`, embora seus conteúdos
    sejam executáveis ELF.
    Se `/sbin/init` não existir, o kernel para com uma mensagem `KERNEL PANIC`.
-6. O programa `init` inicia `/sbin/getty`; getty inicia `/bin/shell`. Os
+7. O programa `init` inicia `/sbin/getty`; getty inicia `/bin/shell`. Os
    utilitários e o shell ficam em `/bin`.
 
 ## Relação com o modelo Linux
@@ -70,14 +77,12 @@ intencionalmente inicial, não um gerenciador de serviços completo.
 - `distro/`: imagens ISO geradas.
 - `documentation/`: arquitetura, build, fluxo de boot e guias de contribuição.
 
-Os manifests e as regras de build ficam na raiz: `Cargo.toml` aponta para
-`dnu/main.rs`, e `GNUmakefile` compila os programas de `userland/` e empacota
-o USTAR.
+Os manifests e as regras de build ficam na raiz: `Cargo.toml` define os bins
+`dreamcore` e `bootstrap`, e `GNUmakefile` compila o kernel, cria `dzImage`,
+compila o bootstrap e empacota os programas de `userland/` no USTAR.
 
 ## Recursos ainda não implementados
 
-O fluxo atual não inclui descompressão do kernel, descoberta abrangente de
-hardware por ACPI/Device Tree, KMS, drivers de armazenamento ou uma raiz
-persistente. Limine inicia o kernel com as informações que o DNU já consome;
-não se deve inferir suporte a recursos do Linux só por existir um módulo
-initramfs ou um processo PID 1.
+O dzImage é um formato próprio de payload LZ4 com tamanho e CRC32, não é
+compatível com `vmlinuz` nem substitui o Limine. Ainda não há descoberta
+abrangente de hardware por ACPI/Device Tree, KMS ou raiz persistente.

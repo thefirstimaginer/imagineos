@@ -18,15 +18,20 @@ falha se ela estiver ausente.
 ```sh
 mkdir -p ramfs
 make kernel
+make bootstrap dzimage
 make iso
 ```
 
 A ISO UEFI será gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
-O arquivo USTAR `ramfs.tar` é produzido a partir da árvore `ramfs/`. As fontes
-do kernel ficam em `dnu/`; os programas Rust de `userland/` são compilados no
-staging e incluídos sem extensão: `/sbin/init`, `/sbin/getty` e os comandos em
-`/bin/`. A fonte `tools/fonts/zap-vga32.psf` é incorporada ao kernel e usada
-como fallback se o RAMFS não fornecer uma fonte PSF válida.
+`make bootstrap` cria o ELF inicial do Limine e `make dzimage` comprime o ELF
+do kernel em `.build/dzImage` usando o empacotador LZ4 próprio. O módulo traz
+magic, tamanho descomprimido e CRC32. Durante o boot, o bootstrap atualiza a
+porcentagem de descompressão na mesma linha, carrega os segmentos e então
+transfere as respostas Limine ao kernel. O USTAR `ramfs.tar` é produzido a
+partir de `ramfs/`; os programas Rust de `userland/` são incluídos sem
+extensão: `/sbin/init`, `/sbin/getty` e comandos em `/bin`. A fonte PSF
+8x16 `tools/fonts/zap-vga16.psf` é incorporada ao kernel e ao bootstrap como
+fallback para uma fonte inválida ou ausente no RAMFS.
 
 ## Executar com QEMU
 
@@ -36,14 +41,14 @@ make run
 
 Configure `OVMF_CODE` se o firmware não estiver no caminho padrão, por exemplo:
 `make run OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd`. A imagem atual não inclui
-boot BIOS. O ESP contém o kernel e `ramfs.tar`; os programas de userspace
-existem somente dentro do RAMFS.
+boot BIOS. O ESP contém `bootstrap.elf`, `dzImage` e `ramfs.tar`; os programas
+de userspace existem somente dentro do RAMFS.
 
 ## Criar e iniciar uma imagem de disco GPT
 
 `make disk-image` cria `.build/imagineos-disk.img` sem sobrescrever uma imagem
 existente. A ferramenta `tools/install-disk.sh` grava uma tabela GPT, uma ESP
-FAT16 de 128 MiB com Limine, kernel e `ramfs.tar`, além de uma partição GPT
+FAT16 de 128 MiB com Limine, bootstrap, `dzImage` e `ramfs.tar`, além de uma partição GPT
 reservada ao DFS no espaço restante. O alvo não altera discos físicos.
 
 ```sh

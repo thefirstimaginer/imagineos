@@ -168,5 +168,5 @@ Para definir valores padrão que persistam entre builds, edite o arquivo fonte
 em `ramfs/home/.global/global.conf` antes de compilar. O framebuffer usa o mapa
 Unicode da fonte PSF carregada; se um caractere não existir, tenta desenhar o
 glifo `?`. A fonte de fallback do kernel é
-`tools/fonts/zap-vga32.psf`; fontes residentes no disco só poderão ser usadas
+`tools/fonts/zap-vga16.psf`; fontes residentes no disco só poderão ser usadas
 quando houver suporte a um filesystem persistente.

@@ -6,6 +6,8 @@ CODENAME := astrid
 TARGET := x86_64-unknown-none
 KERNEL_FEATURES ?=
 KERNEL := target/$(TARGET)/release/dreamcore
+BOOTSTRAP := .build/bootstrap.elf
+DZ_IMAGE := .build/dzImage
 ISO_DIR := .build/iso
 RAMFS_IMAGE := .build/ramfs.tar
 RAMFS_INSTALLED_IMAGE := .build/ramfs-installed.tar
@@ -25,14 +27,36 @@ INSTALL_TARGET_IMAGE := .build/installer-target.img
 QEMU := qemu-system-x86_64
 OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE.fd
 
-.PHONY: all kernel user-programs iso run disk-image run-disk installer-disk run-installer clean
+.PHONY: all kernel bootstrap dzimage user-programs iso run disk-image run-disk installer-disk run-installer clean
 
 all: kernel
 
-kernel: linker.ld tools/fonts/zap-vga32.psf
-	rustup run stable cargo build --release --target $(TARGET) $(if $(KERNEL_FEATURES),--features $(KERNEL_FEATURES),)
+kernel: linker.ld tools/fonts/zap-vga16.psf
+	rustup run stable cargo build --release --target $(TARGET) --bin dreamcore \
+		--config 'target.x86_64-unknown-none.rustflags=["-C","link-arg=-Tlinker.ld","-C","relocation-model=static"]' \
+		$(if $(KERNEL_FEATURES),--features $(KERNEL_FEATURES),)
 
-$(RAMFS_IMAGE): kernel $(USER_PROGRAMS) $(RAMFS_FILES) toolchain/limine-binary/BOOTX64.EFI limine.conf tools/startup.nsh
+bootstrap: $(BOOTSTRAP)
+
+$(BOOTSTRAP): dnu/bootstrap.rs dnu/boot_info.rs dnu/dzimage.rs dnu/time.rs \
+	dnu/console/framebuffer.rs tools/fonts/zap-vga16.psf bootstrap.ld
+	rustup run stable cargo build --release --target $(TARGET) --bin bootstrap \
+		--features bootstrap \
+		--target-dir .build/bootstrap-target \
+		--config 'target.x86_64-unknown-none.rustflags=["-C","link-arg=-Tbootstrap.ld","-C","relocation-model=static"]'
+	mkdir -p .build
+	cp .build/bootstrap-target/$(TARGET)/release/bootstrap $@
+
+.build/dzpack: tools/dzpack.rs dnu/dzimage.rs
+	mkdir -p .build
+	rustup run stable rustc --edition 2021 $< -o $@
+
+dzimage: $(DZ_IMAGE)
+
+$(DZ_IMAGE): $(KERNEL) .build/dzpack
+	.build/dzpack $(KERNEL) $@
+
+$(RAMFS_IMAGE): kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) $(RAMFS_FILES) toolchain/limine-binary/BOOTX64.EFI limine.conf tools/startup.nsh
 	rm -rf .build/ramfs
 	mkdir -p $(addprefix .build/ramfs/,$(RAMFS_DIRS))
 	cp -a ramfs/. .build/ramfs/
@@ -42,7 +66,8 @@ $(RAMFS_IMAGE): kernel $(USER_PROGRAMS) $(RAMFS_FILES) toolchain/limine-binary/B
 	for utility in $(USER_UTILITIES); do cp .build/user/utilities/$$utility .build/ramfs/bin/$$utility; done
 	tar --format=ustar --exclude=bin/distroinstall --exclude='system/install/*' \
 		-C .build/ramfs -cf $(RAMFS_INSTALLED_IMAGE) bin dev sbin home system tmp usr
-	cp $(KERNEL) .build/ramfs/system/install/kernel.elf
+	cp $(BOOTSTRAP) .build/ramfs/system/install/bootstrap.elf
+	cp $(DZ_IMAGE) .build/ramfs/system/install/dzImage
 	cp toolchain/limine-binary/BOOTX64.EFI .build/ramfs/system/install/BOOTX64.EFI
 	cp limine.conf .build/ramfs/system/install/limine.conf
 	cp tools/startup.nsh .build/ramfs/system/install/startup.nsh
@@ -87,7 +112,8 @@ iso: kernel $(RAMFS_IMAGE)
 	command -v mmd >/dev/null
 	rm -rf $(ISO_DIR)
 	mkdir -p $(ISO_DIR)/EFI/BOOT $(ISO_DIR)/boot distro
-	cp $(KERNEL) $(ISO_DIR)/boot/kernel.elf
+	cp $(BOOTSTRAP) $(ISO_DIR)/boot/bootstrap.elf
+	cp $(DZ_IMAGE) $(ISO_DIR)/boot/dzImage
 	cp $(RAMFS_IMAGE) $(ISO_DIR)/boot/ramfs.tar
 	cp limine.conf $(ISO_DIR)/limine.conf
 	cp toolchain/limine-binary/BOOTX64.EFI $(ISO_DIR)/EFI/BOOT/BOOTX64.EFI
@@ -96,7 +122,8 @@ iso: kernel $(RAMFS_IMAGE)
 	mmd -i $(ISO_DIR)/efi.img ::/EFI ::/EFI/BOOT ::/boot
 	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
 	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/limine.conf ::/limine.conf
-	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/boot/kernel.elf ::/boot/kernel.elf
+	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/boot/bootstrap.elf ::/boot/bootstrap.elf
+	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/boot/dzImage ::/boot/dzImage
 	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/boot/ramfs.tar ::/boot/ramfs.tar
 	xorriso -as mkisofs -R -r -J -V DREAMCORE \
 		--efi-boot efi.img -efi-boot-part --efi-boot-image \
@@ -114,7 +141,8 @@ disk-image: iso
 		printf 'Using existing disk image: %s\n' "$(DISK_IMAGE)"; \
 	else \
 		sh tools/install-disk.sh "$(DISK_IMAGE)" \
-			"$(ISO_DIR)/boot/kernel.elf" "$(RAMFS_INSTALLED_IMAGE)" \
+			"$(ISO_DIR)/boot/bootstrap.elf" "$(ISO_DIR)/boot/dzImage" \
+			"$(RAMFS_INSTALLED_IMAGE)" \
 			"$(ISO_DIR)/EFI/BOOT/BOOTX64.EFI" "$(ISO_DIR)/limine.conf" \
 			"tools/startup.nsh"; \
 	fi

@@ -134,6 +134,7 @@ pub fn write_str(text: &str) {
     }
 }
 
+#[allow(dead_code)]
 pub fn write_utf8(bytes: &[u8]) {
     let mut remaining = bytes;
     while !remaining.is_empty() {
@@ -204,6 +205,7 @@ pub(crate) fn clear() {
     console.cursor_visible = false;
 }
 
+#[allow(dead_code)]
 pub(crate) fn set_cursor_visible(visible: bool) {
     let console = unsafe { &mut *CONSOLE.0.get() };
     draw_cursor(console, visible);

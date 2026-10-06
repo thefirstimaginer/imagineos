@@ -1,3 +1,4 @@
+use crate::boot_info::PhysicalRange;
 use core::cell::UnsafeCell;
 use limine::memory_map::{Entry, EntryType};
 
@@ -42,7 +43,7 @@ pub struct Frame {
     pub virtual_address: *mut u8,
 }
 
-pub fn init(entries: &[&Entry], hhdm_offset: u64) -> usize {
+pub fn init(entries: &[&Entry], hhdm_offset: u64, reserved: &[PhysicalRange]) -> usize {
     let allocator = unsafe { &mut *ALLOCATOR.0.get() };
     allocator.regions = [Region::EMPTY; MAX_REGIONS];
     allocator.region_count = 0;
@@ -62,9 +63,7 @@ pub fn init(entries: &[&Entry], hhdm_offset: u64) -> usize {
         let base = aligned_base & !(PAGE_SIZE - 1);
         let end = end & !(PAGE_SIZE - 1);
         if base < end {
-            let index = allocator.region_count;
-            allocator.regions[index] = Region { next: base, end };
-            allocator.region_count += 1;
+            add_unreserved_regions(allocator, base, end, reserved);
         }
     }
 
@@ -74,6 +73,39 @@ pub fn init(entries: &[&Entry], hhdm_offset: u64) -> usize {
         .take(allocator.region_count)
         .map(|region| ((region.end - region.next) / PAGE_SIZE) as usize)
         .sum()
+}
+
+fn add_unreserved_regions(
+    allocator: &mut FrameAllocator,
+    mut base: u64,
+    end: u64,
+    reserved: &[PhysicalRange],
+) {
+    for range in reserved {
+        let Some(reserved_end) = range.start.checked_add(range.length) else {
+            continue;
+        };
+        let reserved_start = range.start & !(PAGE_SIZE - 1);
+        let reserved_end = reserved_end.saturating_add(PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        if reserved_end <= base || reserved_start >= end {
+            continue;
+        }
+        if reserved_start > base && allocator.region_count < MAX_REGIONS {
+            allocator.regions[allocator.region_count] = Region {
+                next: base,
+                end: reserved_start.min(end),
+            };
+            allocator.region_count += 1;
+        }
+        base = base.max(reserved_end);
+        if base >= end {
+            return;
+        }
+    }
+    if base < end && allocator.region_count < MAX_REGIONS {
+        allocator.regions[allocator.region_count] = Region { next: base, end };
+        allocator.region_count += 1;
+    }
 }
 
 pub fn allocate_frame() -> Option<Frame> {

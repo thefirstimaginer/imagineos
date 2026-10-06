@@ -4,13 +4,13 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, Ordering};
-use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
-use limine::BaseRevision;
 
 #[path = "drivers/ata.rs"]
 pub mod ata;
 #[path = "drivers/block.rs"]
 pub mod block;
+#[path = "boot_info.rs"]
+mod boot_info;
 #[path = "config.rs"]
 mod config;
 #[path = "exec/elf.rs"]
@@ -44,57 +44,31 @@ mod time;
 #[path = "console/utf8.rs"]
 mod utf8;
 
-#[used]
-#[link_section = ".requests"]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
-
-#[used]
-#[link_section = ".requests"]
-static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
-
-#[used]
-#[link_section = ".requests"]
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
-
-#[used]
-#[link_section = ".requests"]
-static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
-
-#[used]
-#[link_section = ".requests"]
-static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
-
 static LOG_LINE_START: AtomicBool = AtomicBool::new(true);
-static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/fonts/zap-vga32.psf");
+static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/fonts/zap-vga16.psf");
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     unsafe {
         asm!("cli", options(nomem, nostack, preserves_flags));
     }
 
-    time::init();
     serial_init();
+    if boot_info.is_null() {
+        serial_write(b"KERNEL PANIC: bootstrap supplied no boot information\r\n");
+        halt();
+    }
+    let boot_info = unsafe { &*boot_info };
+    time::init_with(boot_info.tsc_start, boot_info.tsc_frequency);
     mask_legacy_pic();
     gdt::init();
     idt::init();
 
-    if !BASE_REVISION.is_supported() {
-        console_write("Limine protocol revision unsupported\n");
-        halt();
-    }
-
-    let Some(memory_map) = MEMORY_MAP_REQUEST.get_response() else {
-        console_write("Limine memory map unavailable\n");
-        halt();
-    };
-
-    let Some(hhdm) = HHDM_REQUEST.get_response() else {
-        console_write("Limine HHDM unavailable; stopping safely\n");
-        halt();
-    };
-    let hhdm_offset = hhdm.offset();
-    let frame_count = memory::init(memory_map.entries(), hhdm_offset);
+    let frame_count = memory::init(
+        unsafe { boot_info.memory_entries() },
+        boot_info.hhdm_offset,
+        unsafe { boot_info.reserved() },
+    );
     let Some(boot_frame) = memory::allocate_frame() else {
         console_write("No usable physical frames\n");
         halt();
@@ -103,8 +77,8 @@ pub extern "C" fn _start() -> ! {
         core::ptr::write_bytes(boot_frame.virtual_address, 0, 4096);
     }
     framebuffer::init(
-        FRAMEBUFFER_REQUEST
-            .get_response()
+        (!boot_info.framebuffer.is_null())
+            .then(|| unsafe { &*boot_info.framebuffer })
             .and_then(|response| response.framebuffers().next()),
     );
     if !framebuffer::load_font(EMBEDDED_FONT) {
@@ -149,8 +123,8 @@ pub extern "C" fn _start() -> ! {
         }
     };
 
-    let ramfs_image: Option<&'static [u8]> = MODULE_REQUEST
-        .get_response()
+    let ramfs_image: Option<&'static [u8]> = (!boot_info.modules.is_null())
+        .then(|| unsafe { &*boot_info.modules })
         .and_then(|response| {
             response
                 .modules()

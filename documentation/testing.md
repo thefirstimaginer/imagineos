@@ -27,6 +27,10 @@ rustup run stable rustc --edition 2021 --test dnu/tests/storage.rs -o /tmp/imagi
 /tmp/imagineos-storage-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/installer.rs -o /tmp/imagineos-installer-tests
 /tmp/imagineos-installer-tests
+rustup run stable rustc --edition 2021 --test dnu/dzimage.rs -o /tmp/imagineos-dzimage-tests
+/tmp/imagineos-dzimage-tests
+rustup run stable rustc --edition 2021 --test tools/dzpack.rs -o /tmp/imagineos-dzpack-tests
+/tmp/imagineos-dzpack-tests
 make .build/ramfs.tar
 tar -tf .build/ramfs.tar
 ```
@@ -35,6 +39,8 @@ O tar deve conter `sbin/init`, `sbin/getty`, `bin/shell`, `bin/ls`, `bin/cat`,
 `bin/grep`, `bin/globalconf`, `bin/distroinstall`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
 `bin/hello`, `bin/fdtest`, `home/.global/global.conf` e
 `system/fonts/zap-light16.psf`, além dos payloads em `system/install/`.
+O RAMFS live fornece `system/install/bootstrap.elf` e `system/install/dzImage`;
+o arquivo instalado não contém os payloads do instalador.
 
 Para criar a ISO, instale `xorriso`, `dosfstools` e `mtools`, depois rode `make iso`.
 Para reativar os logs de cada etapa de carregamento: `make KERNEL_FEATURES=kernel-debug iso`.

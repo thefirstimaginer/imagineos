@@ -1,19 +1,30 @@
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(feature = "bootstrap")]
 const PIT_FREQUENCY: u64 = 1_193_182;
+#[cfg(feature = "bootstrap")]
 const PIT_RELOAD: u64 = u16::MAX as u64;
+#[cfg(feature = "bootstrap")]
 const POLL_LIMIT: usize = 100_000_000;
 
 static START_TSC: AtomicU64 = AtomicU64::new(0);
 static TSC_FREQUENCY: AtomicU64 = AtomicU64::new(0);
 
-pub fn init() {
-    START_TSC.store(read_tsc(), Ordering::Relaxed);
+#[cfg(feature = "bootstrap")]
+pub fn init() -> (u64, u64) {
+    let start = read_tsc();
     let frequency = calibrate_tsc().or_else(cpuid_tsc_frequency).unwrap_or(0);
+    init_with(start, frequency);
+    (start, frequency)
+}
+
+pub fn init_with(start: u64, frequency: u64) {
+    START_TSC.store(start, Ordering::Relaxed);
     TSC_FREQUENCY.store(frequency, Ordering::Relaxed);
 }
 
+#[cfg(any(not(feature = "bootstrap"), test))]
 pub fn format_elapsed(output: &mut [u8; 32]) -> &[u8] {
     let frequency = TSC_FREQUENCY.load(Ordering::Relaxed);
     if frequency == 0 {
@@ -25,6 +36,7 @@ pub fn format_elapsed(output: &mut [u8; 32]) -> &[u8] {
     format_milliseconds(milliseconds, output)
 }
 
+#[cfg(any(not(feature = "bootstrap"), test))]
 fn format_milliseconds(milliseconds: u64, output: &mut [u8; 32]) -> &[u8] {
     let seconds = milliseconds / 1000;
     let mut cursor = 0;
@@ -39,6 +51,7 @@ fn format_milliseconds(milliseconds: u64, output: &mut [u8; 32]) -> &[u8] {
     &output[..cursor + 2]
 }
 
+#[cfg(feature = "bootstrap")]
 fn calibrate_tsc() -> Option<u64> {
     let previous_control = unsafe { in_byte(0x61) };
     unsafe {
@@ -71,6 +84,7 @@ fn calibrate_tsc() -> Option<u64> {
     Some((end - start) * PIT_FREQUENCY / PIT_RELOAD)
 }
 
+#[cfg(feature = "bootstrap")]
 fn cpuid_tsc_frequency() -> Option<u64> {
     let maximum_leaf = core::arch::x86_64::__cpuid(0).eax;
     if maximum_leaf >= 0x15 {
@@ -102,6 +116,7 @@ fn read_tsc() -> u64 {
     ((high as u64) << 32) | low as u64
 }
 
+#[cfg(any(not(feature = "bootstrap"), test))]
 fn write_decimal(output: &mut [u8], mut value: u64, minimum_digits: usize) -> usize {
     let mut digits = [0u8; 20];
     let mut start = digits.len();
@@ -122,6 +137,7 @@ fn write_decimal(output: &mut [u8], mut value: u64, minimum_digits: usize) -> us
     length
 }
 
+#[cfg(feature = "bootstrap")]
 unsafe fn in_byte(port: u16) -> u8 {
     let value: u8;
     asm!(
@@ -133,6 +149,7 @@ unsafe fn in_byte(port: u16) -> u8 {
     value
 }
 
+#[cfg(feature = "bootstrap")]
 unsafe fn out_byte(port: u16, value: u8) {
     asm!(
         "out dx, al",

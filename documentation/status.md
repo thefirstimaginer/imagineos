@@ -6,11 +6,18 @@
 - GDT de kernel, TSS com stack propria e IDT fatal para excecoes de CPU.
 - Frame allocator monotonicamente crescente sobre regioes `USABLE` via HHDM.
 - Logs do kernel com tempo decorrido em colchetes; console COM1 e framebuffer RGB32.
-- Fontes PSF1/PSF2 pesquisadas em `ramfs/system/fonts`, com PSF2 embutida
-  `tools/fonts/zap-vga32.psf` como fallback; caracteres ausentes usam `?`.
+- Fonte padrão PSF1 8x16 `tools/fonts/zap-vga16.psf`; fontes PSF1/PSF2 do
+  `ramfs/system/fonts` substituem o fallback; caracteres ausentes usam `?`.
 - Kernel panic explícita se `/sbin/init` não existir no RAMFS montado.
-- Prefixos de tempo, fonte PSF2 de fallback e panic por `init` ausente
+- Prefixos de tempo, fonte PSF de fallback e panic por `init` ausente
   verificados em boot QEMU/OVMF.
+- dzImage próprio com payload LZ4, tamanho/CRC32, bootstrap ELF pelo Limine,
+  alocação e mapeamento dos segmentos do kernel, indicador de progresso na
+  mesma linha e preservação das respostas Limine/reservas para o frame allocator,
+  incluindo as page tables Limine compartilhadas pelos processos.
+- Boot da ISO UEFI validado em QEMU/OVMF: o teste confirmou descompressão,
+  init PID 1, getty e prompt interativo do shell; os comandos `pid` e `hello`
+  foram executados após a correção das reservas das page tables.
 - Polling de teclado PS/2 set-1, layouts US/ABNT2, acentos compostos e eventos de setas.
 - Heap global bump de 1 MiB e page tables user derivadas das mappings Limine.
 - Parser ELF64 x86_64, loader de `PT_LOAD`, zero de BSS e stacks user.
@@ -32,7 +39,6 @@
 
 ## Ainda ausente ou nao validado
 
-- Build da ISO UEFI e boot interativo validados em QEMU/OVMF após a reorganização; o teste confirmou o início do kernel, a montagem do RAMFS, `/sbin/init` como PID 1, o prompt do shell e a execução bem-sucedida de `fdtest`. O ESP contém kernel e `ramfs.tar` em `/boot`, além dos arquivos obrigatórios do Limine.
 - O `#GP` observado no vetor 13 ocorria no `iretq`: `RAX` continha o ponteiro do TrapFrame, mas era sobrescrito com `0x33` antes de carregar `RSP`. A ordem foi corrigida e verificada no disassembly.
 - Os escritores COM1 agora convertem LF isolado em CRLF, mantendo mensagens uma por linha.
 - O PIC legado continua mascarado e IF desabilitado em ring 3 ate existir timer/APIC.

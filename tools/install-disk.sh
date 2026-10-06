@@ -1,17 +1,18 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 6 ]; then
-    printf 'Usage: %s DISK-IMAGE KERNEL RAMFS BOOTX64.EFI LIMINE.CONF STARTUP.NSH\n' "$0" >&2
+if [ "$#" -ne 7 ]; then
+    printf 'Usage: %s DISK-IMAGE BOOTSTRAP DZIMAGE RAMFS BOOTX64.EFI LIMINE.CONF STARTUP.NSH\n' "$0" >&2
     exit 2
 fi
 
 disk_image=$1
-kernel=$2
-ramfs=$3
-bootx64=$4
-limine_config=$5
-startup_script=$6
+bootstrap=$2
+dz_image=$3
+ramfs=$4
+bootx64=$5
+limine_config=$6
+startup_script=$7
 esp_image="${disk_image}.esp"
 
 if [ -e "$disk_image" ] || [ -e "$esp_image" ]; then
@@ -19,7 +20,7 @@ if [ -e "$disk_image" ] || [ -e "$esp_image" ]; then
     exit 1
 fi
 
-for required in "$kernel" "$ramfs" "$bootx64" "$limine_config" "$startup_script"; do
+for required in "$bootstrap" "$dz_image" "$ramfs" "$bootx64" "$limine_config" "$startup_script"; do
     if [ ! -f "$required" ]; then
         printf 'Required installation file not found: %s\n' "$required" >&2
         exit 1
@@ -50,7 +51,8 @@ mmd -i "$esp_image" ::/EFI ::/EFI/BOOT ::/boot
 mcopy -i "$esp_image" "$bootx64" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$esp_image" "$limine_config" ::/limine.conf
 mcopy -i "$esp_image" "$startup_script" ::/startup.nsh
-mcopy -i "$esp_image" "$kernel" ::/boot/kernel.elf
+mcopy -i "$esp_image" "$bootstrap" ::/boot/bootstrap.elf
+mcopy -i "$esp_image" "$dz_image" ::/boot/dzImage
 mcopy -i "$esp_image" "$ramfs" ::/boot/ramfs.tar
 dd if="$esp_image" of="$disk_image" bs=512 seek=2048 conv=notrunc status=none
 

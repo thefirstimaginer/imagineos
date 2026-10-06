@@ -7,13 +7,21 @@ ISO.
 
 ## Boot
 
-Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/ramfs.tar`. O kernel é linkado em `0xffffffff80000000` com PADDRs a partir de 1 MiB, para satisfazer a regra do Limine contra PHDRs lower-half. O kernel monta o USTAR diretamente da memória como seu root atual e carrega `/sbin/init` como PID 1 em ring 3. O arquivo também contém `/sbin/getty`, `/bin/shell` e `/system/fonts`.
+Limine carrega `.build/bootstrap.elf`, `boot/dzImage` e `boot/ramfs.tar`.
+O bootstrap valida o payload LZ4 e seu CRC32, percorre os `PT_LOAD` do ELF64
+do kernel, copia os segmentos/BSS para páginas físicas, adiciona mapeamentos
+dos endereços virtuais do kernel às tabelas Limine e transfere um `BootInfo`
+com respostas Limine e reservas físicas, incluindo todas as páginas da árvore
+de page tables Limine ainda compartilhada pelos processos. O kernel é linkado em
+`0xffffffff80000000`; o bootstrap reside em uma região virtual separada. O
+kernel monta o USTAR diretamente da memória como raiz atual e carrega
+`/sbin/init` como PID 1 em ring 3.
 
 As mensagens do kernel recebem um prefixo de tempo decorrido desde o entry
 point, calibrado pelo PIT quando possível e convertido a partir do TSC. O
 parser do RAMFS procura fontes em `system/fonts`; se não encontrar uma fonte
-PSF válida, o kernel mantém a PSF2 `tools/fonts/zap-vga32.psf` que está
-embutida no binário. Um `/sbin/init` ausente no RAMFS causa `KERNEL PANIC`.
+PSF válida, o kernel mantém a PSF1 8x16 `tools/fonts/zap-vga16.psf` embutida
+no binário. Um `/sbin/init` ausente no RAMFS causa `KERNEL PANIC`.
 
 ## CPU e memória
 
@@ -38,14 +46,15 @@ checksums CRC32 do cabeçalho e do vetor de partições. No boot, a GPT é
 inspecionada quando um disco ATA está presente; a partição com o GUID DFS é
 reservada para o filesystem futuro. `/dev/hda` é listado dinamicamente. O
 `/bin/distroinstall` da mídia live recria a GPT e grava uma ESP FAT16 com
-Limine, kernel e o RAMFS de instalação; a partição GPT DFS permanece vazia.
+Limine, bootstrap, dzImage e o RAMFS de instalação; a partição GPT DFS
+permanece vazia.
 O RAMFS instalado omite o utilitário e os payloads de instalação.
 
 ## Console e entrada
 
 `dnu/console/framebuffer.rs` escreve pixels RGB32, decodifica saída UTF-8 com
 substituição para sequências inválidas e carrega a primeira fonte PSF1/PSF2 em
-`ramfs/system/fonts`, usando a PSF2 empacotada no kernel como fallback. Uma
+`ramfs/system/fonts`, usando a PSF1 8x16 empacotada no kernel como fallback. Uma
 fonte persistente no disco não pode ser consultada até haver um filesystem DFS
 montável.
 `dnu/drivers/keyboard.rs` faz polling do controlador PS/2 set-1 e converte

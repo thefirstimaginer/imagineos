@@ -21,7 +21,8 @@ de partições com limites ou checksums inválidos.
 `.build/imagineos-disk.img`, uma imagem raw GPT de 1 GiB:
 
 1. A partição 1 é uma ESP de 128 MiB, FAT16, com Limine, kernel, `ramfs.tar`
-   e um `startup.nsh` de fallback para o shell UEFI.
+   e um `startup.nsh` de fallback para o shell UEFI. O kernel é iniciado por
+   `bootstrap.elf`, que descompacta `dzImage`.
 2. A partição 2 ocupa o espaço restante e usa o GUID reservado ao DFS; ela
    permanece vazia e sem formatação enquanto o filesystem não existir.
 
@@ -52,11 +53,12 @@ gravável.
 O utilitário userspace `/bin/distroinstall` lista os discos e instala no
 `/dev/hda`. Antes de escrever, exige que o usuário digite exatamente
 `APAGAR /dev/hda` e depois `INSTALAR`; cancelar qualquer etapa não altera o
-disco. A instalação recria a GPT, formata a ESP FAT16, copia Limine, kernel e
-`ramfs.tar`, e deixa o restante reservado ao DFS. Todo o conteúdo e a tabela de
-partições anteriores são destruídos. O disco precisa ter pelo menos 132 MiB.
-O comando e os payloads de instalação só são empacotados na mídia live; o
-RAMFS instalado não contém `/bin/distroinstall` nem os payloads de origem.
+disco. A instalação recria a GPT, formata a ESP FAT16 e copia Limine,
+`bootstrap.elf`, `dzImage`, `ramfs.tar` e os arquivos de fallback UEFI, deixando
+o restante reservado ao DFS. Todo o conteúdo e a tabela de partições anteriores
+são destruídos. O disco precisa ter pelo menos 132 MiB. O comando e os payloads
+de instalação só são empacotados na mídia live; o RAMFS instalado não contém
+`/bin/distroinstall` nem os payloads de origem.
 
 Para experimentar sem um disco físico, `make run-installer` inicializa a ISO e
 anexa `.build/installer-target.img` como alvo de 1 GiB. O utilitário pode então
@@ -66,9 +68,9 @@ serve para testar o boot instalado. Use
 
 A partição DFS permanece vazia; nesta versão, mesmo após a instalação, a raiz
 segue sendo o RAMFS e as alterações de arquivos não sobrevivem ao reboot.
-O kernel não expõe I/O de bloco genérico: apenas enumeração de discos,
-capacidade e o serviço de instalação, restrito ao processo live
-`/bin/distroinstall`. Como ainda não há um modelo geral de
+O kernel não expõe I/O de bloco genérico: oferece enumeração de discos,
+capacidade e o serviço de instalação, restrito ao processo
+`/bin/distroinstall` da mídia live. Como ainda não há um modelo geral de
 permissões/capabilities, a confirmação dupla não é uma fronteira de segurança
 contra código kernel ou substituição do sistema.
 
