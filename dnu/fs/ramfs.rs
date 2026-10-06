@@ -318,6 +318,9 @@ pub fn mount(bytes: &'static [u8]) {
 pub fn read(path: &str) -> Option<&'static [u8]> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     let path = canonical_path(path)?;
+    if crate::dfs::is_mounted() {
+        return crate::dfs::read_static(path);
+    }
     if is_hidden(fs, path) {
         return None;
     }
@@ -333,6 +336,26 @@ pub fn read(path: &str) -> Option<&'static [u8]> {
 
 pub fn find_font() -> Option<&'static [u8]> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    if crate::dfs::is_mounted() {
+        let mut entries = [0u8; 4096];
+        let length = crate::dfs::list_directory("system/fonts", false, &mut entries).ok()?;
+        for name in entries[..length].split(|byte| *byte == b'\n') {
+            if name.ends_with(b".psf") || name.ends_with(b".psf2") {
+                let mut path = [0u8; 256];
+                let prefix = b"system/fonts/";
+                let total = prefix.len().checked_add(name.len())?;
+                if total > path.len() {
+                    continue;
+                }
+                path[..prefix.len()].copy_from_slice(prefix);
+                path[prefix.len()..total].copy_from_slice(name);
+                if let Ok(path) = core::str::from_utf8(&path[..total]) {
+                    return crate::dfs::read_static(path);
+                }
+            }
+        }
+        return None;
+    }
     fs.archive.as_ref()?.find_font()
 }
 
@@ -343,6 +366,9 @@ pub fn is_directory(path: &str) -> bool {
     };
     if path == "dev" {
         return true;
+    }
+    if crate::dfs::is_mounted() {
+        return crate::dfs::stat(path).is_ok_and(|metadata| metadata.is_directory);
     }
     match find_overlay_node(fs, path).map(|node| node.kind) {
         Some(NodeKind::Directory | NodeKind::OpaqueDirectory) => return true,
@@ -371,6 +397,9 @@ pub fn is_file(path: &str) -> bool {
     if path == "dev/hda" {
         return block_disk_present();
     }
+    if crate::dfs::is_mounted() {
+        return crate::dfs::stat(path).is_ok_and(|metadata| !metadata.is_directory);
+    }
     if is_hidden(fs, path) {
         return false;
     }
@@ -384,7 +413,48 @@ pub fn is_file(path: &str) -> bool {
     }
 }
 
+pub fn metadata(path: &str) -> Option<crate::dfs::Metadata> {
+    let path = canonical_path(path)?;
+    if crate::dfs::is_mounted() {
+        return crate::dfs::stat(path).ok();
+    }
+    if is_directory(path) {
+        return Some(crate::dfs::Metadata {
+            size: 0,
+            mode: 0o755,
+            uid: 0,
+            gid: 0,
+            is_directory: true,
+        });
+    }
+    if path == "dev/hda" && block_disk_present() {
+        return Some(crate::dfs::Metadata {
+            size: crate::ata::sector_count() * BLOCK_SIZE as u64,
+            mode: 0o600,
+            uid: 0,
+            gid: 0,
+            is_directory: false,
+        });
+    }
+    let size = file_len(path).ok()?;
+    Some(crate::dfs::Metadata {
+        size: size as u64,
+        mode: 0o644,
+        uid: 0,
+        gid: 0,
+        is_directory: false,
+    })
+}
+
 pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
+    list_directory_with_hidden(path, false, output)
+}
+
+pub fn list_directory_with_hidden(
+    path: &str,
+    include_hidden: bool,
+    output: &mut [u8],
+) -> Option<usize> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     let path = canonical_path(path)?;
     if !is_directory(path) {
@@ -397,6 +467,9 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
             return Some(written);
         }
         return Some(0);
+    }
+    if crate::dfs::is_mounted() {
+        return crate::dfs::list_directory(path, include_hidden, output).ok();
     }
     let opaque =
         find_overlay_node(fs, path).is_some_and(|node| node.kind == NodeKind::OpaqueDirectory);
@@ -412,7 +485,11 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
                         }
                         let mut child = [0u8; 256];
                         let child_length = join_child(path, name, &mut child)?;
-                        if !is_hidden(fs, core::str::from_utf8(&child[..child_length]).ok()?) {
+                        let child_path = core::str::from_utf8(&child[..child_length]).ok()?;
+                        let basename = name.rsplit(|byte| *byte == b'/').next().unwrap_or(name);
+                        if !is_hidden(fs, child_path)
+                            && (include_hidden || !basename.starts_with(b"."))
+                        {
                             append_name(output, &mut written, name)?;
                         }
                     }
@@ -427,7 +504,9 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
         )
     }) {
         if let Some(Some(name)) = immediate_child(node.path(), path) {
-            append_name(output, &mut written, name)?;
+            if include_hidden || !name.starts_with(b".") {
+                append_name(output, &mut written, name)?;
+            }
         }
     }
     Some(written)
@@ -435,6 +514,9 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
 
 pub fn create_file(path: &str) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if crate::dfs::is_mounted() {
+        return crate::dfs::create_file(path).map_err(map_dfs_error);
+    }
     if path == "dev" || path == "dev/hda" {
         return Err(FsError::InvalidPath);
     }
@@ -452,6 +534,9 @@ pub fn create_file(path: &str) -> Result<(), FsError> {
 }
 
 pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::write_file(path, bytes).map_err(map_dfs_error);
+    }
     if bytes.len() > MAX_WRITE_FILE_SIZE {
         return Err(FsError::NoSpace);
     }
@@ -482,6 +567,9 @@ pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
 }
 
 pub fn file_len(path: &str) -> Result<usize, FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::file_len(path).map_err(map_dfs_error);
+    }
     if is_directory(path) {
         return Err(FsError::IsDirectory);
     }
@@ -491,6 +579,9 @@ pub fn file_len(path: &str) -> Result<usize, FsError> {
 }
 
 pub fn read_at(path: &str, offset: usize, output: &mut [u8]) -> Result<usize, FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::read_at(path, offset, output).map_err(map_dfs_error);
+    }
     if is_directory(path) {
         return Err(FsError::IsDirectory);
     }
@@ -504,6 +595,9 @@ pub fn read_at(path: &str, offset: usize, output: &mut [u8]) -> Result<usize, Fs
 }
 
 pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::write_at(path, offset, input, offset == 0).map_err(map_dfs_error);
+    }
     let end = offset.checked_add(input.len()).ok_or(FsError::NoSpace)?;
     if end > MAX_WRITE_FILE_SIZE {
         return Err(FsError::NoSpace);
@@ -535,6 +629,9 @@ pub fn create_directory(path: &str) -> Result<(), FsError> {
 }
 
 pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::create_directory_with_parents(path, parents).map_err(map_dfs_error);
+    }
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() {
         return Err(FsError::AlreadyExists);
@@ -589,10 +686,14 @@ fn create_directory_one(path: &str) -> Result<(), FsError> {
 }
 
 pub fn remove(path: &str, recursive: bool) -> Result<(), FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::remove(path, recursive).map_err(map_dfs_error);
+    }
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() || path == "dev" || path == "dev/hda" {
         return Err(FsError::InvalidPath);
     }
+
     if !is_file(path) && !is_directory(path) {
         return Err(FsError::NotFound);
     }
@@ -619,6 +720,22 @@ pub fn remove(path: &str, recursive: bool) -> Result<(), FsError> {
         }
     }
     Ok(())
+}
+
+fn map_dfs_error(error: crate::dfs::DfsError) -> FsError {
+    use crate::dfs::DfsError;
+    match error {
+        DfsError::InvalidPath => FsError::InvalidPath,
+        DfsError::NotFound => FsError::NotFound,
+        DfsError::NotDirectory => FsError::NotDirectory,
+        DfsError::IsDirectory => FsError::IsDirectory,
+        DfsError::AlreadyExists => FsError::AlreadyExists,
+        DfsError::DirectoryNotEmpty => FsError::DirectoryNotEmpty,
+        DfsError::NoSpace | DfsError::JournalFull => FsError::NoSpace,
+        DfsError::Block(_) | DfsError::InvalidFilesystem | DfsError::CorruptMetadata => {
+            FsError::NoSpace
+        }
+    }
 }
 
 fn find_overlay_node<'a>(fs: &'a RamFs, path: &str) -> Option<&'a OverlayNode> {

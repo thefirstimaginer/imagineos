@@ -27,6 +27,9 @@
 - Tabelas limitadas por processo com stdio (FD 0-2), open/read/write/close para RAMFS e herança por cópia ao iniciar ELFs.
 - `fdtest` validado no QEMU: stdio, open/read/write/append/close funcionam com as tabelas de descritores fora da estrutura de processo.
 - Interface síncrona de setores de 512 bytes, driver ATA PIO do primary-master (LBA28) e parser da GPT primária com validação CRC32.
+- DFS persistente com superbloco/inodes/bitmap protegidos por checksum, extents, journal redo de metadados, replay no mount, diretórios, arquivos e metadados UID/GID/modo.
+- Instalador e ferramenta host formatam a partição DFS e semeiam a árvore USTAR instalada; o boot tenta montar o DFS após o initramfs RAMFS e usa-o para carregar `/sbin/init`, mantendo RAMFS como fallback.
+- A fachada RAMFS roteia operações para DFS quando montado; `ls` suporta metadados e oculta nomes iniciados por ponto por padrão (`-a` para mostrar).
 - Imagem GPT inicializável testada em QEMU/OVMF: o boot pelo disco confirmou ATA primary-master, 2.097.152 setores, localização da partição DFS via GPT e início do shell.
 - Dispositivo ATA anunciado como `/dev/hda`, syscall de enumeração e `/bin/distroinstall` na mídia live; duas confirmações antes de criar GPT/ESP FAT16 e reservar o DFS.
 - Instalação de ponta a ponta validada no QEMU: o utilitário gravou o disco virtual, a GPT passou `sgdisk -v`, o RAMFS instalado correspondeu ao payload live e o disco iniciou até o shell sem a ISO.
@@ -35,16 +38,15 @@
 - Built-ins `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type` e `exit`; parser com aspas, escapes e expansão simples de variáveis.
 - Programas ELF externos em `/bin`, com `argv`/`envp`, busca por `PATH` e syscalls do RAMFS; init/getty e utilitários são fontes de userspace em `userland/`.
 - `globalconf` lê/atualiza `/home/.global/global.conf`; o kernel aplica layout US/ABNT2 durante a sessão e UTF-8 é o charset aceito.
-- `vi` modal com navegação, edição UTF-8 e gravação de arquivos de até 4 KiB no overlay RAMFS.
+- `vi` modal com navegação, edição UTF-8 e gravação de arquivos de até 4 KiB.
 
 ## Ainda ausente ou nao validado
 
-- O `#GP` observado no vetor 13 ocorria no `iretq`: `RAX` continha o ponteiro do TrapFrame, mas era sobrescrito com `0x33` antes de carregar `RSP`. A ordem foi corrigida e verificada no disassembly.
-- Os escritores COM1 agora convertem LF isolado em CRLF, mantendo mensagens uma por linha.
-- O PIC legado continua mascarado e IF desabilitado em ring 3 ate existir timer/APIC.
-- Checkpoints `process:`/`elf:` ficam desabilitados no build normal; `make KERNEL_FEATURES=kernel-debug iso` os reativa para diagnostico.
-- O scheduler nao e preemptivo; sem reclaim de frames, W^X, heap user, drivers de rede ou suporte completo a layouts de teclado. O driver de disco cobre apenas IDE primário PIO/LBA28; a escrita foi validada pelo caminho do instalador, mas não há testes de energia/interrupção ou recuperação de falhas.
-- Não há implementação do DFS/VFS nem persistência: a partição DFS criada pelo instalador permanece vazia, e o sistema continua montando o RAMFS inicial como raiz; portanto ainda não é possível carregar fontes nem a raiz persistente do disco.
-- Shell ainda não tem pipelines, redirecionamento, aliases, funções ou `if/for/while`. Não há escrita persistente; `mkdir`, `touch`, `rm`, `vi` e `globalconf` alteram um overlay em RAM e as alterações se perdem no reboot. O único charset suportado é UTF-8 e o mapa ABNT2 cobre apenas as teclas implementadas pelo driver.
+- O scheduler não é preemptivo; faltam reclaim de frames, W^X, heap de userspace, drivers de rede e suporte completo a layouts de teclado. O armazenamento cobre apenas IDE primary-master PIO/LBA28 e GPT primária.
+- Um boot QEMU em imagem GPT confirmou montagem do DFS e início de `/sbin/init`, getty e shell; em uma repetição, o OVMF caiu no shell UEFI em vez de iniciar a imagem, então o boot pelo disco ainda precisa de uma verificação repetível. Não foi validada a persistência de uma escrita via shell nem a recuperação sob cortes de energia. O journal protege metadados, não dados dos arquivos, e pressupõe gravação atômica de setor e flush confiável. O importador USTAR não valida checksums nem cobre entradas especiais.
+- O DFS tem 256 nós, caminhos de até 255 bytes, 14 extents por arquivo e remoção recursiva limitada a 32 níveis. UID/GID/modo são exibidos, mas não há enforcement de permissões. Sem partição DFS válida, o fallback RAMFS é volátil e limitado a 128 nós/4 KiB por arquivo.
+- `ls` ainda aceita somente um caminho e opções separadas; opções curtas combinadas não são suportadas. O shell ainda não tem pipelines, redirecionamento, aliases, funções ou `if/for/while`. UTF-8 é o único charset suportado e o mapa ABNT2 cobre apenas as teclas implementadas.
 
-O check Rust e os testes locais ELF/USTAR passam, mas isso nao substitui o teste de boot real.
+Os testes locais do DFS cobrem remount, metadados, ocultação, remoção recursiva,
+checksums e replay de uma transação comprometida. Eles não substituem o teste
+de boot e persistência em QEMU com uma imagem GPT.

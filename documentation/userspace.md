@@ -133,12 +133,16 @@ estão em [Testes](testing.md).
   32 KiB. Escritas ao console são limitadas a 512 bytes por chamada; leitura
   de arquivo e listagem de diretório têm buffers de até 4 KiB. Wrappers de
   utilitários também podem impor limites menores.
-- **Arquivos e persistência:** o conteúdo base do RAMFS é um arquivo USTAR
-  somente de leitura. `mkdir`, `touch`, `remove` e gravações de até 4 KiB
-  alteram apenas um overlay volátil em memória. Arquivos USTAR abertos para
-  escrita são copiados para esse overlay; cada arquivo continua limitado a
-  4 KiB. Não há armazenamento persistente nem acesso a disco ou rede.
-  Alterações desaparecem ao reiniciar.
+- **Arquivos e persistência:** em uma instalação com partição GPT/DFS válida,
+  a árvore USTAR é semeada no DFS e o kernel encaminha as operações de arquivo
+  para o armazenamento persistente. O journal protege metadados, mas não o
+  conteúdo dos arquivos; uma queda durante uma escrita pode deixar dados
+  parcialmente atualizados. O filesystem limita-se a 256 nós, caminhos de
+  255 bytes e 14 extents por arquivo. O importador USTAR ainda não valida o
+  checksum nem importa todos os tipos de entrada. Se o DFS não montar, o
+  sistema usa o USTAR como raiz e gravações ficam no overlay volátil de até
+  128 nós e 4 KiB por arquivo. O modo/UID/GID são metadados, não controles de
+  acesso.
 - **Estado de validação:** a implementação é experimental. Compilar e
   empacotar um programa não comprova que ele funciona no boot real; teste a
   ISO em QEMU/OVMF e verifique o comportamento no shell.
@@ -146,6 +150,22 @@ estão em [Testes](testing.md).
 Essas limitações descrevem o runtime atual e podem mudar conforme o ABI e o
 sistema evoluírem. Confira também [Estado atual e limitações](status.md) e
 [Arquitetura](architecture.md).
+
+## Listagem de arquivos
+
+O utilitário `ls` aceita um caminho e uma opção por argumento:
+
+```text
+ls [-a] [-l] [-s] [-t] [-o] [-p] [-h] [DIR]
+```
+
+Sem `-a`, entradas cujo nome começa por `.` são omitidas. `-l` mostra tipo,
+tamanho, dono/grupo e permissões; individualmente, `-s` exibe tamanho, `-t`
+tipo, `-o` UID:GID e `-p` permissões. `-h` formata o tamanho com unidades
+binárias. As opções longas correspondentes são `--all`, `--long`, `--size`,
+`--type`, `--owner`, `--permissions` e `--human-readable`. Opções curtas
+combinadas (como `-al`) e múltiplos caminhos ainda não são aceitos. As
+permissões impressas são metadados; o kernel ainda não as impõe.
 
 ## Configuração global, teclado e charset
 

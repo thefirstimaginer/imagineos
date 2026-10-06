@@ -8,7 +8,8 @@ UEFI
   -> bootstrap ELF + dzImage e ramfs.tar como módulos
   -> descompressão LZ4 e carga dos segmentos ELF do kernel
   -> repasse das respostas Limine e reservas de memória
-  -> montagem do USTAR em memória como raiz atual
+  -> montagem do USTAR como initramfs
+  -> montagem/recovery do DFS GPT como raiz persistente, se disponível
   -> /sbin/init (PID 1, ring 3)
   -> /sbin/getty
   -> /bin/shell
@@ -27,13 +28,16 @@ UEFI
    mapa, framebuffer, módulos e as regiões físicas reservadas.
 4. O kernel inicializa as estruturas de CPU e memória, prepara o console com
    `tools/fonts/zap-vga16.psf` como fallback e monta o USTAR fornecido pelo
-   Limine.
-5. O USTAR serve como initramfs e também continua sendo a raiz atual: o kernel
-   ainda não implementa DFS/VFS nem `switch_root`/`pivot_root`. A partição DFS
-   pode ser identificada pela GPT, mas não é montada. A primeira fonte PSF1/PSF2
-   de `system/fonts/` no RAMFS substitui a fonte de fallback; caso não exista,
-   permanece a fonte 8x16 `tools/fonts/zap-vga16.psf`.
-6. O kernel procura `/sbin/init` no arquivo montado e inicia esse ELF em ring 3
+   Limine como initramfs.
+5. Se detectar o disco e encontrar uma partição DFS pela GPT, o kernel monta o
+   filesystem e reproduz qualquer transação de journal comprometida. Nesse
+   caso, a fachada de arquivos encaminha operações e leituras de `/sbin/init`
+   para a raiz persistente. O USTAR continua montado como fallback; sem DFS
+   válido, ele também fornece a raiz ativa. Não há ainda a operação genérica
+   `switch_root`/`pivot_root` de um VFS completo. Fontes PSF em
+   `system/fonts/` podem vir da árvore persistente ou do USTAR; sem fonte
+   válida, permanece a fonte 8x16 `tools/fonts/zap-vga16.psf`.
+6. O kernel procura `/sbin/init` na raiz ativa e inicia esse ELF em ring 3
    com PID 1. `init` e `getty` são compilados dos fontes em `userland/`; o nome
    final dos arquivos no USTAR não tem sufixo `.elf`, embora seus conteúdos
    sejam executáveis ELF.
@@ -43,13 +47,13 @@ UEFI
 
 ## Relação com o modelo Linux
 
-O arquivo USTAR fornecido como módulo é semelhante, em propósito, a um
-initramfs: permite que o kernel encontre o primeiro programa de userspace sem
-precisar primeiro montar um disco. No DNU atual, porém, ele também é a única
-árvore de arquivos disponível e permanece a raiz após o boot. A mensagem de log
-de montagem do RAMFS descreve o estado real, não um placeholder. O disco só é
-consultado para detectar ATA e GPT; até que DFS/VFS seja implementado, não há
-montagem de uma raiz persistente nem operação `switch_root`/`pivot_root`.
+O USTAR fornecido como módulo atua como initramfs: permite iniciar o sistema e
+serve de fallback caso não exista uma partição DFS válida. Quando o DFS monta,
+a camada de arquivos o usa como raiz persistente e reproduz o journal antes de
+executar o init. A implementação ainda não tem um VFS genérico nem a operação
+`switch_root`/`pivot_root` do Linux; o USTAR permanece montado em memória como
+fallback. Assim, a mensagem de montagem do RAMFS é esperada mesmo quando o
+DFS é a raiz ativa para as operações do sistema.
 
 As linhas de log do kernel começam com `[segundos.milissegundos]`, medidos a
 partir do entry point por TSC calibrado pelo PIT quando possível. Saída de

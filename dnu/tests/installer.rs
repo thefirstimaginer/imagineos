@@ -2,6 +2,8 @@
 
 #[path = "../drivers/block.rs"]
 mod block;
+#[path = "../fs/dfs.rs"]
+mod dfs;
 #[path = "../fs/gpt.rs"]
 mod gpt;
 
@@ -23,11 +25,7 @@ mod ata {
             Err(BlockError::NotReady)
         }
 
-        fn write_sector(
-            &self,
-            _lba: u64,
-            _buffer: &[u8; SECTOR_SIZE],
-        ) -> Result<(), BlockError> {
+        fn write_sector(&self, _lba: u64, _buffer: &[u8; SECTOR_SIZE]) -> Result<(), BlockError> {
             Err(BlockError::NotReady)
         }
 
@@ -41,7 +39,6 @@ mod ramfs {
     pub fn read(_path: &str) -> Option<&'static [u8]> {
         None
     }
-
 }
 
 #[path = "../fs/installer.rs"]
@@ -52,6 +49,7 @@ use std::collections::BTreeMap;
 
 use block::{BlockDevice, BlockError, SECTOR_SIZE};
 use gpt::Gpt;
+use std::vec::Vec;
 
 struct SparseDisk {
     sectors: u64,
@@ -72,11 +70,7 @@ impl BlockDevice for SparseDisk {
         self.sectors
     }
 
-    fn read_sector(
-        &self,
-        lba: u64,
-        buffer: &mut [u8; SECTOR_SIZE],
-    ) -> Result<(), BlockError> {
+    fn read_sector(&self, lba: u64, buffer: &mut [u8; SECTOR_SIZE]) -> Result<(), BlockError> {
         if lba >= self.sectors {
             return Err(BlockError::OutOfBounds);
         }
@@ -89,11 +83,7 @@ impl BlockDevice for SparseDisk {
         Ok(())
     }
 
-    fn write_sector(
-        &self,
-        lba: u64,
-        buffer: &[u8; SECTOR_SIZE],
-    ) -> Result<(), BlockError> {
+    fn write_sector(&self, lba: u64, buffer: &[u8; SECTOR_SIZE]) -> Result<(), BlockError> {
         if lba >= self.sectors {
             return Err(BlockError::OutOfBounds);
         }
@@ -109,11 +99,12 @@ impl BlockDevice for SparseDisk {
 #[test]
 fn installs_a_gpt_esp_and_boot_payload() {
     let disk = SparseDisk::new(300_000);
+    let ramfs = minimal_ustar();
     installer::install(
         &disk,
         b"bootstrap image",
         b"compressed kernel",
-        b"ramfs archive",
+        &ramfs,
         b"efi loader",
         b"limine config",
         b"startup script",
@@ -122,16 +113,30 @@ fn installs_a_gpt_esp_and_boot_payload() {
 
     let gpt = Gpt::read_primary(&disk).unwrap();
     let efi_partition = gpt
-        .find_partition(&disk, &[0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8, 0xd2, 0x11, 0xba, 0x4b, 0, 0xa0, 0xc9, 0x3e, 0xc9, 0x3b])
+        .find_partition(
+            &disk,
+            &[
+                0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8, 0xd2, 0x11, 0xba, 0x4b, 0, 0xa0, 0xc9, 0x3e,
+                0xc9, 0x3b,
+            ],
+        )
         .unwrap();
     let dfs = gpt
         .find_partition(&disk, &gpt::DFS_PARTITION_TYPE_GUID)
         .unwrap();
     assert_eq!(efi_partition.first_lba, 2048);
     assert_eq!(dfs.first_lba, 264_192);
+    let mounted = dfs::Dfs::mount(&disk, dfs.first_lba, dfs.last_lba - dfs.first_lba + 1).unwrap();
+    let mut init = [0; 16];
+    assert_eq!(
+        mounted.read_file(&disk, "sbin/init", 0, &mut init).unwrap(),
+        8
+    );
+    assert_eq!(&init[..8], b"initdata");
 
     let mut boot = [0; SECTOR_SIZE];
-    disk.read_sector(efi_partition.first_lba, &mut boot).unwrap();
+    disk.read_sector(efi_partition.first_lba, &mut boot)
+        .unwrap();
     assert_eq!(&boot[510..512], &[0x55, 0xaa]);
     assert_eq!(u16::from_le_bytes([boot[22], boot[23]]), 128);
 
@@ -165,6 +170,23 @@ fn installs_a_gpt_esp_and_boot_payload() {
     disk.read_sector(0, &mut protective_mbr).unwrap();
     assert_eq!(protective_mbr[450], 0xee);
     assert_eq!(&protective_mbr[510..512], &[0x55, 0xaa]);
+}
+
+fn minimal_ustar() -> Vec<u8> {
+    let mut archive = vec![0u8; SECTOR_SIZE * 4];
+    let dir = &mut archive[..SECTOR_SIZE];
+    dir[..5].copy_from_slice(b"sbin/");
+    dir[100..108].copy_from_slice(b"0000755\0");
+    dir[124..136].copy_from_slice(b"00000000000\0");
+    dir[156] = b'5';
+
+    let file = &mut archive[SECTOR_SIZE..SECTOR_SIZE * 2];
+    file[..9].copy_from_slice(b"sbin/init");
+    file[100..108].copy_from_slice(b"0000755\0");
+    file[124..136].copy_from_slice(b"00000000010\0");
+    file[156] = b'0';
+    archive[SECTOR_SIZE * 2..SECTOR_SIZE * 2 + 8].copy_from_slice(b"initdata");
+    archive
 }
 
 #[test]

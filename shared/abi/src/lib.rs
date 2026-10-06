@@ -1,6 +1,6 @@
 #![no_std]
 
-pub const ABI_VERSION: u64 = 1;
+pub const ABI_VERSION: u64 = 2;
 
 pub const SYS_WRITE: u64 = 1;
 pub const SYS_READ: u64 = 2;
@@ -25,6 +25,7 @@ pub const SYS_CLOSE: u64 = 20;
 pub const SYS_DISK_COUNT: u64 = 21;
 pub const SYS_DISK_SECTORS: u64 = 22;
 pub const SYS_INSTALL_DISK: u64 = 23;
+pub const SYS_STAT: u64 = 24;
 
 pub const FD_STDIN: u64 = 0;
 pub const FD_STDOUT: u64 = 1;
@@ -51,6 +52,16 @@ pub const MAX_WRITE_FILE_SIZE: usize = 4096;
 pub struct UserArg {
     pub address: u64,
     pub length: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UserStat {
+    pub size: u64,
+    pub mode: u32,
+    pub uid: u32,
+    pub gid: u32,
+    pub kind: u32,
 }
 
 impl UserArg {

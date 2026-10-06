@@ -8,4 +8,5 @@ targets/
 *.iso
 *.o
 /ramfs
-/tools
+/tools/*
+!/tools/dfs-image.rs

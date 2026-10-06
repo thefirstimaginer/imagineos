@@ -25,6 +25,7 @@ pub enum InstallError {
     DiskTooSmall,
     MissingPayload,
     PayloadTooLarge,
+    DfsFormat,
     Block(BlockError),
 }
 
@@ -164,6 +165,18 @@ pub fn install(
 
     write_gpt(device)?;
     format_fat16(device, fat_sectors, data_start, &mut files)?;
+    let gpt = gpt::Gpt::read_primary(device).map_err(|_| InstallError::DfsFormat)?;
+    let partition = gpt
+        .find_partition(device, &gpt::DFS_PARTITION_TYPE_GUID)
+        .map_err(|_| InstallError::DfsFormat)?;
+    let dfs = super::dfs::Dfs::format(
+        device,
+        partition.first_lba,
+        partition.last_lba - partition.first_lba + 1,
+    )
+    .map_err(|_| InstallError::DfsFormat)?;
+    dfs.seed_from_ustar(device, ramfs_image)
+        .map_err(|_| InstallError::DfsFormat)?;
     device.flush().map_err(InstallError::Block)?;
     Ok(())
 }

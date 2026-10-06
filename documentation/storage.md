@@ -2,81 +2,79 @@
 
 ## Camadas disponíveis
 
-- `dnu/drivers/block.rs` define operações síncronas de leitura/escrita de um
-  setor de 512 bytes e enumera os erros de dispositivo.
-- `dnu/drivers/ata.rs` implementa PIO para o master do canal IDE primário. A
-  capacidade é limitada a LBA28 (até 128 GiB); não há detecção de PCI, AHCI,
-  NVMe ou VirtIO.
-- `dnu/fs/gpt.rs` lê a GPT primária no LBA 1, valida o CRC32 do cabeçalho e da
-  tabela de entradas e consulta partições por GUID. Não há fallback para MBR
-  nem leitura de GPT secundária.
+- `dnu/drivers/block.rs` define operações síncronas para setores de 512 bytes.
+- `dnu/drivers/ata.rs` implementa PIO para o primary-master IDE, limitado a
+  LBA28 (até 128 GiB). Ainda não há PCI, AHCI, NVMe ou VirtIO.
+- `dnu/fs/gpt.rs` lê a GPT primária, valida CRC32 do cabeçalho e da tabela e
+  localiza partições pelo GUID. O ImagineOS não interpreta MBR como tabela de
+  partições nem usa a GPT secundária.
+- `dnu/fs/dfs.rs` implementa o Dreamcore File System (DFS), incluindo formato,
+  leitura/escrita, metadados, journal e recuperação.
 
 O GUID de tipo reservado para a partição DFS é
-`8a7f2c9d-6b31-4e52-9b14-445346530001`. O parser rejeita cabeçalhos e vetores
-de partições com limites ou checksums inválidos.
+`8a7f2c9d-6b31-4e52-9b14-445346530001`.
 
-## Imagem de disco de teste
+## DFS persistente
 
-`make disk-image` usa `tools/install-disk.sh` para criar
-`.build/imagineos-disk.img`, uma imagem raw GPT de 1 GiB:
+O instalador cria a GPT, formata a partição DFS e importa nela o arquivo USTAR
+com o sistema instalado. No boot, o kernel monta primeiro o USTAR fornecido
+pelo bootloader para ter um initramfs disponível; em seguida, tenta montar e
+recuperar o DFS. Quando essa montagem funciona, as operações de arquivos e
+diretórios são encaminhadas ao DFS e `/sbin/init` é carregado da raiz
+persistente. Se não houver partição DFS ou a montagem/recovery falhar, o
+RAMFS continua disponível como raiz de fallback.
 
-1. A partição 1 é uma ESP de 128 MiB, FAT16, com Limine, kernel, `ramfs.tar`
-   e um `startup.nsh` de fallback para o shell UEFI. O kernel é iniciado por
-   `bootstrap.elf`, que descompacta `dzImage`.
-2. A partição 2 ocupa o espaço restante e usa o GUID reservado ao DFS; ela
-   permanece vazia e sem formatação enquanto o filesystem não existir.
+O journal é do tipo redo para setores de metadados: grava payload e flush,
+grava o registro de commit e flush, aplica as alterações e limpa o journal.
+Uma transação comprometida que não tenha sido totalmente aplicada é repetida
+no mount. O formato pressupõe gravações atômicas de setor e que `flush`
+realmente persista as gravações.
 
-A imagem só é criada se o caminho de saída ainda não existir. `make run-disk`
-inicia-a via OVMF, usando o chipset PC com IDE legado para permitir também o
-teste do driver ATA PIO, sem a ISO. A GPT contém o protective MBR exigido pelo
-formato; o ImagineOS não interpreta MBR como tabela de partições.
+Limites e ressalvas atuais:
 
-O boot pelo disco ainda usa `ramfs.tar` como raiz. O instalador prepara uma
-imagem de teste inicializável; não é um instalador executado dentro do
-ImagineOS nem uma instalação persistente do DFS.
+- 256 nós no total; diretórios são representados por caminhos completos;
+- caminho de até 255 bytes e até 14 extents por arquivo;
+- até 16 setores de destino por transação; o journal reserva 17 setores
+  (cabeçalho mais até 16 setores de payload);
+- profundidade máxima de 32 níveis na remoção recursiva;
+- importação USTAR aceita arquivos regulares e diretórios, mas ainda não
+  valida o checksum do cabeçalho nem importa links, dispositivos ou outros
+  tipos especiais;
+- dados de arquivo não são journaled. Uma queda durante uma escrita pode
+  deixar o conteúdo parcialmente atualizado, embora os metadados sejam
+  recuperáveis;
+- UID, GID e modo são armazenados e exibidos, mas permissões ainda não são
+  impostas e não há identidade de usuário;
+- sem DFS montável, alterações no overlay do RAMFS são voláteis. O overlay
+  continua limitado a 128 nós e arquivos de 4 KiB.
 
-Essa mensagem não é apenas um placeholder: o USTAR do Limine é montado e
-permanece como a raiz usada para procurar `/sbin/init` e os arquivos dos
-programas. Embora o kernel encontre a partição GPT reservada para DFS, não
-existe ainda driver de filesystem que permita montá-la ou trocar a raiz. A
-inicialização usa o RAMFS como initramfs disponível, mas não executa
-`switch_root`/`pivot_root`; portanto, uma raiz persistente em disco depende da
-implementação futura do DFS/VFS.
+Todos os caminhos continuam acessíveis explicitamente, mas nomes de filhos
+iniciados por `.` ficam fora das listagens padrão. A opção `ls -a` os revela.
 
-## Dispositivos e instalador do sistema
+## Imagem de disco virtual
 
-O disco ATA primary-master detectado aparece como `/dev/hda` e é listado por
-`ls /dev`. Este é atualmente o único nome de dispositivo suportado; o nó serve
-para descoberta e informação, enquanto o acesso bruto não é exposto como um FD
-gravável.
+`make disk-image` cria `.build/imagineos-disk.img` apenas se o caminho ainda
+não existir. `tools/install-disk.sh` particiona uma imagem raw GPT de 1 GiB:
 
-O utilitário userspace `/bin/distroinstall` lista os discos e instala no
-`/dev/hda`. Antes de escrever, exige que o usuário digite exatamente
-`APAGAR /dev/hda` e depois `INSTALAR`; cancelar qualquer etapa não altera o
-disco. A instalação recria a GPT, formata a ESP FAT16 e copia Limine,
-`bootstrap.elf`, `dzImage`, `ramfs.tar` e os arquivos de fallback UEFI, deixando
-o restante reservado ao DFS. Todo o conteúdo e a tabela de partições anteriores
-são destruídos. O disco precisa ter pelo menos 132 MiB. O comando e os payloads
-de instalação só são empacotados na mídia live; o RAMFS instalado não contém
-`/bin/distroinstall` nem os payloads de origem.
+1. A partição 1 é uma ESP FAT16 de 128 MiB com Limine, bootstrap, `dzImage`,
+   `ramfs.tar` e fallback UEFI.
+2. A partição 2 ocupa o espaço restante e é formatada como DFS. O utilitário
+   host `.build/dfs-image` importa nela a árvore USTAR do sistema instalado.
 
-Para experimentar sem um disco físico, `make run-installer` inicializa a ISO e
-anexa `.build/installer-target.img` como alvo de 1 GiB. O utilitário pode então
-instalar o sistema nessa imagem. `make run-disk DISK_IMAGE=.build/installer-target.img`
-serve para testar o boot instalado. Use
+O protective MBR existe por exigência da GPT; o kernel só usa a GPT. `make
+run-disk` inicia a imagem pelo QEMU/OVMF com IDE legado, sem ISO. O alvo não
+altera discos físicos e recusa sobrescrever imagens existentes.
+
+## Dispositivos e instalador
+
+O ATA primary-master é anunciado como `/dev/hda` e listado por `ls /dev`.
+`/bin/distroinstall`, disponível na mídia live, instala no disco primário.
+Antes de gravar, exige `APAGAR /dev/hda` e depois `INSTALAR`. A instalação
+recria a GPT e apaga os dados anteriores; a confirmação dupla não é uma
+fronteira de segurança contra código kernel ou substituição do sistema.
+
+Para testar sem disco físico, `make run-installer` cria
+`.build/installer-target.img` se ela ainda não existir. Rode `distroinstall`
+na mídia live e depois inicialize o alvo com
+`make run-disk DISK_IMAGE=.build/installer-target.img`. Use
 `OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd` se esse for o caminho do firmware.
-
-A partição DFS permanece vazia; nesta versão, mesmo após a instalação, a raiz
-segue sendo o RAMFS e as alterações de arquivos não sobrevivem ao reboot.
-O kernel não expõe I/O de bloco genérico: oferece enumeração de discos,
-capacidade e o serviço de instalação, restrito ao processo
-`/bin/distroinstall` da mídia live. Como ainda não há um modelo geral de
-permissões/capabilities, a confirmação dupla não é uma fronteira de segurança
-contra código kernel ou substituição do sistema.
-
-## Próximos passos para o DFS
-
-Ainda precisam ser implementados o formato em disco (superbloco, alocação,
-diretórios e arquivos), montagem e integração com o RAMFS/VFS e file
-descriptors. A interface de bloco já foi usada para gravar a GPT e ESP durante
-a instalação, mas não há filesystem persistente na partição DFS.

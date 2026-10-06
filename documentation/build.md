@@ -48,8 +48,10 @@ de userspace existem somente dentro do RAMFS.
 
 `make disk-image` cria `.build/imagineos-disk.img` sem sobrescrever uma imagem
 existente. A ferramenta `tools/install-disk.sh` grava uma tabela GPT, uma ESP
-FAT16 de 128 MiB com Limine, bootstrap, `dzImage` e `ramfs.tar`, além de uma partição GPT
-reservada ao DFS no espaço restante. O alvo não altera discos físicos.
+FAT16 de 128 MiB com Limine, bootstrap, `dzImage` e `ramfs.tar`, além de uma
+partição DFS no espaço restante. O formatador host `.build/dfs-image` importa
+na partição DFS o USTAR do sistema instalado para que ela possa ser usada como
+raiz persistente. O alvo não altera discos físicos.
 
 ```sh
 make disk-image
@@ -57,9 +59,9 @@ make run-disk
 ```
 
 `make run-disk` inicia a imagem em QEMU/OVMF com chipset PC/IDE, sem anexar a
-ISO. O kernel deve detectar o disco ATA primary-master e localizar a partição DFS pela GPT.
-Atualmente essa partição é apenas reservada: o sistema ainda inicia sua raiz
-do `ramfs.tar` e não grava arquivos persistentes no DFS. Para recriar a imagem,
+ISO. O kernel deve detectar o disco ATA primary-master, localizar e montar a
+partição DFS pela GPT, e carregar `/sbin/init` dela. O USTAR continua montado
+como initramfs e fallback se não houver DFS montável. Para recriar a imagem,
 remova somente `.build/imagineos-disk.img` e rode `make disk-image` novamente.
 
 Para testar o instalador que roda no userspace, use `make run-installer`. Ele
@@ -67,5 +69,5 @@ inicia a ISO e anexa `.build/installer-target.img`, uma imagem de 1 GiB criada
 apenas se ainda não existir. Execute `distroinstall` no shell e confirme o
 alvo com as duas frases solicitadas; todos os dados da imagem alvo serão
 apagados. Depois, `make run-disk DISK_IMAGE=.build/installer-target.img` testa
-o boot pela instalação. Não use essa operação em um disco físico com dados a
-preservar.
+o boot pela instalação e a raiz DFS sem a ISO. Não use essa operação em um
+disco físico com dados a preservar.

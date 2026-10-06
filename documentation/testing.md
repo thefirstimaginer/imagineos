@@ -25,6 +25,8 @@ rustup run stable rustc --edition 2021 --test dnu/tests/keyboard.rs -o /tmp/drea
 /tmp/dreamcore-keyboard-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/storage.rs -o /tmp/imagineos-storage-tests
 /tmp/imagineos-storage-tests
+rustup run stable rustc --edition 2021 --test dnu/tests/dfs.rs -o /tmp/imagineos-dfs-tests
+/tmp/imagineos-dfs-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/installer.rs -o /tmp/imagineos-installer-tests
 /tmp/imagineos-installer-tests
 rustup run stable rustc --edition 2021 --test dnu/dzimage.rs -o /tmp/imagineos-dzimage-tests
@@ -54,7 +56,10 @@ Com o layout ABNT2, teste `ç`, `á`, `ã`, `ê` e as setas no editor; no prompt
 Backspace deve remover o glifo inteiro.
 
 `ls /dev` deve listar `/dev/hda` quando o disco IDE primary-master estiver
-presente. Para validar a instalação, inicialize com `make run-installer`,
+presente. Com uma partição DFS montada, confirme que `ls /home` omite
+dotfiles, `ls -a /home` os mostra e `ls -l -a /home` também exibe tipo,
+tamanho, UID:GID e permissões. Crie um arquivo, reinicie e confirme que seu
+conteúdo permanece. Para validar a instalação, inicialize com `make run-installer`,
 execute `distroinstall`, confirme digitando exatamente `APAGAR /dev/hda` e
 `INSTALAR`, e reinicie com
 `make run-disk DISK_IMAGE=.build/installer-target.img`. O utilitário apaga o
@@ -65,6 +70,6 @@ Sem QEMU/OVMF ou sem as ferramentas para gerar a ISO, a compilação e os testes
 
 Para validar o boot por uma imagem de disco GPT em vez da ISO, use
 `make disk-image` e `make run-disk`. Isso requer `qemu-img`, `sgdisk`,
-`mkfs.vfat`, `mtools`, QEMU e OVMF. O teste cobre descoberta do disco ATA e da
-partição GPT; não valida montagem nem persistência DFS, que ainda não foram
-implementadas.
+`mkfs.vfat`, `mtools`, QEMU e OVMF. O teste deve confirmar a montagem do DFS,
+o início do shell a partir da raiz persistente e a sobrevivência de arquivos
+ao reboot. Os testes locais não substituem essa validação de ponta a ponta.

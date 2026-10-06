@@ -13,6 +13,8 @@ pub mod block;
 mod boot_info;
 #[path = "config.rs"]
 mod config;
+#[path = "fs/dfs.rs"]
+mod dfs;
 #[path = "exec/elf.rs"]
 mod elf;
 #[path = "console/framebuffer.rs"]
@@ -87,7 +89,7 @@ pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     console_write("ImagineOS Astrid w/ Dreamcore Kernel\n");
     console_write("Frame allocator ready; usable frames: ");
     console_number(frame_count.saturating_sub(1) as u64);
-    console_write(";\n reserved boot frame at physical 0x");
+    console_write(";\nreserved boot frame at physical 0x");
     console_hex(boot_frame.physical_address);
     console_write("\n");
 
@@ -141,6 +143,11 @@ pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     };
     ramfs::mount(ramfs_image);
     ramfs::set_block_disk_present(disk_ready);
+    match dfs::mount_primary() {
+        Ok(Some(_)) => console_write("DFS persistent root mounted successfully\n"),
+        Ok(None) => console_write("No DFS partition; continuing with RAMFS root\n"),
+        Err(_) => console_write("DFS mount or journal recovery failed; using RAMFS root\n"),
+    }
     if let Some(settings) = ramfs::read(config::GLOBAL_CONFIG_PATH) {
         if config::load(settings).is_err() {
             console_write("Global configuration invalid; using defaults\n");
@@ -155,11 +162,8 @@ pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     } else {
         console_write("RAMFS PSF not found; retaining embedded zap-vga32.psf\n");
     }
-    console_write(
-        "RAMFS initramfs mounted as current root; persistent DFS root is not implemented\n",
-    );
     let Some(init_program) = ramfs::read("/sbin/init") else {
-        kernel_panic("required /sbin/init not found in the mounted initramfs\n");
+        kernel_panic("required /sbin/init not found in the active root filesystem\n");
     };
     console_write("Loading /sbin/init as PID 1 in ring 3\n");
     if process::init(&[(init_program, 1)]).is_err() {

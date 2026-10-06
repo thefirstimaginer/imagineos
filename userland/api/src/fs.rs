@@ -1,5 +1,7 @@
 use crate::{checked, path_bytes, syscall, Error, Result};
 
+pub type Metadata = imagineos_abi::UserStat;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct OpenOptions {
     read: bool,
@@ -208,6 +210,14 @@ pub fn read_file(path: &str, output: &mut [u8]) -> Result<usize> {
 }
 
 pub fn list_directory(path: &str, output: &mut [u8]) -> Result<usize> {
+    list_directory_with_hidden(path, output, false)
+}
+
+pub fn list_directory_with_hidden(
+    path: &str,
+    output: &mut [u8],
+    include_hidden: bool,
+) -> Result<usize> {
     let path = path_bytes(path, crate::abi::MAX_PATH_QUERY)?;
     if output.len() > crate::abi::MAX_READ_BUFFER {
         return Err(Error::INVALID_ARGUMENT);
@@ -220,10 +230,27 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Result<usize> {
             output.as_mut_ptr() as u64,
             output.len() as u64,
             0,
-            0,
+            include_hidden as u64,
         ],
     ))?;
     usize::try_from(result).map_err(|_| Error::INVALID_ARGUMENT)
+}
+
+pub fn metadata(path: &str) -> Result<Metadata> {
+    let path = path_bytes(path, crate::abi::MAX_PATH_QUERY)?;
+    let mut metadata = Metadata::default();
+    checked(syscall::invoke(
+        crate::abi::SYS_STAT,
+        [
+            path.as_ptr() as u64,
+            path.len() as u64,
+            (&mut metadata as *mut Metadata) as u64,
+            0,
+            0,
+            0,
+        ],
+    ))?;
+    Ok(metadata)
 }
 
 pub fn write_file(path: &str, contents: &[u8]) -> Result<usize> {

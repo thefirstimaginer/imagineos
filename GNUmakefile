@@ -51,6 +51,10 @@ $(BOOTSTRAP): dnu/bootstrap.rs dnu/boot_info.rs dnu/dzimage.rs dnu/time.rs \
 	mkdir -p .build
 	rustup run stable rustc --edition 2021 $< -o $@
 
+.build/dfs-image: tools/dfs-image.rs dnu/fs/dfs.rs dnu/fs/gpt.rs dnu/drivers/block.rs
+	mkdir -p .build
+	rustup run stable rustc --edition 2021 $< -o $@
+
 dzimage: $(DZ_IMAGE)
 
 $(DZ_IMAGE): $(KERNEL) .build/dzpack
@@ -136,7 +140,7 @@ run: iso
 		-drive if=pflash,format=raw,unit=0,readonly=on,file="$(OVMF_CODE)" \
 		-cdrom $(ISO_IMAGE)
 
-disk-image: iso
+disk-image: iso .build/dfs-image
 	if [ -e "$(DISK_IMAGE)" ]; then \
 		printf 'Using existing disk image: %s\n' "$(DISK_IMAGE)"; \
 	else \
@@ -144,7 +148,7 @@ disk-image: iso
 			"$(ISO_DIR)/boot/bootstrap.elf" "$(ISO_DIR)/boot/dzImage" \
 			"$(RAMFS_INSTALLED_IMAGE)" \
 			"$(ISO_DIR)/EFI/BOOT/BOOTX64.EFI" "$(ISO_DIR)/limine.conf" \
-			"tools/startup.nsh"; \
+			"tools/startup.nsh" ".build/dfs-image"; \
 	fi
 
 run-disk: disk-image

@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 7 ]; then
-    printf 'Usage: %s DISK-IMAGE BOOTSTRAP DZIMAGE RAMFS BOOTX64.EFI LIMINE.CONF STARTUP.NSH\n' "$0" >&2
+if [ "$#" -ne 8 ]; then
+    printf 'Usage: %s DISK-IMAGE BOOTSTRAP DZIMAGE RAMFS BOOTX64.EFI LIMINE.CONF STARTUP.NSH DFS-FORMATTER\n' "$0" >&2
     exit 2
 fi
 
@@ -13,6 +13,7 @@ ramfs=$4
 bootx64=$5
 limine_config=$6
 startup_script=$7
+dfs_formatter=$8
 esp_image="${disk_image}.esp"
 
 if [ -e "$disk_image" ] || [ -e "$esp_image" ]; then
@@ -20,7 +21,7 @@ if [ -e "$disk_image" ] || [ -e "$esp_image" ]; then
     exit 1
 fi
 
-for required in "$bootstrap" "$dz_image" "$ramfs" "$bootx64" "$limine_config" "$startup_script"; do
+for required in "$bootstrap" "$dz_image" "$ramfs" "$bootx64" "$limine_config" "$startup_script" "$dfs_formatter"; do
     if [ ! -f "$required" ]; then
         printf 'Required installation file not found: %s\n' "$required" >&2
         exit 1
@@ -55,6 +56,7 @@ mcopy -i "$esp_image" "$bootstrap" ::/boot/bootstrap.elf
 mcopy -i "$esp_image" "$dz_image" ::/boot/dzImage
 mcopy -i "$esp_image" "$ramfs" ::/boot/ramfs.tar
 dd if="$esp_image" of="$disk_image" bs=512 seek=2048 conv=notrunc status=none
+"$dfs_formatter" "$disk_image" "$ramfs"
 
 printf 'Installed bootable GPT disk image: %s\n' "$disk_image"
-printf 'EFI System Partition: 128 MiB FAT16; remaining space reserved for DFS.\n'
+printf 'EFI System Partition: 128 MiB FAT16; DFS contains the seeded system root.\n'

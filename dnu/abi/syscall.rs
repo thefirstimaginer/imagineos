@@ -4,6 +4,8 @@ use core::cell::UnsafeCell;
 use crate::keyboard::Keyboard;
 use crate::process::UserArg;
 use crate::{framebuffer, process};
+use imagineos_abi::UserStat;
+use imagineos_abi::SYS_STAT;
 use imagineos_abi::{
     OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION, SYS_CLEAR,
     SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_INSTALL_DISK,
@@ -87,6 +89,7 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                     Err(crate::installer::InstallError::DiskTooSmall) => (-28i64) as u64,
                     Err(crate::installer::InstallError::MissingPayload) => (-2i64) as u64,
                     Err(crate::installer::InstallError::PayloadTooLarge) => (-28i64) as u64,
+                    Err(crate::installer::InstallError::DfsFormat) => (-5i64) as u64,
                     Err(crate::installer::InstallError::Block(_)) => (-5i64) as u64,
                 }
             };
@@ -322,8 +325,11 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                     };
                     return frame;
                 }
-                let Some(length) = crate::ramfs::list_directory(path, &mut buffer[..capacity])
-                else {
+                let Some(length) = crate::ramfs::list_directory_with_hidden(
+                    path,
+                    frame_ref.r9 != 0,
+                    &mut buffer[..capacity],
+                ) else {
                     frame_ref.rax = (-75i64) as u64;
                     return frame;
                 };
@@ -334,6 +340,49 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             } else {
                 frame_ref.rax = length as u64;
             }
+            frame
+        }
+        SYS_STAT => {
+            let path_length = frame_ref.rsi as usize;
+            if path_length == 0 || path_length > imagineos_abi::MAX_PATH_QUERY {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
+            let mut path = [0u8; 128];
+            if !process::copy_from_current_user(frame_ref.rdi, &mut path[..path_length]) {
+                frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            if path[..path_length].contains(&0) {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
+            let Ok(path) = core::str::from_utf8(&path[..path_length]) else {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            };
+            let Some(metadata) = crate::ramfs::metadata(path) else {
+                frame_ref.rax = (-2i64) as u64;
+                return frame;
+            };
+            let result = UserStat {
+                size: metadata.size,
+                mode: metadata.mode as u32,
+                uid: metadata.uid,
+                gid: metadata.gid,
+                kind: u32::from(metadata.is_directory),
+            };
+            let bytes = unsafe {
+                core::slice::from_raw_parts(
+                    (&result as *const UserStat).cast::<u8>(),
+                    core::mem::size_of::<UserStat>(),
+                )
+            };
+            frame_ref.rax = if process::copy_to_current_user(frame_ref.rdx, bytes) {
+                0
+            } else {
+                (-14i64) as u64
+            };
             frame
         }
         SYS_WRITE_FILE => {
