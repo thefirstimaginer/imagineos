@@ -1,6 +1,6 @@
 # ABI de syscalls do ImagineOS
 
-Este documento define a ABI de userspace **versão 1**. Os números e contratos
+Este documento define a ABI de userspace **versão 2**. Os números e contratos
 abaixo são compartilhados pelo kernel e pela crate `imagineos` por meio de
 [`shared/abi`](../shared/abi/src/lib.rs). Não reutilize números existentes com
 novas semânticas. Mudanças incompatíveis exigem uma nova versão de ABI; novas
@@ -21,7 +21,7 @@ chamadas recebem novos números.
   duas chamadas retornam falso para caminho inexistente ou de tipo diferente;
   strings vazias, inválidas ou com NUL retornam `-EINVAL`.
 - Chamadas não implementadas retornam `-ENOSYS` (`-38`).
-- `exit` não retorna; o argumento de status da versão 1 é ignorado.
+- `exit` não retorna; o argumento de status ainda é ignorado pelo kernel.
 
 ## Chamadas
 
@@ -42,7 +42,7 @@ chamadas recebem novos números.
 | 13 | `touch` | `RDI=caminho`, `RSI=tamanho` | `0` |
 | 14 | `remove` | `RDI=caminho`, `RSI=tamanho`, `RDX=recursivo` | `0` |
 | 15 | `write_file` | `RDI=caminho`, `RSI=tamanho do caminho`, `RDX=conteúdo`, `R10=tamanho` | bytes gravados |
-| 16 | `abi_version` | nenhum | versão ABI (`1`) |
+| 16 | `abi_version` | nenhum | versão ABI (`2`) |
 | 17 | `open` | `RDI=caminho`, `RSI=tamanho`, `RDX=flags` | descritor aberto |
 | 18 | `read_fd` | `RDI=fd`, `RSI=destino`, `RDX=capacidade` | bytes lidos; `0` no EOF |
 | 19 | `write_fd` | `RDI=fd`, `RSI=bytes`, `RDX=tamanho` | bytes escritos |
@@ -50,6 +50,7 @@ chamadas recebem novos números.
 | 21 | `disk_count` | nenhum | quantidade de discos de bloco detectados |
 | 22 | `disk_sectors` | `RDI=índice do disco` | setores endereçáveis; `-ENODEV` se não existir |
 | 23 | `install_disk` | `RDI=índice do disco` | `0` após instalação inicializável; operação destrutiva |
+| 24 | `stat` | `RDI=caminho`, `RSI=tamanho`, `RDX=destino UserStat` | `0` |
 
 `install_disk` aceita apenas o processo `/bin/distroinstall` incluído na mídia
 live; o RAMFS instalado omite o utilitário e seus payloads. Discos são
@@ -85,6 +86,9 @@ desconhecidos em `Error::code()`.
 `exec` retorna `ENOEXEC` quando o ELF não pode ser carregado; `EOVERFLOW`
 indica que a leitura ou listagem não coube no buffer informado.
 
+`UserStat` é uma estrutura `#[repr(C)]` com `size: u64`, `mode`, `uid`, `gid`
+e `kind` como `u32`. `kind=1` identifica diretório e `kind=0`, arquivo.
+
 ## Crate Rust de userspace
 
 O crate [`imagineos`](../userland/api/src/lib.rs) é `no_std`, depende do crate
@@ -105,6 +109,14 @@ let pid = imagineos::process::exec(
 
 Os utilitários existentes são construídos contra essa crate por `make
 user-programs`; `userland/utilities/common.rs` preserva uma fachada de transição
-para as chamadas antigas. Utilitários `hello` e `fdtest` exercitam diretamente
-a nova API. A crate não implementa `std`, alocação dinâmica, a semântica
-completa de descritores POSIX, threads ou persistência.
+para as chamadas antigas. A crate separada `imagineos_rt` oferece macros
+`main!`, `print!` e `println!`: o ponto de entrada gerado valida a ABI, chama a
+função principal e converte seu retorno em código de saída; a formatação usa
+`core::fmt`, sem alocação. `main!(with_args entry)` também converte os vetores
+crus de argumentos e ambiente em `Arguments` e `Environment`. As macros de
+impressão retornam `imagineos::Result<()>`, permitindo propagar erros com `?`.
+O runtime instala um panic handler que encerra o processo com status 127 e
+depende da crate `imagineos` para os wrappers de syscalls.
+Utilitários `hello` e `fdtest` exercitam a API; `hello` usa o novo runtime. A
+crate não implementa `std`, alocação dinâmica, a semântica completa de
+descritores POSIX, threads ou persistência.

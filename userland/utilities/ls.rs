@@ -98,18 +98,12 @@ extern "C" fn _start(
             continue;
         }
         let mut child = [0u8; 256];
-        let mut child_length = path_length;
-        if child_length > 1 && path[child_length - 1] == b'/' {
-            child_length -= 1;
-        }
-        if child_length + 1 + name.len() > child.len() {
+        let Some(child_length) =
+            imagineos::args::append_path_component(&path[..path_length], name, &mut child)
+        else {
             common::write(b"ls: path too long\n");
             common::exit(2);
-        }
-        child[..child_length].copy_from_slice(&path[..child_length]);
-        child[child_length] = b'/';
-        child[child_length + 1..child_length + 1 + name.len()].copy_from_slice(name);
-        child_length += 1 + name.len();
+        };
         let child_path = core::str::from_utf8(&child[..child_length]).unwrap_or("/");
         let metadata = match imagineos::fs::metadata(child_path) {
             Ok(metadata) => metadata,

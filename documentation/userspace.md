@@ -13,33 +13,30 @@ Crie `userland/utilities/hello.rs`:
 #![no_std]
 #![no_main]
 
-#[no_mangle]
-extern "C" fn _start(
-    _argc: usize,
-    _argv: *const *const u8,
-    _envc: usize,
-    _envp: *const *const u8,
-) -> ! {
-    if imagineos::syscall::abi_version() != Ok(imagineos::abi::ABI_VERSION) {
-        imagineos::process::exit(2);
-    }
-    if imagineos::console::write_all(b"Hello from ImagineOS!\n").is_err() {
-        imagineos::process::exit(1);
-    }
-    imagineos::process::exit(0)
+fn user_main(
+    mut args: imagineos_rt::Arguments<'_>,
+    _env: imagineos_rt::Environment<'_>,
+) -> imagineos_rt::imagineos::Result<()> {
+    let name = match args.next() {
+        Some(name) => name?,
+        None => "ImagineOS",
+    };
+    imagineos_rt::println!("Hello, {name}!")?;
+    Ok(())
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
-    imagineos::process::exit(127)
-}
+imagineos_rt::main!(with_args user_main);
 ```
 
-O crate reutilizável fica em `userland/api/` e é ligado automaticamente pelo
-Makefile. O ponto de entrada é `_start`, não `main`; o kernel chama essa função
-com `argc`, `argv`, `envc` e `envp`. `userland/utilities/common.rs` permanece
-como fachada de compatibilidade enquanto utilitários mais antigos migram para
-a API tipada `imagineos`.
+As bibliotecas ficam separadas em `userland/api/` e `userland/runtime/` e são
+ligadas automaticamente pelo Makefile. A crate `imagineos` oferece wrappers de
+syscalls; `imagineos_rt` depende dela e fornece o ciclo de vida de programas.
+`imagineos_rt::main!` gera `_start`, valida a versão da ABI, converte o
+resultado de `user_main` em status de saída e instala um panic handler. A macro
+`imagineos_rt::println!` usa `core::fmt` e retorna
+`imagineos_rt::imagineos::Result<()>`; o `?`
+preserva erros de escrita em vez de ignorá-los. `userland/utilities/common.rs`
+permanece como fachada de compatibilidade para utilitários antigos.
 
 Adicione `hello` à variável `USER_UTILITIES` no `GNUmakefile`, por exemplo:
 
@@ -93,13 +90,23 @@ estão em [Testes](testing.md).
   `fs::open` com `OpenOptions`, leitura/escrita/fechamento de descritores,
   stdin/stdout/stderr, `process::pid`, `process::yield_now`, `process::exec` e
   `process::exit`.
+- A crate `imagineos_rt` contém `main!`, `print!`/`println!` e converte o
+  resultado da função principal em código de saída. `main!(user_main)` chama
+  `fn user_main() -> i32`, `fn user_main() -> imagineos_rt::imagineos::Result<()>`
+  ou `fn user_main() -> Result<(), i32>`. Para receber argumentos sem lidar com
+  ponteiros crus, use `imagineos_rt::main!(with_args user_main)` com uma função
+  `fn user_main(args: imagineos_rt::Arguments<'_>,
+  env: imagineos_rt::Environment<'_>) -> ...`; o iterador exclui o nome do
+  executável e `env.get("NAME")` lê uma variável. Strings inválidas em UTF-8
+  produzem erro. O runtime é uma crate separada da API `imagineos`, mas ainda
+  não substitui a `std`; status de saída ainda é ignorado pelo kernel atual.
 - A implementação de transição atual
   oferece `argument`, `environment_value`, `resolve_path`, `write`,
   `read_char`, `clear`, `read_file`, `write_file`, `list_directory`, `mkdir`,
   `touch`, `remove` e `exit`.
 - As chamadas de sistema usam `int 0x80`: número em `RAX`; argumentos em
   `RDI`, `RSI`, `RDX`, `R10`, `R8` e `R9`, nessa ordem. Esse contrato é a ABI
-  v1 do ImagineOS; números e semânticas não devem ser reutilizados ou alterados.
+  v2 do ImagineOS; números e semânticas não devem ser reutilizados ou alterados.
   O kernel e as aplicações compartilham as definições em
   [`shared/abi`](../shared/abi/src/lib.rs). A syscall `16` consulta a versão
   para que programas possam detectar incompatibilidade.

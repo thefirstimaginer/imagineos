@@ -59,6 +59,21 @@ pub fn resolve_path(cwd: Option<&[u8]>, path: &[u8], output: &mut [u8]) -> Optio
     Some(length)
 }
 
+pub fn append_path_component(parent: &[u8], component: &[u8], output: &mut [u8]) -> Option<usize> {
+    let separator = usize::from(!parent.is_empty() && parent.last() != Some(&b'/'));
+    let component_start = parent.len().checked_add(separator)?;
+    let length = component_start.checked_add(component.len())?;
+    if length > output.len() {
+        return None;
+    }
+    output[..parent.len()].copy_from_slice(parent);
+    if separator != 0 {
+        output[parent.len()] = b'/';
+    }
+    output[component_start..length].copy_from_slice(component);
+    Some(length)
+}
+
 unsafe fn c_string<'a>(pointer: *const u8) -> Option<&'a [u8]> {
     if pointer.is_null() {
         return None;
@@ -72,7 +87,7 @@ unsafe fn c_string<'a>(pointer: *const u8) -> Option<&'a [u8]> {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_path;
+    use super::{append_path_component, resolve_path};
 
     #[test]
     fn resolves_absolute_and_relative_paths() {
@@ -81,5 +96,14 @@ mod tests {
         assert_eq!(&output[..10], b"/home/file");
         assert_eq!(resolve_path(None, b"/bin/app", &mut output), Some(8));
         assert_eq!(&output[..8], b"/bin/app");
+    }
+
+    #[test]
+    fn appends_components_without_duplicating_root_separator() {
+        let mut output = [0; 32];
+        let length = append_path_component(b"/", b"bin", &mut output).unwrap();
+        assert_eq!(&output[..length], b"/bin");
+        let length = append_path_component(b"/home", b"file", &mut output).unwrap();
+        assert_eq!(&output[..length], b"/home/file");
     }
 }

@@ -17,6 +17,10 @@ USER_API_MANIFEST := userland/api/Cargo.toml
 USER_API_TARGET_DIR := .build/user/api-target
 USER_API_RLIB := $(USER_API_TARGET_DIR)/$(TARGET)/release/libimagineos.rlib
 USER_API_DEPS := $(USER_API_TARGET_DIR)/$(TARGET)/release/deps
+USER_RUNTIME_MANIFEST := userland/runtime/Cargo.toml
+USER_RUNTIME_TARGET_DIR := .build/user/runtime-target
+USER_RUNTIME_RLIB := $(USER_RUNTIME_TARGET_DIR)/$(TARGET)/release/libimagineos_rt.rlib
+USER_RUNTIME_DEPS := $(USER_RUNTIME_TARGET_DIR)/$(TARGET)/release/deps
 USER_PROGRAMS := .build/user/sbin/init .build/user/sbin/getty \
 	.build/user/bin/shell \
 	$(addprefix .build/user/utilities/,$(USER_UTILITIES))
@@ -81,24 +85,27 @@ $(RAMFS_IMAGE): kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) $(RAMFS_FILES) 
 .PHONY: user-programs
 user-programs: $(USER_PROGRAMS)
 
-.build/user/sbin/%: userland/%.rs userland/linker.ld $(USER_API_RLIB)
+.build/user/sbin/%: userland/%.rs userland/linker.ld $(USER_API_RLIB) $(USER_RUNTIME_RLIB)
 	mkdir -p $(dir $@)
 	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
-		--extern imagineos=$(USER_API_RLIB) -L dependency=$(USER_API_DEPS) \
+		--extern imagineos=$(USER_API_RLIB) --extern imagineos_rt=$(USER_RUNTIME_RLIB) \
+		-L dependency=$(USER_API_DEPS) -L dependency=$(USER_RUNTIME_DEPS) \
 		-C panic=abort -C relocation-model=static \
 		-C link-arg=-Tuserland/linker.ld $< -o $@
 
-.build/user/bin/%: userland/%.rs userland/linker.ld $(USER_API_RLIB)
+.build/user/bin/%: userland/%.rs userland/linker.ld $(USER_API_RLIB) $(USER_RUNTIME_RLIB)
 	mkdir -p $(dir $@)
 	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
-		--extern imagineos=$(USER_API_RLIB) -L dependency=$(USER_API_DEPS) \
+		--extern imagineos=$(USER_API_RLIB) --extern imagineos_rt=$(USER_RUNTIME_RLIB) \
+		-L dependency=$(USER_API_DEPS) -L dependency=$(USER_RUNTIME_DEPS) \
 		-C panic=abort -C relocation-model=static \
 		-C link-arg=-Tuserland/linker.ld $< -o $@
 
-.build/user/utilities/%: userland/utilities/%.rs userland/utilities/common.rs userland/linker.ld $(USER_API_RLIB)
+.build/user/utilities/%: userland/utilities/%.rs userland/utilities/common.rs userland/linker.ld $(USER_API_RLIB) $(USER_RUNTIME_RLIB)
 	mkdir -p $(dir $@)
 	rustup run stable rustc --crate-name $* --edition 2021 --target $(TARGET) \
-		--extern imagineos=$(USER_API_RLIB) -L dependency=$(USER_API_DEPS) \
+		--extern imagineos=$(USER_API_RLIB) --extern imagineos_rt=$(USER_RUNTIME_RLIB) \
+		-L dependency=$(USER_API_DEPS) -L dependency=$(USER_RUNTIME_DEPS) \
 		-C panic=abort -C relocation-model=static \
 		-C link-arg=-Tuserland/linker.ld $< -o $@
 
@@ -108,6 +115,10 @@ $(USER_API_RLIB): $(USER_API_MANIFEST) userland/api/src/lib.rs \
 	shared/abi/Cargo.toml shared/abi/src/lib.rs
 	rustup run stable cargo build --manifest-path $(USER_API_MANIFEST) \
 		--target $(TARGET) --release --target-dir $(USER_API_TARGET_DIR)
+
+$(USER_RUNTIME_RLIB): $(USER_RUNTIME_MANIFEST) userland/runtime/src/lib.rs $(USER_API_RLIB)
+	rustup run stable cargo build --manifest-path $(USER_RUNTIME_MANIFEST) \
+		--target $(TARGET) --release --target-dir $(USER_RUNTIME_TARGET_DIR)
 
 iso: kernel $(RAMFS_IMAGE)
 	command -v xorriso >/dev/null
