@@ -9,10 +9,12 @@ const KEY_RIGHT: char = '\u{f0003}';
 const KEY_HOME: char = '\u{f0004}';
 const KEY_END: char = '\u{f0005}';
 const KEY_DELETE: char = '\u{f0006}';
+pub const KEY_INTERRUPT: char = '\u{f0007}';
 
 pub struct Keyboard {
     left_shift: bool,
     right_shift: bool,
+    control: bool,
     caps_lock: bool,
     extended: bool,
     alt_gr: bool,
@@ -27,6 +29,7 @@ impl Keyboard {
         Self {
             left_shift: false,
             right_shift: false,
+            control: false,
             caps_lock: false,
             extended: false,
             alt_gr: false,
@@ -62,6 +65,7 @@ impl Keyboard {
             match (extended, key) {
                 (false, 0x2a) => self.left_shift = !released,
                 (false, 0x36) => self.right_shift = !released,
+                (false, 0x1d) | (true, 0x1d) => self.control = !released,
                 (false, 0x3a) if !released => self.caps_lock = !self.caps_lock,
                 (true, 0x38) => self.alt_gr = !released,
                 _ => {}
@@ -71,6 +75,9 @@ impl Keyboard {
             }
             if extended {
                 return extended_key(key);
+            }
+            if self.control && key == 0x2e {
+                return Some(KEY_INTERRUPT);
             }
 
             let layout = crate::config::keyboard_layout();

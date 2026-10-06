@@ -17,15 +17,27 @@ O shell e um ELF x86_64 em ring 3. A entrada vem dos syscalls `read` via COM1 ou
 | `dmesg [-n LINES]` | Exibe as mensagens recentes do buffer do kernel |
 | `uname [OPCOES]` | Exibe informações do sistema e da arquitetura |
 | `shutdown [--help]` | Solicita ao init o encerramento do sistema |
+| `ps [--help]` | Mostra um snapshot dos processos ativos |
+| `kill [-SIGNAL] PID...` | Envia um sinal suportado a um ou mais processos |
 | `echo [-n] texto` | Escreve texto; expande `$NAME` e `${NAME}` |
 | `type NAME` | Identifica builtin ou executavel encontrado por PATH |
 | `exit` | Encerra o shell atual |
 
 Comandos externos são procurados da esquerda para a direita em `PATH`, cujo
 valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch`,
-`rm`, `vi`, `globalconf`, `distroinstall`, `dmesg`, `uname` e `shutdown` em
+`rm`, `vi`, `globalconf`, `distroinstall`, `dmesg`, `uname`, `shutdown`, `ps`
+e `kill` em
 `/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers
 limitados.
+
+`ps` lista PID, estado (`running` ou `stopped`) e caminho do executável no
+instante da chamada. O scheduler suporta no máximo quatro processos e não há
+atualização interativa como em `top`. `kill` aceita os sinais HUP, INT, KILL,
+SEGV, TERM, CONT e STOP por número ou nome (`kill -TERM 4` ou
+`kill -s SIGSTOP 4`); `kill -l` lista a seleção disponível. Sem opção, envia
+TERM. PID 1 não pode ser sinalizado. `Ctrl+C` no teclado PS/2 e o byte Ctrl+C
+pela serial enviam INT ao processo que está lendo o console. O init relança o
+getty quando o processo atual da sessão termina.
 
 `shutdown` envia um pedido IPC ao processo `/sbin/init` (PID 1). O init
 continua supervisionando enquanto o shell executa e encaminha o pedido ao

@@ -30,6 +30,25 @@ pub const SYS_DMESG: u64 = 25;
 pub const SYS_SHUTDOWN_REQUEST: u64 = 26;
 pub const SYS_SHUTDOWN_POLL: u64 = 27;
 pub const SYS_POWER_OFF: u64 = 28;
+pub const SYS_KILL: u64 = 29;
+pub const SYS_SIGACTION: u64 = 30;
+pub const SYS_SIGRETURN: u64 = 31;
+pub const SYS_PROCESS_LIST: u64 = 32;
+
+pub const SIGNAL_HUP: u64 = 1;
+pub const SIGNAL_INT: u64 = 2;
+pub const SIGNAL_KILL: u64 = 9;
+pub const SIGNAL_SEGV: u64 = 11;
+pub const SIGNAL_TERM: u64 = 15;
+pub const SIGNAL_CONT: u64 = 18;
+pub const SIGNAL_STOP: u64 = 19;
+pub const SIGNAL_DEFAULT: u64 = 0;
+pub const SIGNAL_IGNORE: u64 = 1;
+
+pub const PROCESS_RUNNING: u32 = 1;
+pub const PROCESS_STOPPED: u32 = 2;
+pub const MAX_PROCESSES: usize = 4;
+pub const PROCESS_NAME_SIZE: usize = 64;
 
 pub const FD_STDIN: u64 = 0;
 pub const FD_STDOUT: u64 = 1;
@@ -66,6 +85,26 @@ pub struct UserStat {
     pub uid: u32,
     pub gid: u32,
     pub kind: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProcessInfo {
+    pub pid: u64,
+    pub state: u32,
+    pub pending_signals: u32,
+    pub name: [u8; PROCESS_NAME_SIZE],
+}
+
+impl Default for ProcessInfo {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            state: 0,
+            pending_signals: 0,
+            name: [0; PROCESS_NAME_SIZE],
+        }
+    }
 }
 
 impl UserArg {

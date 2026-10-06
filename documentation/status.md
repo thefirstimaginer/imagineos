@@ -3,7 +3,8 @@
 ## Implementado
 
 - Entry point `no_std` x86_64 e requisicoes da crate `limine` 0.5.0.
-- GDT de kernel, TSS com stack propria e IDT fatal para excecoes de CPU.
+- GDT de kernel, TSS com stack propria e IDT que encerra isoladamente o processo
+  ring 3 que causa uma excecao; excecoes no kernel continuam fatais.
 - Frame allocator monotonicamente crescente sobre regioes `USABLE` via HHDM.
 - Logs do kernel com tempo decorrido em colchetes; console COM1 e framebuffer RGB32.
 - Buffer circular de 4 KiB para mensagens do kernel, syscall `dmesg` e utilitário
@@ -36,6 +37,8 @@
 - Dispositivo ATA anunciado como `/dev/hda`, syscall de enumeração e `/bin/distroinstall` na mídia live; duas confirmações antes de criar GPT/ESP FAT16 e reservar o DFS.
 - Instalação de ponta a ponta validada no QEMU: o utilitário gravou o disco virtual, a GPT passou `sgdisk -v`, o RAMFS instalado correspondeu ao payload live e o disco iniciou até o shell sem a ISO.
 - Scheduler cooperativo e programas separados para init/getty/shell.
+- Sinais HUP, INT, KILL, SEGV, TERM, CONT e STOP, handlers/ignore para sinais
+  termináveis, Ctrl+C e listagem de processos por snapshot via `/bin/ps`.
 - RAMFS USTAR montado por path; `/sbin/init` inicia como PID 1, `/sbin/getty` inicia `/bin/shell`, e comandos externos são resolvidos em `/bin`.
 - Built-ins `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type` e `exit`; parser com aspas, escapes e expansão simples de variáveis.
 - Programas ELF externos em `/bin`, com `argv`/`envp`, busca por `PATH` e syscalls do RAMFS; init/getty e utilitários são fontes de userspace em `userland/`.
@@ -43,13 +46,18 @@
   release, versão, arquitetura, sistema operacional e `-a`.
 - Utilitário `shutdown` com mailbox IPC de pedido para PID 1; init continua
   supervisionando, o kernel sincroniza o ATA e solicita ACPI S5 usando
-  registradores PM1 e AML `_S5_` descobertos via RSDP/FADT/DSDT.
+  GAS PM1 I/O/MMIO ou Sleep Control ACPI reduzido e AML `_S5_` descobertos via
+  RSDP/FADT/DSDT.
 - `globalconf` lê/atualiza `/home/.global/global.conf`; o kernel aplica layout US/ABNT2 durante a sessão e UTF-8 é o charset aceito.
 - `vi` modal com navegação, edição UTF-8 e gravação de arquivos de até 4 KiB.
 
 ## Ainda ausente ou nao validado
 
 - O scheduler não é preemptivo; faltam reclaim de frames, W^X, heap de userspace, drivers de rede e suporte completo a layouts de teclado. O armazenamento cobre apenas IDE primary-master PIO/LBA28 e GPT primária.
+- Sinais são cooperativos, não possuem máscaras, permissões por usuário nem
+  handlers aninhados. Falhas de CPU em ring 3 terminam o processo, mas ainda
+  não são encaminhadas a um handler `SIGSEGV`. `ps` não é uma atualização
+  contínua: não há `top` nem contabilidade de CPU.
 - Um boot QEMU em imagem GPT confirmou montagem do DFS e início de `/sbin/init`, getty e shell; em uma repetição, o OVMF caiu no shell UEFI em vez de iniciar a imagem, então o boot pelo disco ainda precisa de uma verificação repetível. Não foi validada a persistência de uma escrita via shell nem a recuperação sob cortes de energia. O journal protege metadados, não dados dos arquivos, e pressupõe gravação atômica de setor e flush confiável. O importador USTAR não valida checksums nem cobre entradas especiais.
 - O DFS tem 256 nós, caminhos de até 255 bytes, 14 extents por arquivo e remoção recursiva limitada a 32 níveis. UID/GID/modo são exibidos, mas não há enforcement de permissões. Sem partição DFS válida, o fallback RAMFS é volátil e limitado a 128 nós/4 KiB por arquivo.
 - `ls` ainda aceita somente um caminho e opções separadas; opções curtas combinadas não são suportadas. O shell ainda não tem pipelines, redirecionamento, aliases, funções ou `if/for/while`. UTF-8 é o único charset suportado e o mapa ABNT2 cobre apenas as teclas implementadas.

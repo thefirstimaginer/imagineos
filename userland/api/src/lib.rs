@@ -9,6 +9,7 @@ pub mod kernel_log;
 pub mod legacy;
 pub mod process;
 pub mod shutdown;
+pub mod signals;
 pub mod syscall;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

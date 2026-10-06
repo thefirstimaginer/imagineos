@@ -43,7 +43,7 @@ tar -tf .build/ramfs.tar
 
 O tar deve conter `sbin/init`, `sbin/getty`, `bin/shell`, `bin/ls`, `bin/cat`,
 `bin/grep`, `bin/globalconf`, `bin/distroinstall`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
-`bin/hello`, `bin/fdtest`, `bin/dmesg`, `bin/uname`,
+`bin/hello`, `bin/fdtest`, `bin/dmesg`, `bin/uname`, `bin/kill`, `bin/ps`,
 `home/.global/global.conf` e `system/fonts/zap-vga16.psf`, além dos payloads
 em `system/install/`.
 O RAMFS live fornece `system/install/bootstrap.elf` e `system/install/dzImage`;
@@ -55,7 +55,10 @@ Para reativar os logs de cada etapa de carregamento: `make KERNEL_FEATURES=kerne
 ## Boot manual
 
 Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty/shell. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `fdtest`, `dmesg -n 10`, `uname -a`, `cat /home/readme.txt`,
-`grep ImagineOS /home/readme.txt` e `read NAME`. `fdtest` verifica stdio,
+`grep ImagineOS /home/readme.txt`, `ps`, `kill -l` e `read NAME`. Teste
+`kill -STOP PID` seguido de `kill -CONT PID` em outro processo e confirme a
+mudança de estado no snapshot do `ps`; Ctrl+C no shell deve encerrar somente a
+sessão atual, que o init deve recriar. `fdtest` verifica stdio,
 abertura, leitura, escrita, append, fechamento e erro de descritor fechado.
 Com o layout ABNT2, teste `ç`, `á`, `ã`, `ê` e as setas no editor; no prompt,
 Backspace deve remover o glifo inteiro.
@@ -74,6 +77,8 @@ shell sem a ISO e o RAMFS instalado não deve conter `/bin/distroinstall`.
 Em QEMU/OVMF, teste `shutdown` por último; o comando deve fazer PID 1 consumir
 o pedido, registrar a sincronização do disco e desligar a VM via ACPI S5.
 Para validar o flush ATA, anexe uma imagem de disco à VM durante esse teste.
+O parser de registradores também tem testes para GAS MMIO/validação e para a
+preservação dos demais bits do registrador PM1.
 
 Sem QEMU/OVMF ou sem as ferramentas para gerar a ISO, a compilação e os testes locais não comprovam que o sistema inicializa corretamente.
 

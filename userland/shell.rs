@@ -176,7 +176,7 @@ extern "C" fn _start(
 }
 
 fn is_keyboard_event(character: char) -> bool {
-    ('\u{f0000}'..='\u{f0006}').contains(&character)
+    ('\u{f0000}'..='\u{f0007}').contains(&character)
 }
 
 fn prompt(state: &ShellState) {
@@ -712,13 +712,19 @@ fn execute_path(state: &ShellState, path: &[u8], tokens: &[Token]) -> i64 {
     }
     let mut environment = [""; MAX_VARIABLES];
     for index in 0..environment_count {
-        let Ok(value) = core::str::from_utf8(&environment_storage[index][..environment_lengths[index]]) else {
+        let Ok(value) =
+            core::str::from_utf8(&environment_storage[index][..environment_lengths[index]])
+        else {
             return -22;
         };
         environment[index] = value;
     }
-    imagineos::process::exec(path, &arguments[..tokens.len()], &environment[..environment_count])
-        .map_or_else(|error| -(error.code() as i64), |pid| pid as i64)
+    imagineos::process::exec(
+        path,
+        &arguments[..tokens.len()],
+        &environment[..environment_count],
+    )
+    .map_or_else(|error| -(error.code() as i64), |pid| pid as i64)
 }
 
 fn write(text: &str) {

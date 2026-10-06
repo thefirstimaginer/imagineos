@@ -55,6 +55,10 @@ chamadas recebem novos números.
 | 26 | `shutdown_request` | nenhum | `0`; posta um pedido para o init |
 | 27 | `shutdown_poll` | nenhum | PID 1: `1` se havia pedido, `0` caso contrário; outros recebem `-EPERM` |
 | 28 | `power_off` | nenhum | PID 1 sincroniza o disco e solicita desligamento; outros recebem `-EPERM` |
+| 29 | `kill` | `RDI=PID`, `RSI=sinal` | `0`; `-EINVAL` para sinal desconhecido, `-ESRCH` para PID inexistente, `-EPERM` ao sinalizar PID 1 |
+| 30 | `sigaction` | `RDI=sinal`, `RSI=handler`, `RDX=restorer` | `0`; handler `0` restaura ação padrão, `1` ignora, endereço maior que `1` registra handler |
+| 31 | `sigreturn` | nenhum | restaura o contexto salvo ao retornar de um handler |
+| 32 | `process_list` | `RDI=destino ProcessInfo[]`, `RSI=capacidade em itens` | número de processos copiados (máximo 4) |
 
 `install_disk` aceita apenas o processo `/bin/distroinstall` incluído na mídia
 live; o RAMFS instalado omite o utilitário e seus payloads. Discos são
@@ -82,7 +86,7 @@ truncate e append exigem escrita e não podem ser combinados. O kernel ainda
 não oferece diretórios como streams, seek, pipes, sockets, dispositivos por
 FD, permissões ou compartilhamento atômico de offsets entre processos.
 
-Erros usados atualmente incluem `EPERM=1`, `ENODEV=19`, `EINVAL=22`, `EFAULT=14`, `ENOENT=2`,
+Erros usados atualmente incluem `EPERM=1`, `ENOENT=2`, `ESRCH=3`, `EFAULT=14`, `ENODEV=19`, `EINVAL=22`,
 `E2BIG=7`, `ENOEXEC=8`, `EAGAIN=11`, `ENOSPC=28`, `ENOSYS=38`,
 `ENOTDIR=20`, `EISDIR=21`, `EEXIST=17`, `EMFILE=24`, `EBADF=9`, `EIO=5`,
 `ENOTEMPTY=39` e `EOVERFLOW=75`. A crate preserva errno
@@ -103,6 +107,23 @@ Antes do poweroff, o kernel executa `flush` no disco ATA detectado. A rotina
 usa o RSDP do Limine para encontrar o FADT, os registradores PM1 e o estado S5
 `_S5_` na DSDT; formatos AML ou registradores que não forem reconhecidos fazem
 a chamada falhar em vez de presumir uma porta específica de QEMU.
+
+Os sinais implementados são `SIGHUP=1`, `SIGINT=2`, `SIGKILL=9`,
+`SIGSEGV=11`, `SIGTERM=15`, `SIGCONT=18` e `SIGSTOP=19`. `SIGKILL` encerra e
+`SIGSTOP` suspende sem aceitar handlers ou ignorá-los; `SIGCONT` retoma um
+processo suspenso. HUP, INT, SEGV e TERM terminam o processo por padrão, mas
+podem ser ignorados ou capturados. Um handler recebe o número do sinal em
+`RDI`; ao retornar, o stub de sinal da API executa `sigreturn`. Sinais ficam
+pendentes até o processo voltar a uma syscall, pois o scheduler atual é
+cooperativo. Não há máscaras, filas de ocorrências repetidas, IDs de usuário,
+permissões POSIX ou handlers aninhados. PID 1 é protegido e não pode receber
+sinais via `kill`. Exceções originadas em ring 3 encerram apenas o processo
+afetado; elas ainda não são entregues a um handler `SIGSEGV`.
+
+`ProcessInfo` é uma estrutura `#[repr(C)]` com PID, estado numérico, máscara de
+sinais pendentes e nome do executável em um campo fixo de 64 bytes. A syscall
+de listagem retorna um snapshot, limitado aos quatro slots do scheduler; não
+fornece uso de CPU, estados de serviço ou atualização contínua.
 
 ## Crate Rust de userspace
 

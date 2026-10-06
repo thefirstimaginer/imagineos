@@ -24,6 +24,7 @@ static SERIAL_UTF8: SharedUtf8Decoder =
     SharedUtf8Decoder(UnsafeCell::new(crate::utf8::Decoder::new()));
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct TrapFrame {
     pub r15: u64,
     pub r14: u64,
@@ -49,6 +50,11 @@ pub struct TrapFrame {
 
 #[no_mangle]
 extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFrame {
+    let next = syscall_dispatch_inner(frame);
+    process::deliver_pending_signal(next)
+}
+
+fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
     let Some(frame_ref) = (unsafe { frame.as_mut() }) else {
         return frame;
     };
@@ -95,6 +101,46 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                     }
                 }
             }
+        }
+        imagineos_abi::SYS_KILL => {
+            frame_ref.rax =
+                process::send_signal(frame_ref.rdi as usize, frame_ref.rsi as u64) as u64;
+            frame
+        }
+        imagineos_abi::SYS_SIGACTION => {
+            frame_ref.rax = process::set_signal_action(
+                frame_ref.rdi as u64,
+                frame_ref.rsi as u64,
+                frame_ref.rdx as u64,
+            ) as u64;
+            frame
+        }
+        imagineos_abi::SYS_SIGRETURN => {
+            if !process::restore_signal_context(frame) {
+                frame_ref.rax = (-22i64) as u64;
+            }
+            frame
+        }
+        imagineos_abi::SYS_PROCESS_LIST => {
+            let capacity = frame_ref.rsi as usize;
+            if capacity > imagineos_abi::MAX_PROCESSES {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
+            let (processes, count) = process::snapshot();
+            let length = count.min(capacity);
+            let bytes = unsafe {
+                core::slice::from_raw_parts(
+                    processes.as_ptr().cast::<u8>(),
+                    length * core::mem::size_of::<imagineos_abi::ProcessInfo>(),
+                )
+            };
+            frame_ref.rax = if process::copy_to_current_user(frame_ref.rdi, bytes) {
+                length as u64
+            } else {
+                (-14i64) as u64
+            };
+            frame
         }
         SYS_DMESG => {
             let capacity = frame_ref.rsi as usize;
@@ -726,10 +772,18 @@ fn read_character() -> u32 {
     loop {
         if let Some(character) = unsafe { (&mut *KEYBOARD.0.get()).poll_char() } {
             framebuffer::set_cursor_visible(false);
+            if character == crate::keyboard::KEY_INTERRUPT {
+                let _ = process::send_signal(process::current_pid(), imagineos_abi::SIGNAL_INT);
+                return b'\n' as u32;
+            }
             return character as u32;
         }
         if let Some(character) = serial_read_char() {
             framebuffer::set_cursor_visible(false);
+            if character == '\u{3}' {
+                let _ = process::send_signal(process::current_pid(), imagineos_abi::SIGNAL_INT);
+                return b'\n' as u32;
+            }
             return character as u32;
         }
         let now = read_tsc();

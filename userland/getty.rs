@@ -17,8 +17,26 @@ extern "C" fn _start(
     {
         imagineos::process::exit(1);
     }
-    if imagineos::process::exec("/bin/shell", &["/bin/shell"], &[]).is_err() {
-        imagineos::process::exit(1);
+    let shell_pid = match imagineos::process::exec("/bin/shell", &["/bin/shell"], &[]) {
+        Ok(pid) => pid,
+        Err(_) => imagineos::process::exit(1),
+    };
+    loop {
+        let mut processes = [imagineos::abi::ProcessInfo::default(); imagineos::abi::MAX_PROCESSES];
+        match imagineos::process::list(&mut processes) {
+            Ok(count)
+                if processes
+                    .iter()
+                    .take(count)
+                    .any(|process| process.pid == shell_pid as u64) =>
+            {
+                if imagineos::process::yield_now().is_err() {
+                    imagineos::process::exit(1);
+                }
+            }
+            Ok(_) => break,
+            Err(_) => imagineos::process::exit(1),
+        }
     }
     imagineos::process::exit(0)
 }

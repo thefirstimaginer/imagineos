@@ -119,8 +119,19 @@ estão em [Testes](testing.md).
   preservados pelo kernel.
 - `shutdown` pede encerramento via `/sbin/init`; o kernel sincroniza o disco
   ATA antes do poweroff e usa o estado S5 obtido das tabelas ACPI. Ainda não há
-  encerramento de serviços por sinais; o parser atual é limitado ao RSDP,
-  FADT/DSDT e registradores PM1 de I/O.
+  encerramento automático de serviços por sinais. O kernel lê registradores
+  ACPI PM1 em I/O ou MMIO e o registrador Sleep Control no modo ACPI reduzido;
+  a extração de `_S5_` da DSDT ainda usa um parser AML restrito.
+- `signals::send`, `signals::register` e `signals::ignore` enviam ou configuram
+  os sinais HUP, INT, KILL, SEGV, TERM, CONT e STOP. Handlers recebem o número
+  do sinal e retornam pelo stub `sigreturn`; KILL e STOP não podem ser
+  capturados/ignorados, e PID 1 é protegido. `SIGINT` é gerado por Ctrl+C na
+  entrada PS/2 ou serial.
+- `process::list` retorna um snapshot de até quatro processos, consumido pelo
+  utilitário `ps`. Não há `top`, contabilidade de CPU, permissões de envio de
+  sinal por UID, mascaramento de sinais, handlers aninhados ou entrega de
+  exceções de CPU a handlers `SIGSEGV`. Uma falha de ring 3 encerra o processo
+  afetado, sem parar o kernel.
 - A lista completa de chamadas, registradores, resultados, erros e limites está
   em [ABI de syscalls](syscall-abi.md). Não adicione assembly de syscall em
   aplicações; estenda a crate `imagineos` e mantenha o contrato documentado.
@@ -133,11 +144,14 @@ estão em [Testes](testing.md).
   dinâmico, PIE nem suporte documentado a toolchains de outras linguagens.
 - **Entrada e execução:** stdin/stdout/stderr e arquivos do RAMFS agora podem
   ser acessados por descritores. Ainda não há pipes, redirecionamento, sockets,
-  descritores de dispositivos, seek, sinais, espera/coleta de processo ou um
-  contrato POSIX. O shell também não implementa pipes nem redirecionamento.
+  descritores de dispositivos, seek, espera/coleta de processo ou um contrato
+  POSIX. Sinais não são preemptivos: são tratados ao retornar de syscalls; o
+  shell também não implementa pipes nem redirecionamento.
 - **Recursos de processo:** há no máximo quatro slots de processo, incluindo
   processos ativos; o scheduler é cooperativo, sem preempção por timer. Um
-  programa que não cede a execução pode impedir que outros avancem.
+  programa que não cede a execução pode impedir que outros avancem. `ps` é
+  apenas uma fotografia dos processos ativos, sem métricas de CPU ou atualização
+  contínua como `top`.
 - **Memória e segurança:** não há heap de userspace fornecido pelo sistema.
   Programas podem usar buffers estáticos ou implementar seu próprio
   gerenciamento de memória, mas não devem presumir alocação dinâmica. As

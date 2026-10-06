@@ -11,6 +11,14 @@ pub fn yield_now() -> Result<()> {
     checked(syscall::invoke(crate::abi::SYS_YIELD, [0; 6])).map(|_| ())
 }
 
+pub fn list(output: &mut [crate::abi::ProcessInfo; crate::abi::MAX_PROCESSES]) -> Result<usize> {
+    let count = checked(syscall::invoke(
+        crate::abi::SYS_PROCESS_LIST,
+        [output.as_mut_ptr() as u64, output.len() as u64, 0, 0, 0, 0],
+    ))?;
+    usize::try_from(count).map_err(|_| Error::INVALID_ARGUMENT)
+}
+
 pub fn exec(path: &str, arguments: &[&str], environment: &[&str]) -> Result<usize> {
     let path = path_bytes(path, crate::abi::MAX_EXEC_ITEM_SIZE)?;
     if arguments.len() > crate::abi::MAX_EXEC_ARGS || environment.len() > crate::abi::MAX_EXEC_ENV {

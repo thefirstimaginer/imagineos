@@ -9,7 +9,7 @@ use crate::paging::{self, AddressSpace, MapError};
 use crate::syscall::TrapFrame;
 pub use imagineos_abi::UserArg;
 
-const MAX_PROCESSES: usize = 4;
+const MAX_PROCESSES: usize = imagineos_abi::MAX_PROCESSES;
 // The synchronous DFS installer nests large journal transaction buffers.
 const KERNEL_STACK_SIZE: usize = 64 * 1024;
 const USER_STACK_SIZE: u64 = 8 * 4096;
@@ -103,18 +103,30 @@ static KERNEL_STACKS: SharedStacks = SharedStacks(UnsafeCell::new(KernelStacks(
 struct Process {
     pid: usize,
     active: bool,
+    stopped: bool,
     allows_disk_install: bool,
     frame: *mut TrapFrame,
     address_space: Option<AddressSpace>,
+    name: [u8; imagineos_abi::PROCESS_NAME_SIZE],
+    pending_signals: u64,
+    signal_actions: [u64; 32],
+    signal_restorer: u64,
+    signal_frame: Option<TrapFrame>,
 }
 
 impl Process {
     const EMPTY: Self = Self {
         pid: 0,
         active: false,
+        stopped: false,
         allows_disk_install: false,
         frame: ptr::null_mut(),
         address_space: None,
+        name: [0; imagineos_abi::PROCESS_NAME_SIZE],
+        pending_signals: 0,
+        signal_actions: [imagineos_abi::SIGNAL_DEFAULT; 32],
+        signal_restorer: 0,
+        signal_frame: None,
     };
 }
 
@@ -164,7 +176,7 @@ pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
         }
         let slot = scheduler.count;
         let arguments: [&[u8]; 1] = [b"/sbin/init"];
-        let process = load_elf(image, pid, slot, &arguments, &[], false)?;
+        let process = load_elf(image, pid, slot, &arguments, &[], false, "/sbin/init")?;
         scheduler.processes[scheduler.count] = process;
         scheduler.count += 1;
     }
@@ -181,6 +193,7 @@ fn load_elf(
     arguments: &[&[u8]],
     environment: &[&[u8]],
     allows_disk_install: bool,
+    name: &str,
 ) -> Result<Process, LoadError> {
     debug_log("elf: validating header\n");
     let elf = Elf64::parse(image).map_err(LoadError::InvalidElf)?;
@@ -262,12 +275,21 @@ fn load_elf(
             rsi: user_argv,
         });
     }
+    let mut process_name = [0; imagineos_abi::PROCESS_NAME_SIZE];
+    let copied_name_length = name.len().min(process_name.len());
+    process_name[..copied_name_length].copy_from_slice(&name.as_bytes()[..copied_name_length]);
     Ok(Process {
         pid,
         active: true,
+        stopped: false,
         allows_disk_install,
         frame,
         address_space: Some(address_space),
+        name: process_name,
+        pending_signals: 0,
+        signal_actions: [imagineos_abi::SIGNAL_DEFAULT; 32],
+        signal_restorer: 0,
+        signal_frame: None,
     })
 }
 
@@ -417,6 +439,162 @@ pub fn exit_current(frame: *mut TrapFrame) -> *mut TrapFrame {
     schedule(frame, true)
 }
 
+pub fn terminate_faulting_process() -> *mut TrapFrame {
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    let frame = scheduler.processes[scheduler.current].frame;
+    if frame.is_null() {
+        crate::kernel_halt();
+    }
+    schedule(frame, true)
+}
+
+pub fn send_signal(pid: usize, signal: u64) -> i64 {
+    if !valid_signal(signal) {
+        return -22;
+    }
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let Some(process) = scheduler
+        .processes
+        .iter_mut()
+        .find(|process| process.active && process.pid == pid)
+    else {
+        return -3;
+    };
+    if process.pid == 1 {
+        return -1;
+    }
+    process.pending_signals |= 1u64 << signal;
+    if signal == imagineos_abi::SIGNAL_CONT || signal == imagineos_abi::SIGNAL_KILL {
+        process.stopped = false;
+    }
+    0
+}
+
+pub fn set_signal_action(signal: u64, handler: u64, restorer: u64) -> i64 {
+    if !valid_signal(signal)
+        || signal == imagineos_abi::SIGNAL_KILL
+        || signal == imagineos_abi::SIGNAL_STOP
+        || (handler != imagineos_abi::SIGNAL_DEFAULT
+            && handler != imagineos_abi::SIGNAL_IGNORE
+            && (restorer == 0
+                || with_current_space(|space| {
+                    space.translate(handler).is_none() || space.translate(restorer).is_none()
+                })))
+    {
+        return -22;
+    }
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let process = &mut scheduler.processes[scheduler.current];
+    process.signal_actions[signal as usize] = handler;
+    if handler > imagineos_abi::SIGNAL_IGNORE {
+        process.signal_restorer = restorer;
+    }
+    0
+}
+
+pub fn restore_signal_context(frame: *mut TrapFrame) -> bool {
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let process = &mut scheduler.processes[scheduler.current];
+    let Some(saved) = process.signal_frame.take() else {
+        return false;
+    };
+    unsafe {
+        frame.write(saved);
+    }
+    true
+}
+
+pub fn deliver_pending_signal(frame: *mut TrapFrame) -> *mut TrapFrame {
+    if frame.is_null() {
+        return frame;
+    }
+    loop {
+        let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+        let slot = scheduler.current;
+        let process = &mut scheduler.processes[slot];
+        if !process.active {
+            return frame;
+        }
+        let Some(signal) = next_pending_signal(process.pending_signals) else {
+            return frame;
+        };
+        if process.signal_frame.is_some()
+            && signal != imagineos_abi::SIGNAL_KILL
+            && signal != imagineos_abi::SIGNAL_STOP
+        {
+            return frame;
+        }
+        process.pending_signals &= !(1u64 << signal);
+        let handler = process.signal_actions[signal as usize];
+        match handler {
+            imagineos_abi::SIGNAL_IGNORE
+                if signal != imagineos_abi::SIGNAL_KILL && signal != imagineos_abi::SIGNAL_STOP =>
+            {
+                continue;
+            }
+            _ if signal == imagineos_abi::SIGNAL_KILL
+                || (handler == imagineos_abi::SIGNAL_DEFAULT && is_terminating_signal(signal)) =>
+            {
+                return schedule(frame, true);
+            }
+            _ if signal == imagineos_abi::SIGNAL_STOP => {
+                process.stopped = true;
+                return schedule(frame, false);
+            }
+            _ if signal == imagineos_abi::SIGNAL_CONT
+                && handler <= imagineos_abi::SIGNAL_IGNORE =>
+            {
+                continue;
+            }
+            _ if handler > imagineos_abi::SIGNAL_IGNORE => {
+                let Some(space) = process.address_space else {
+                    return schedule(frame, true);
+                };
+                let interrupted = unsafe { *frame };
+                // Enter the handler with the SysV stack alignment and a return stub.
+                let stack_top = interrupted.rsp & !0xf;
+                let Some(stack_slot) = stack_top.checked_sub(8) else {
+                    return schedule(frame, true);
+                };
+                let Some(destination) = space.translate(stack_slot) else {
+                    return schedule(frame, true);
+                };
+                unsafe {
+                    ptr::write_unaligned(destination.cast::<u64>(), process.signal_restorer);
+                }
+                process.signal_frame = Some(interrupted);
+                unsafe {
+                    (*frame).rip = handler;
+                    (*frame).rdi = signal;
+                    (*frame).rsp = stack_slot;
+                }
+                return frame;
+            }
+            _ => continue,
+        }
+    }
+}
+
+pub fn snapshot() -> ([imagineos_abi::ProcessInfo; MAX_PROCESSES], usize) {
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    let mut result = [imagineos_abi::ProcessInfo::default(); MAX_PROCESSES];
+    let mut count = 0;
+    for process in scheduler.processes.iter().filter(|process| process.active) {
+        result[count] = imagineos_abi::ProcessInfo {
+            pid: process.pid as u64,
+            state: if process.stopped {
+                imagineos_abi::PROCESS_STOPPED
+            } else {
+                imagineos_abi::PROCESS_RUNNING
+            },
+            pending_signals: process.pending_signals as u32,
+            name: process.name,
+        };
+        count += 1;
+    }
+    (result, count)
+}
+
 fn schedule(frame: *mut TrapFrame, exiting: bool) -> *mut TrapFrame {
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
     let current = scheduler.current;
@@ -427,7 +605,7 @@ fn schedule(frame: *mut TrapFrame, exiting: bool) -> *mut TrapFrame {
 
     for distance in 1..=MAX_PROCESSES {
         let candidate = (current + distance) % MAX_PROCESSES;
-        if scheduler.processes[candidate].active {
+        if scheduler.processes[candidate].active && !scheduler.processes[candidate].stopped {
             scheduler.current = candidate;
             let next = scheduler.processes[candidate];
             let address_space = next.address_space.expect("process address space");
@@ -485,6 +663,7 @@ pub fn spawn_current(
         arguments,
         environment,
         path == "/bin/distroinstall",
+        path,
     ) {
         Ok(process) => process,
         Err(_) => {
@@ -507,6 +686,88 @@ pub fn spawn_current(
         (*frame).rax = pid as u64;
     }
     schedule(frame, false)
+}
+
+fn valid_signal(signal: u64) -> bool {
+    matches!(
+        signal,
+        imagineos_abi::SIGNAL_HUP
+            | imagineos_abi::SIGNAL_INT
+            | imagineos_abi::SIGNAL_KILL
+            | imagineos_abi::SIGNAL_SEGV
+            | imagineos_abi::SIGNAL_TERM
+            | imagineos_abi::SIGNAL_CONT
+            | imagineos_abi::SIGNAL_STOP
+    )
+}
+
+fn next_pending_signal(pending: u64) -> Option<u64> {
+    [
+        imagineos_abi::SIGNAL_KILL,
+        imagineos_abi::SIGNAL_STOP,
+        imagineos_abi::SIGNAL_CONT,
+        imagineos_abi::SIGNAL_HUP,
+        imagineos_abi::SIGNAL_INT,
+        imagineos_abi::SIGNAL_SEGV,
+        imagineos_abi::SIGNAL_TERM,
+    ]
+    .into_iter()
+    .find(|signal| pending & (1u64 << signal) != 0)
+}
+
+fn is_terminating_signal(signal: u64) -> bool {
+    matches!(
+        signal,
+        imagineos_abi::SIGNAL_HUP
+            | imagineos_abi::SIGNAL_INT
+            | imagineos_abi::SIGNAL_SEGV
+            | imagineos_abi::SIGNAL_TERM
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_terminating_signal, next_pending_signal, valid_signal};
+    use imagineos_abi::{
+        SIGNAL_HUP, SIGNAL_INT, SIGNAL_KILL, SIGNAL_SEGV, SIGNAL_STOP, SIGNAL_TERM,
+    };
+
+    #[test]
+    fn accepts_only_signals_implemented_by_the_kernel() {
+        for signal in [
+            SIGNAL_HUP,
+            SIGNAL_INT,
+            SIGNAL_KILL,
+            SIGNAL_SEGV,
+            SIGNAL_TERM,
+            imagineos_abi::SIGNAL_CONT,
+            SIGNAL_STOP,
+        ] {
+            assert!(valid_signal(signal));
+        }
+        assert!(!valid_signal(0));
+        assert!(!valid_signal(3));
+    }
+
+    #[test]
+    fn uncatchable_termination_signals_have_priority_when_queued() {
+        let pending = (1u64 << SIGNAL_TERM)
+            | (1u64 << SIGNAL_STOP)
+            | (1u64 << SIGNAL_KILL)
+            | (1u64 << SIGNAL_INT);
+        assert_eq!(next_pending_signal(pending), Some(SIGNAL_KILL));
+        assert_eq!(next_pending_signal(1u64 << SIGNAL_STOP), Some(SIGNAL_STOP));
+    }
+
+    #[test]
+    fn termination_defaults_match_the_supported_signal_contract() {
+        assert!(is_terminating_signal(SIGNAL_HUP));
+        assert!(is_terminating_signal(SIGNAL_INT));
+        assert!(is_terminating_signal(SIGNAL_SEGV));
+        assert!(is_terminating_signal(SIGNAL_TERM));
+        assert!(!is_terminating_signal(SIGNAL_STOP));
+        assert!(!is_terminating_signal(imagineos_abi::SIGNAL_CONT));
+    }
 }
 
 pub fn can_install_to_disk() -> bool {

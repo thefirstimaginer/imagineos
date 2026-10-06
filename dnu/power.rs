@@ -7,8 +7,16 @@ use crate::block::{BlockDevice, BlockError};
 const ACPI_HEADER_SIZE: usize = 36;
 const ACPI_TABLE_MAX_SIZE: usize = 1024 * 1024;
 const ACPI_SCI_ENABLED: u16 = 1;
-const ACPI_SLEEP_ENABLE: u16 = 1 << 13;
+const ACPI_PM1_SLEEP_TYPE_MASK: u64 = 7 << 10;
+const ACPI_PM1_SLEEP_ENABLE: u64 = 1 << 13;
 const ACPI_ENABLE_POLL_LIMIT: usize = 1_000_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AcpiRegister {
+    address_space: u8,
+    bit_width: u8,
+    address: u64,
+}
 
 struct ShutdownMailbox(AtomicBool);
 
@@ -30,12 +38,14 @@ static SHUTDOWN_MAILBOX: ShutdownMailbox = ShutdownMailbox::new();
 
 #[derive(Clone, Copy)]
 struct AcpiPowerRegisters {
-    pm1a_control: u16,
-    pm1b_control: Option<u16>,
+    pm1a_control: Option<AcpiRegister>,
+    pm1b_control: Option<AcpiRegister>,
+    sleep_control: Option<AcpiRegister>,
     sleep_type_a: u16,
     sleep_type_b: u16,
     smi_command: u16,
     acpi_enable: u8,
+    hhdm_offset: u64,
 }
 
 struct SharedAcpiPower(UnsafeCell<Option<AcpiPowerRegisters>>);
@@ -79,32 +89,43 @@ pub fn power_off() -> Result<(), BlockError> {
     };
     crate::console_write("Sync complete; requesting ACPI poweroff\n");
     unsafe {
-        if read_word(registers.pm1a_control) & ACPI_SCI_ENABLED == 0 {
-            if registers.smi_command == 0 || registers.acpi_enable == 0 {
-                return Err(BlockError::DeviceError);
-            }
-            out_byte(registers.smi_command, registers.acpi_enable);
-            let mut acpi_enabled = false;
-            for _ in 0..ACPI_ENABLE_POLL_LIMIT {
-                if read_word(registers.pm1a_control) & ACPI_SCI_ENABLED != 0 {
-                    acpi_enabled = true;
-                    break;
+        if let Some(sleep_control) = registers.sleep_control {
+            // Hardware-reduced sleep control is write-only, so it cannot be RMW.
+            let value = u64::from((registers.sleep_type_a & 7) | (1 << 5));
+            write_register(sleep_control, value, registers.hhdm_offset)
+                .ok_or(BlockError::DeviceError)?;
+        } else {
+            let pm1a = registers.pm1a_control.ok_or(BlockError::DeviceError)?;
+            if read_register(pm1a, registers.hhdm_offset).ok_or(BlockError::DeviceError)?
+                & u64::from(ACPI_SCI_ENABLED)
+                == 0
+            {
+                if registers.smi_command == 0 || registers.acpi_enable == 0 {
+                    return Err(BlockError::DeviceError);
                 }
-                core::hint::spin_loop();
+                out_byte(registers.smi_command, registers.acpi_enable);
+                let mut acpi_enabled = false;
+                for _ in 0..ACPI_ENABLE_POLL_LIMIT {
+                    if read_register(pm1a, registers.hhdm_offset).ok_or(BlockError::DeviceError)?
+                        & u64::from(ACPI_SCI_ENABLED)
+                        != 0
+                    {
+                        acpi_enabled = true;
+                        break;
+                    }
+                    core::hint::spin_loop();
+                }
+                if !acpi_enabled {
+                    return Err(BlockError::Timeout);
+                }
             }
-            if !acpi_enabled {
-                return Err(BlockError::Timeout);
+
+            if let Some(pm1b) = registers.pm1b_control {
+                write_pm1_sleep(pm1b, registers.sleep_type_b, registers.hhdm_offset)
+                    .ok_or(BlockError::DeviceError)?;
             }
-        }
-        out_word(
-            registers.pm1a_control,
-            (registers.sleep_type_a << 10) | ACPI_SLEEP_ENABLE | ACPI_SCI_ENABLED,
-        );
-        if let Some(pm1b_control) = registers.pm1b_control {
-            out_word(
-                pm1b_control,
-                (registers.sleep_type_b << 10) | ACPI_SLEEP_ENABLE | ACPI_SCI_ENABLED,
-            );
+            write_pm1_sleep(pm1a, registers.sleep_type_a, registers.hhdm_offset)
+                .ok_or(BlockError::DeviceError)?;
         }
     }
     crate::console_write("ACPI S5 poweroff requested; halting CPU\n");
@@ -113,15 +134,6 @@ pub fn power_off() -> Result<(), BlockError> {
             asm!("cli; hlt", options(nomem, nostack));
         }
     }
-}
-
-unsafe fn out_word(port: u16, value: u16) {
-    asm!(
-        "out dx, ax",
-        in("dx") port,
-        in("ax") value,
-        options(nomem, nostack, preserves_flags)
-    );
 }
 
 unsafe fn out_byte(port: u16, value: u8) {
@@ -133,15 +145,17 @@ unsafe fn out_byte(port: u16, value: u8) {
     );
 }
 
-unsafe fn read_word(port: u16) -> u16 {
-    let value: u16;
-    asm!(
-        "in ax, dx",
-        in("dx") port,
-        out("ax") value,
-        options(nomem, nostack, preserves_flags)
-    );
-    value
+fn write_pm1_sleep(register: AcpiRegister, sleep_type: u16, hhdm_offset: u64) -> Option<()> {
+    let previous = unsafe { read_register(register, hhdm_offset)? };
+    let value = pm1_sleep_value(previous, sleep_type);
+    unsafe { write_register(register, value, hhdm_offset) }
+}
+
+fn pm1_sleep_value(previous: u64, sleep_type: u16) -> u64 {
+    // Retain SCI_EN and any other firmware-configured control bits.
+    (previous & !(ACPI_PM1_SLEEP_TYPE_MASK | ACPI_PM1_SLEEP_ENABLE))
+        | (u64::from(sleep_type & 7) << 10)
+        | ACPI_PM1_SLEEP_ENABLE
 }
 
 unsafe fn discover_acpi_power_registers(
@@ -228,32 +242,36 @@ unsafe fn parse_fadt_power_registers(fadt: &[u8], hhdm_offset: u64) -> Option<Ac
         return None;
     };
 
-    let pm1a_legacy = read_u32(fadt, 64)? as u64;
-    let pm1b_legacy = read_u32(fadt, 68)? as u64;
-    let pm1a_control = if pm1a_legacy != 0 {
-        io_port(pm1a_legacy)?
+    let flags = read_u32(fadt, 112).unwrap_or(0);
+    let hardware_reduced = flags & (1 << 20) != 0;
+    let (pm1a_control, pm1b_control, sleep_control, smi_command, acpi_enable) = if hardware_reduced
+    {
+        (None, None, parse_gas(fadt, 244, 8), 0, 0)
     } else {
-        extended_io_port(fadt, 172)?
+        let control_length = fadt.get(89).copied().unwrap_or(2);
+        let pm1a = parse_pm1_register(fadt, 64, 172, control_length);
+        let pm1b = parse_pm1_register(fadt, 68, 184, control_length);
+        if pm1a.is_none() {
+            crate::console_write("ACPI FADT has no usable PM1a control register\n");
+            return None;
+        }
+        let smi_command = u16::try_from(read_u32(fadt, 48)?).unwrap_or(0);
+        (pm1a, pm1b, None, smi_command, fadt[52])
     };
-    let pm1b_control = if pm1b_legacy != 0 {
-        Some(io_port(pm1b_legacy)?)
-    } else {
-        extended_io_port(fadt, 184)
-    };
-    if pm1a_control == 0 {
-        crate::console_write("ACPI FADT has no usable PM1a control register\n");
+    if hardware_reduced && sleep_control.is_none() {
+        crate::console_write("ACPI FADT has no usable Sleep Control register\n");
         return None;
     }
-    let smi_command = read_u32(fadt, 48)?;
-    let acpi_enable = fadt[52];
 
     Some(AcpiPowerRegisters {
         pm1a_control,
         pm1b_control,
+        sleep_control,
         sleep_type_a,
         sleep_type_b,
-        smi_command: u16::try_from(smi_command).ok()?,
+        smi_command,
         acpi_enable,
+        hhdm_offset,
     })
 }
 
@@ -280,16 +298,178 @@ fn checksum_valid(bytes: &[u8]) -> bool {
     bytes.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)) == 0
 }
 
-fn io_port(address: u64) -> Option<u16> {
-    let port = u16::try_from(address).ok()?;
-    (port != 0).then_some(port)
+fn parse_pm1_register(
+    fadt: &[u8],
+    legacy_offset: usize,
+    gas_offset: usize,
+    length: u8,
+) -> Option<AcpiRegister> {
+    if length >= 2 {
+        if let Some(address) = read_u32(fadt, legacy_offset).map(u64::from) {
+            if address != 0 {
+                if let Some(register) = io_register(address, 16) {
+                    return Some(register);
+                }
+            }
+        }
+    }
+    parse_gas(fadt, gas_offset, 16)
 }
 
-fn extended_io_port(fadt: &[u8], offset: usize) -> Option<u16> {
-    if fadt.len() < offset.checked_add(12)? || fadt[offset] != 1 || fadt[offset + 1] < 16 {
+fn parse_gas(fadt: &[u8], offset: usize, minimum_width: u8) -> Option<AcpiRegister> {
+    let gas = fadt.get(offset..offset.checked_add(12)?)?;
+    let address_space = gas[0];
+    let bit_width = gas[1];
+    let bit_offset = gas[2];
+    let access_size = gas[3];
+    let address = read_u64(gas, 4)?;
+    if !matches!(address_space, 0 | 1)
+        || bit_width < minimum_width
+        || bit_offset != 0
+        || address == 0
+        || !matches!(access_size, 0..=4)
+        || !gas_access_compatible(bit_width, access_size)
+        || (address_space == 1 && io_register(address, bit_width).is_none())
+        || (address_space == 0 && !matches!(bit_width, 8 | 16 | 32 | 64))
+        || (address_space == 0 && address % u64::from(bit_width / 8) != 0)
+    {
         return None;
     }
-    io_port(read_u64(fadt, offset + 4)?)
+    Some(AcpiRegister {
+        address_space,
+        bit_width,
+        address,
+    })
+}
+
+fn gas_access_compatible(bit_width: u8, access_size: u8) -> bool {
+    access_size == 0
+        || matches!(
+            (bit_width, access_size),
+            (8, 1) | (16, 2) | (32, 3) | (64, 4)
+        )
+}
+
+fn io_register(address: u64, bit_width: u8) -> Option<AcpiRegister> {
+    if !matches!(bit_width, 8 | 16 | 32) {
+        return None;
+    }
+    let port = u16::try_from(address).ok()?;
+    let byte_width = u64::from(bit_width / 8);
+    if port == 0 || address.checked_add(byte_width - 1)? > u16::MAX as u64 {
+        return None;
+    }
+    Some(AcpiRegister {
+        address_space: 1,
+        bit_width,
+        address,
+    })
+}
+
+unsafe fn read_register(register: AcpiRegister, hhdm_offset: u64) -> Option<u64> {
+    match register.address_space {
+        1 => match register.bit_width {
+            8 => {
+                let value: u8;
+                asm!(
+                    "in al, dx",
+                    in("dx") u16::try_from(register.address).ok()?,
+                    out("al") value,
+                    options(nomem, nostack, preserves_flags)
+                );
+                Some(u64::from(value))
+            }
+            16 => {
+                let value: u16;
+                asm!(
+                    "in ax, dx",
+                    in("dx") u16::try_from(register.address).ok()?,
+                    out("ax") value,
+                    options(nomem, nostack, preserves_flags)
+                );
+                Some(u64::from(value))
+            }
+            32 => {
+                let value: u32;
+                asm!(
+                    "in eax, dx",
+                    in("dx") u16::try_from(register.address).ok()?,
+                    out("eax") value,
+                    options(nomem, nostack, preserves_flags)
+                );
+                Some(u64::from(value))
+            }
+            _ => None,
+        },
+        0 => {
+            let pointer = mmio_register_pointer(register, hhdm_offset)?;
+            Some(match register.bit_width {
+                8 => core::ptr::read_volatile(pointer.cast::<u8>()) as u64,
+                16 => core::ptr::read_volatile(pointer.cast::<u16>()) as u64,
+                32 => core::ptr::read_volatile(pointer.cast::<u32>()) as u64,
+                64 => core::ptr::read_volatile(pointer.cast::<u64>()),
+                _ => return None,
+            })
+        }
+        _ => None,
+    }
+}
+
+unsafe fn write_register(register: AcpiRegister, value: u64, hhdm_offset: u64) -> Option<()> {
+    match register.address_space {
+        1 => {
+            let port = u16::try_from(register.address).ok()?;
+            match register.bit_width {
+                8 => asm!(
+                    "out dx, al",
+                    in("dx") port,
+                    in("al") value as u8,
+                    options(nomem, nostack, preserves_flags)
+                ),
+                16 => asm!(
+                    "out dx, ax",
+                    in("dx") port,
+                    in("ax") value as u16,
+                    options(nomem, nostack, preserves_flags)
+                ),
+                32 => asm!(
+                    "out dx, eax",
+                    in("dx") port,
+                    in("eax") value as u32,
+                    options(nomem, nostack, preserves_flags)
+                ),
+                _ => return None,
+            }
+            Some(())
+        }
+        0 => {
+            let pointer = mmio_register_pointer(register, hhdm_offset)?;
+            match register.bit_width {
+                8 => core::ptr::write_volatile(pointer.cast::<u8>(), value as u8),
+                16 => core::ptr::write_volatile(pointer.cast::<u16>(), value as u16),
+                32 => core::ptr::write_volatile(pointer.cast::<u32>(), value as u32),
+                64 => core::ptr::write_volatile(pointer.cast::<u64>(), value),
+                _ => return None,
+            }
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+fn mmio_register_pointer(register: AcpiRegister, hhdm_offset: u64) -> Option<*mut u8> {
+    if register.address_space != 0 {
+        return None;
+    }
+    let byte_width = usize::from(register.bit_width).div_ceil(8);
+    if register.address % byte_width as u64 != 0 {
+        return None;
+    }
+    if !crate::paging::map_hhdm_range(hhdm_offset, register.address, byte_width) {
+        return None;
+    }
+    let virtual_address = hhdm_offset.checked_add(register.address)?;
+    Some(usize::try_from(virtual_address).ok()? as *mut u8)
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -378,7 +558,10 @@ fn aml_integer(bytes: &[u8]) -> Option<(u16, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{aml_integer, aml_package_length, parse_s5_sleep_types, ShutdownMailbox};
+    use super::{
+        aml_integer, aml_package_length, parse_gas, parse_s5_sleep_types, pm1_sleep_value,
+        ShutdownMailbox,
+    };
 
     #[test]
     fn reads_sleep_state_five_from_aml_package() {
@@ -420,5 +603,65 @@ mod tests {
         mailbox.send();
         assert!(mailbox.receive());
         assert!(!mailbox.receive());
+    }
+
+    #[test]
+    fn pm1_sleep_value_preserves_unrelated_control_bits() {
+        let previous = 0b1010_0101_0101_0111u64;
+        let value = pm1_sleep_value(previous, 5);
+        assert_eq!(value & (7 << 10), 5 << 10);
+        assert_ne!(value & (1 << 13), 0);
+        assert_eq!(
+            value & !(super::ACPI_PM1_SLEEP_TYPE_MASK | super::ACPI_PM1_SLEEP_ENABLE),
+            previous & !(super::ACPI_PM1_SLEEP_TYPE_MASK | super::ACPI_PM1_SLEEP_ENABLE)
+        );
+    }
+
+    #[test]
+    fn gas_accepts_mmio_and_rejects_unsupported_io_addresses_and_bit_offsets() {
+        let mut fadt = [0u8; 256];
+        fadt[244] = 0;
+        fadt[245] = 32;
+        fadt[248..256].copy_from_slice(&0xfed0_0000u64.to_le_bytes());
+        assert_eq!(
+            parse_gas(&fadt, 244, 16),
+            Some(super::AcpiRegister {
+                address_space: 0,
+                bit_width: 32,
+                address: 0xfed0_0000,
+            })
+        );
+
+        fadt[244] = 1;
+        fadt[248..256].copy_from_slice(&0x10000u64.to_le_bytes());
+        assert_eq!(parse_gas(&fadt, 244, 16), None);
+        fadt[248..256].copy_from_slice(&0x1234u64.to_le_bytes());
+        fadt[246] = 1;
+        assert_eq!(parse_gas(&fadt, 244, 16), None);
+    }
+
+    #[test]
+    fn gas_checks_io_width_and_memory_alignment() {
+        let mut fadt = [0u8; 256];
+        fadt[244] = 1;
+        fadt[245] = 8;
+        fadt[247] = 1;
+        fadt[248..256].copy_from_slice(&0xb2u64.to_le_bytes());
+        assert_eq!(
+            parse_gas(&fadt, 244, 8),
+            Some(super::AcpiRegister {
+                address_space: 1,
+                bit_width: 8,
+                address: 0xb2,
+            })
+        );
+        fadt[247] = 2;
+        assert_eq!(parse_gas(&fadt, 244, 8), None);
+
+        fadt[244] = 0;
+        fadt[245] = 32;
+        fadt[247] = 3;
+        fadt[248..256].copy_from_slice(&0xfed0_0001u64.to_le_bytes());
+        assert_eq!(parse_gas(&fadt, 244, 16), None);
     }
 }

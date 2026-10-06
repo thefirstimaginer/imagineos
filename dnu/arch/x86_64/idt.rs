@@ -118,6 +118,26 @@ dreamcore_syscall_stub:
     pop rbx
     pop rax
     iretq
+
+.global dreamcore_resume_trap_frame
+dreamcore_resume_trap_frame:
+    mov rsp, rdi
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    iretq
 "#
 );
 
@@ -155,6 +175,7 @@ extern "C" {
     fn dreamcore_exception_30();
     fn dreamcore_exception_31();
     fn dreamcore_syscall_stub();
+    fn dreamcore_resume_trap_frame(frame: *mut crate::syscall::TrapFrame) -> !;
 }
 
 #[no_mangle]
@@ -165,6 +186,18 @@ extern "C" fn dreamcore_exception_handler(
     cs: u64,
     cr2: u64,
 ) -> ! {
+    if cs & 3 == 3 {
+        crate::serial_log_timestamp();
+        serial_write(b"User process fault; terminating PID ");
+        serial_hex(crate::process::current_pid() as u64);
+        serial_write(b" vector=0x");
+        serial_hex(vector);
+        serial_write(b"\r\n");
+        let next = crate::process::terminate_faulting_process();
+        unsafe {
+            dreamcore_resume_trap_frame(next);
+        }
+    }
     crate::serial_log_timestamp();
     serial_write(b"FATAL EXCEPTION vector=0x");
     serial_hex(vector);
