@@ -11,6 +11,8 @@ Se necessário, crie a pasta com `mkdir -p ramfs`.
 ```sh
 rustup run stable cargo check --target x86_64-unknown-none
 rustup run stable cargo build --release --target x86_64-unknown-none
+rustup run stable cargo test --manifest-path userland/api/Cargo.toml --target x86_64-unknown-linux-gnu
+make user-programs
 rustup run stable rustc --edition 2021 --test dnu/fs/ramfs.rs -o /tmp/dreamcore-ramfs-tests
 /tmp/dreamcore-ramfs-tests
 rustup run stable rustc --edition 2021 --test dnu/exec/elf.rs -o /tmp/dreamcore-elf-tests
@@ -21,7 +23,6 @@ rustup run stable rustc --edition 2021 --test dnu/console/utf8.rs -o /tmp/dreamc
 /tmp/dreamcore-utf8-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/keyboard.rs -o /tmp/dreamcore-keyboard-tests
 /tmp/dreamcore-keyboard-tests
-make user-programs
 make .build/ramfs.tar
 tar -tf .build/ramfs.tar
 ```

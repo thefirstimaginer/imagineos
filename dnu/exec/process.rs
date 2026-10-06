@@ -7,28 +7,15 @@ use crate::elf::{Elf64, Error as ElfError};
 use crate::gdt;
 use crate::paging::{self, AddressSpace, MapError};
 use crate::syscall::TrapFrame;
+pub use imagineos_abi::UserArg;
 
 const MAX_PROCESSES: usize = 4;
 const KERNEL_STACK_SIZE: usize = 16 * 1024;
 const USER_STACK_SIZE: u64 = 8 * 4096;
 pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_0000;
 const PAGE_SIZE: u64 = 4096;
-pub const MAX_EXEC_ARGS: usize = 12;
-pub const MAX_EXEC_ENV: usize = 12;
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct UserArg {
-    pub address: u64,
-    pub length: u64,
-}
-
-impl UserArg {
-    pub const EMPTY: Self = Self {
-        address: 0,
-        length: 0,
-    };
-}
+pub const MAX_EXEC_ARGS: usize = imagineos_abi::MAX_EXEC_ARGS;
+pub const MAX_EXEC_ENV: usize = imagineos_abi::MAX_EXEC_ENV;
 
 #[repr(align(16))]
 struct KernelStacks([[u8; KERNEL_STACK_SIZE]; MAX_PROCESSES]);

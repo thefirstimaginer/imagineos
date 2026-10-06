@@ -4,22 +4,11 @@ use core::cell::UnsafeCell;
 use crate::keyboard::Keyboard;
 use crate::process::UserArg;
 use crate::{framebuffer, process};
-
-pub const SYS_WRITE: u64 = 1;
-pub const SYS_READ: u64 = 2;
-pub const SYS_YIELD: u64 = 3;
-pub const SYS_EXIT: u64 = 4;
-pub const SYS_GETPID: u64 = 5;
-pub const SYS_CLEAR: u64 = 6;
-pub const SYS_EXEC: u64 = 7;
-pub const SYS_ISDIR: u64 = 8;
-pub const SYS_ISFILE: u64 = 9;
-pub const SYS_READ_FILE: u64 = 10;
-pub const SYS_READDIR: u64 = 11;
-pub const SYS_MKDIR: u64 = 12;
-pub const SYS_TOUCH: u64 = 13;
-pub const SYS_REMOVE: u64 = 14;
-pub const SYS_WRITE_FILE: u64 = 15;
+use imagineos_abi::{
+    SYS_ABI_VERSION, SYS_CLEAR, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_ISDIR, SYS_ISFILE, SYS_MKDIR,
+    SYS_READ, SYS_READDIR, SYS_READ_FILE, SYS_REMOVE, SYS_TOUCH, SYS_WRITE, SYS_WRITE_FILE,
+    SYS_YIELD,
+};
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
 unsafe impl Sync for SharedKeyboard {}
@@ -69,6 +58,10 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             frame_ref.rax = process::current_pid() as u64;
             frame
         }
+        SYS_ABI_VERSION => {
+            frame_ref.rax = imagineos_abi::ABI_VERSION;
+            frame
+        }
         SYS_WRITE => {
             let length = (frame_ref.rsi as usize).min(512);
             let mut buffer = [0u8; 512];
@@ -90,10 +83,18 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             frame
         }
         SYS_EXEC => {
-            let length = (frame_ref.rsi as usize).min(128);
+            let length = frame_ref.rsi as usize;
+            if length == 0 || length > imagineos_abi::MAX_EXEC_ITEM_SIZE {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
             let mut path = [0u8; 128];
             if !process::copy_from_current_user(frame_ref.rdi, &mut path[..length]) {
                 frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            if path[..length].contains(&0) {
+                frame_ref.rax = (-22i64) as u64;
                 return frame;
             }
             let Ok(path) = core::str::from_utf8(&path[..length]) else {
@@ -125,13 +126,19 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                     frame_ref.rax = (-7i64) as u64;
                     return frame;
                 };
-                if length > argument_storage[index].len()
-                    || !process::copy_from_current_user(
-                        user_arguments[index].address,
-                        &mut argument_storage[index][..length],
-                    )
-                {
+                if length > argument_storage[index].len() {
+                    frame_ref.rax = (-7i64) as u64;
+                    return frame;
+                }
+                if !process::copy_from_current_user(
+                    user_arguments[index].address,
+                    &mut argument_storage[index][..length],
+                ) {
                     frame_ref.rax = (-14i64) as u64;
+                    return frame;
+                }
+                if argument_storage[index][..length].contains(&0) {
+                    frame_ref.rax = (-22i64) as u64;
                     return frame;
                 }
                 argument_lengths[index] = length;
@@ -165,13 +172,19 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                     frame_ref.rax = (-7i64) as u64;
                     return frame;
                 };
-                if length > environment_storage[index].len()
-                    || !process::copy_from_current_user(
-                        user_environment[index].address,
-                        &mut environment_storage[index][..length],
-                    )
-                {
+                if length > environment_storage[index].len() {
+                    frame_ref.rax = (-7i64) as u64;
+                    return frame;
+                }
+                if !process::copy_from_current_user(
+                    user_environment[index].address,
+                    &mut environment_storage[index][..length],
+                ) {
                     frame_ref.rax = (-14i64) as u64;
+                    return frame;
+                }
+                if environment_storage[index][..length].contains(&0) {
+                    frame_ref.rax = (-22i64) as u64;
                     return frame;
                 }
                 environment_lengths[index] = length;
@@ -188,10 +201,18 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             )
         }
         SYS_ISDIR => {
-            let length = (frame_ref.rsi as usize).min(128);
+            let length = frame_ref.rsi as usize;
+            if length == 0 || length > imagineos_abi::MAX_PATH_QUERY {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
             let mut path = [0u8; 128];
             if !process::copy_from_current_user(frame_ref.rdi, &mut path[..length]) {
                 frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            if path[..length].contains(&0) {
+                frame_ref.rax = (-22i64) as u64;
                 return frame;
             }
             let Ok(path) = core::str::from_utf8(&path[..length]) else {
@@ -202,10 +223,18 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             frame
         }
         SYS_ISFILE => {
-            let length = (frame_ref.rsi as usize).min(128);
+            let length = frame_ref.rsi as usize;
+            if length == 0 || length > imagineos_abi::MAX_PATH_QUERY {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
             let mut path = [0u8; 128];
             if !process::copy_from_current_user(frame_ref.rdi, &mut path[..length]) {
                 frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            if path[..length].contains(&0) {
+                frame_ref.rax = (-22i64) as u64;
                 return frame;
             }
             let Ok(path) = core::str::from_utf8(&path[..length]) else {
@@ -216,19 +245,34 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             frame
         }
         SYS_READ_FILE | SYS_READDIR => {
-            let path_length = (frame_ref.rsi as usize).min(128);
-            let capacity = (frame_ref.r10 as usize).min(4096);
+            let path_length = frame_ref.rsi as usize;
+            let capacity = frame_ref.r10 as usize;
+            if path_length == 0
+                || path_length > imagineos_abi::MAX_PATH_QUERY
+                || capacity > imagineos_abi::MAX_READ_BUFFER
+            {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
             let mut path = [0u8; 128];
             if !process::copy_from_current_user(frame_ref.rdi, &mut path[..path_length]) {
                 frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            if path[..path_length].contains(&0) {
+                frame_ref.rax = (-22i64) as u64;
                 return frame;
             }
             let Ok(path) = core::str::from_utf8(&path[..path_length]) else {
                 frame_ref.rax = (-22i64) as u64;
                 return frame;
             };
-            let mut buffer = [0u8; 4096];
+            let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
             let length = if frame_ref.rax == SYS_READ_FILE {
+                if crate::ramfs::is_directory(path) {
+                    frame_ref.rax = (-21i64) as u64;
+                    return frame;
+                }
                 let Some(bytes) = crate::ramfs::read(path) else {
                     frame_ref.rax = (-2i64) as u64;
                     return frame;
@@ -240,6 +284,14 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                 buffer[..bytes.len()].copy_from_slice(bytes);
                 bytes.len()
             } else {
+                if !crate::ramfs::is_directory(path) {
+                    frame_ref.rax = if crate::ramfs::is_file(path) {
+                        (-20i64) as u64
+                    } else {
+                        (-2i64) as u64
+                    };
+                    return frame;
+                }
                 let Some(length) = crate::ramfs::list_directory(path, &mut buffer[..capacity])
                 else {
                     frame_ref.rax = (-75i64) as u64;
@@ -270,7 +322,7 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
                     return frame;
                 }
             };
-            let mut contents = [0u8; crate::ramfs::MAX_WRITE_FILE_SIZE];
+            let mut contents = [0u8; imagineos_abi::MAX_WRITE_FILE_SIZE];
             if !process::copy_from_current_user(frame_ref.rdx, &mut contents[..length]) {
                 frame_ref.rax = (-14i64) as u64;
                 return frame;
@@ -314,7 +366,7 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             frame
         }
         _ => {
-            frame_ref.rax = u64::MAX;
+            frame_ref.rax = (-38i64) as u64;
             frame
         }
     }

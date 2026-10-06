@@ -1,21 +1,11 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
 use core::panic::PanicInfo;
 
-const SYS_WRITE: u64 = 1;
-const SYS_READ: u64 = 2;
-const SYS_YIELD: u64 = 3;
-const SYS_EXIT: u64 = 4;
-const SYS_GETPID: u64 = 5;
-const SYS_CLEAR: u64 = 6;
-const SYS_EXEC: u64 = 7;
-const SYS_ISDIR: u64 = 8;
-const SYS_ISFILE: u64 = 9;
-const MAX_ARGS: usize = 12;
+const MAX_ARGS: usize = imagineos::abi::MAX_EXEC_ARGS;
 const TOKEN_SIZE: usize = 128;
-const MAX_VARIABLES: usize = 12;
+const MAX_VARIABLES: usize = imagineos::abi::MAX_EXEC_ENV;
 const VARIABLE_NAME_SIZE: usize = 24;
 const VARIABLE_VALUE_SIZE: usize = 96;
 
@@ -135,13 +125,6 @@ impl ShellState {
     }
 }
 
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct UserArg {
-    address: u64,
-    length: u64,
-}
-
 #[no_mangle]
 extern "C" fn _start(
     _argc: usize,
@@ -155,9 +138,8 @@ extern "C" fn _start(
     prompt(&state);
 
     loop {
-        let codepoint = syscall0(SYS_READ) as u32;
-        let Some(character) = char::from_u32(codepoint) else {
-            continue;
+        let Ok(character) = imagineos::console::read_char() else {
+            imagineos::process::exit(1);
         };
         match character {
             '\r' | '\n' => {
@@ -182,14 +164,14 @@ extern "C" fn _start(
                 if length + bytes.len() <= line.len() {
                     line[length..length + bytes.len()].copy_from_slice(bytes);
                     length += bytes.len();
-                    unsafe {
-                        syscall3(SYS_WRITE, bytes.as_ptr() as u64, bytes.len() as u64, 0);
-                    }
+                    write_bytes(bytes);
                 }
             }
             _ => {}
         }
-        syscall0(SYS_YIELD);
+        if imagineos::process::yield_now().is_err() {
+            imagineos::process::exit(1);
+        }
     }
 }
 
@@ -219,8 +201,15 @@ fn run_command(state: &mut ShellState, line: &[u8]) {
     let arguments = &tokens[1..count];
     match command {
         b"help" => write("cd pwd echo export unset set read clear pid type exit; other commands are searched in PATH\n"),
-        b"clear" => { syscall0(SYS_CLEAR); }
-        b"pid" => print_number(syscall0(SYS_GETPID)),
+        b"clear" => {
+            if imagineos::console::clear().is_err() {
+                imagineos::process::exit(1);
+            }
+        }
+        b"pid" => match imagineos::process::pid() {
+            Ok(pid) => print_number(pid as u64),
+            Err(_) => imagineos::process::exit(1),
+        },
         b"pwd" => {
             write_bytes(&state.cwd[..state.cwd_length]);
             write("\n");
@@ -232,7 +221,7 @@ fn run_command(state: &mut ShellState, line: &[u8]) {
         b"set" => print_variables(state),
         b"read" => builtin_read(state, arguments),
         b"type" => builtin_type(state, arguments),
-        b"exit" | b"logout" => { syscall0(SYS_EXIT); }
+        b"exit" | b"logout" => imagineos::process::exit(0),
         _ => run_external(state, &tokens[..count]),
     }
 }
@@ -354,9 +343,20 @@ fn builtin_cd(state: &mut ShellState, arguments: &[Token]) {
         write("cd: path too long\n");
         return;
     };
-    if unsafe { syscall2(SYS_ISDIR, path.as_ptr() as u64, length as u64) } != 1 {
-        write("cd: directory not found\n");
+    let Ok(path_text) = core::str::from_utf8(&path[..length]) else {
+        write("cd: invalid path encoding\n");
         return;
+    };
+    match imagineos::fs::is_dir(path_text) {
+        Ok(true) => {}
+        Ok(false) => {
+            write("cd: directory not found\n");
+            return;
+        }
+        Err(_) => {
+            write("cd: cannot inspect directory\n");
+            return;
+        }
     }
     state.cwd = path;
     state.cwd_length = length;
@@ -517,8 +517,8 @@ fn builtin_read(state: &mut ShellState, arguments: &[Token]) {
     let mut value = [0u8; VARIABLE_VALUE_SIZE];
     let mut length = 0usize;
     loop {
-        let Some(character) = char::from_u32(syscall0(SYS_READ) as u32) else {
-            continue;
+        let Ok(character) = imagineos::console::read_char() else {
+            imagineos::process::exit(1);
         };
         match character {
             '\r' | '\n' => break,
@@ -557,14 +557,18 @@ fn builtin_type(state: &ShellState, arguments: &[Token]) {
             write(" is a shell builtin\n");
         } else {
             let mut path = [0u8; TOKEN_SIZE];
-            if let Some(length) = find_external(state, name, &mut path) {
-                write_bytes(name);
-                write(" is ");
-                write_bytes(&path[..length]);
-                write("\n");
-            } else {
-                write_bytes(name);
-                write(" not found\n");
+            match find_external(state, name, &mut path) {
+                Ok(Some(length)) => {
+                    write_bytes(name);
+                    write(" is ");
+                    write_bytes(&path[..length]);
+                    write("\n");
+                }
+                Ok(None) => {
+                    write_bytes(name);
+                    write(" not found\n");
+                }
+                Err(_) => write("type: cannot inspect command path\n"),
             }
         }
     }
@@ -592,9 +596,16 @@ fn is_builtin(name: &[u8]) -> bool {
 fn run_external(state: &ShellState, tokens: &[Token]) {
     let command = tokens[0].as_bytes();
     let mut path = [0u8; TOKEN_SIZE];
-    let Some(path_length) = find_external(state, command, &mut path) else {
-        write("command not found\n");
-        return;
+    let path_length = match find_external(state, command, &mut path) {
+        Ok(Some(length)) => length,
+        Ok(None) => {
+            write("command not found\n");
+            return;
+        }
+        Err(_) => {
+            write("cannot inspect command path\n");
+            return;
+        }
     };
     let result = if command == b"ls" && tokens.len() == 1 {
         let mut arguments = [Token::EMPTY; 2];
@@ -620,13 +631,18 @@ fn find_external(
     state: &ShellState,
     command: &[u8],
     output: &mut [u8; TOKEN_SIZE],
-) -> Option<usize> {
+) -> Result<Option<usize>, imagineos::Error> {
     if command.contains(&b'/') {
-        let length = normalize_path(state, command, output)?;
-        return (unsafe { syscall2(SYS_ISFILE, output.as_ptr() as u64, length as u64) } == 1)
-            .then_some(length);
+        let Some(length) = normalize_path(state, command, output) else {
+            return Ok(None);
+        };
+        let path = core::str::from_utf8(&output[..length])
+            .map_err(|_| imagineos::Error::INVALID_ARGUMENT)?;
+        return imagineos::fs::is_file(path).map(|is_file| is_file.then_some(length));
     }
-    let path = state.get_variable(b"PATH")?;
+    let Some(path) = state.get_variable(b"PATH") else {
+        return Ok(None);
+    };
     let mut start = 0usize;
     while start <= path.len() {
         let end = path[start..]
@@ -640,9 +656,11 @@ fn find_external(
         };
         let mut candidate = [0u8; TOKEN_SIZE];
         if let Some(length) = join_path(directory, command, &mut candidate) {
-            if unsafe { syscall2(SYS_ISFILE, candidate.as_ptr() as u64, length as u64) } == 1 {
+            let candidate_path = core::str::from_utf8(&candidate[..length])
+                .map_err(|_| imagineos::Error::INVALID_ARGUMENT)?;
+            if imagineos::fs::is_file(candidate_path)? {
                 output[..length].copy_from_slice(&candidate[..length]);
-                return Some(length);
+                return Ok(Some(length));
             }
         }
         if end == path.len() {
@@ -650,7 +668,7 @@ fn find_external(
         }
         start = end + 1;
     }
-    None
+    Ok(None)
 }
 
 fn join_path(directory: &[u8], command: &[u8], output: &mut [u8; TOKEN_SIZE]) -> Option<usize> {
@@ -669,22 +687,19 @@ fn join_path(directory: &[u8], command: &[u8], output: &mut [u8; TOKEN_SIZE]) ->
 }
 
 fn execute_path(state: &ShellState, path: &[u8], tokens: &[Token]) -> i64 {
-    let mut argv_metadata = [UserArg {
-        address: 0,
-        length: 0,
-    }; MAX_ARGS];
+    let Ok(path) = core::str::from_utf8(path) else {
+        return -22;
+    };
+    let mut arguments = [""; MAX_ARGS];
     for (index, token) in tokens.iter().enumerate() {
-        argv_metadata[index] = UserArg {
-            address: token.bytes.as_ptr() as u64,
-            length: token.length as u64,
+        let Ok(argument) = core::str::from_utf8(token.as_bytes()) else {
+            return -22;
         };
+        arguments[index] = argument;
     }
     let mut environment_storage =
         [[0u8; VARIABLE_NAME_SIZE + VARIABLE_VALUE_SIZE + 1]; MAX_VARIABLES];
-    let mut environment_metadata = [UserArg {
-        address: 0,
-        length: 0,
-    }; MAX_VARIABLES];
+    let mut environment_lengths = [0usize; MAX_VARIABLES];
     let mut environment_count = 0usize;
     for variable in state.variables.iter().filter(|variable| variable.active) {
         let storage = &mut environment_storage[environment_count];
@@ -692,23 +707,18 @@ fn execute_path(state: &ShellState, path: &[u8], tokens: &[Token]) -> i64 {
         storage[variable.name_length] = b'=';
         storage[variable.name_length + 1..variable.name_length + 1 + variable.value_length]
             .copy_from_slice(&variable.value[..variable.value_length]);
-        environment_metadata[environment_count] = UserArg {
-            address: storage.as_ptr() as u64,
-            length: (variable.name_length + 1 + variable.value_length) as u64,
-        };
+        environment_lengths[environment_count] = variable.name_length + 1 + variable.value_length;
         environment_count += 1;
     }
-    unsafe {
-        syscall6(
-            SYS_EXEC,
-            path.as_ptr() as u64,
-            path.len() as u64,
-            argv_metadata.as_ptr() as u64,
-            tokens.len() as u64,
-            environment_metadata.as_ptr() as u64,
-            environment_count as u64,
-        ) as i64
+    let mut environment = [""; MAX_VARIABLES];
+    for index in 0..environment_count {
+        let Ok(value) = core::str::from_utf8(&environment_storage[index][..environment_lengths[index]]) else {
+            return -22;
+        };
+        environment[index] = value;
     }
+    imagineos::process::exec(path, &arguments[..tokens.len()], &environment[..environment_count])
+        .map_or_else(|error| -(error.code() as i64), |pid| pid as i64)
 }
 
 fn write(text: &str) {
@@ -716,59 +726,9 @@ fn write(text: &str) {
 }
 
 fn write_bytes(bytes: &[u8]) {
-    unsafe {
-        syscall3(SYS_WRITE, bytes.as_ptr() as u64, bytes.len() as u64, 0);
+    if imagineos::console::write_all(bytes).is_err() {
+        imagineos::process::exit(1);
     }
-}
-
-fn syscall0(number: u64) -> u64 {
-    unsafe { syscall3(number, 0, 0, 0) }
-}
-
-unsafe fn syscall2(number: u64, first: u64, second: u64) -> u64 {
-    let result: u64;
-    asm!(
-        "int 0x80",
-        inout("rax") number => result,
-        in("rdi") first,
-        in("rsi") second,
-    );
-    result
-}
-
-unsafe fn syscall3(number: u64, first: u64, second: u64, third: u64) -> u64 {
-    let result: u64;
-    asm!(
-        "int 0x80",
-        inout("rax") number => result,
-        in("rdi") first,
-        in("rsi") second,
-        in("rdx") third,
-    );
-    result
-}
-
-unsafe fn syscall6(
-    number: u64,
-    first: u64,
-    second: u64,
-    third: u64,
-    fourth: u64,
-    fifth: u64,
-    sixth: u64,
-) -> u64 {
-    let result: u64;
-    asm!(
-        "int 0x80",
-        inout("rax") number => result,
-        in("rdi") first,
-        in("rsi") second,
-        in("rdx") third,
-        in("r10") fourth,
-        in("r8") fifth,
-        in("r9") sixth,
-    );
-    result
 }
 
 fn print_number(mut value: u64) {
@@ -789,7 +749,5 @@ fn print_number(mut value: u64) {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo<'_>) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+    imagineos::process::exit(127)
 }

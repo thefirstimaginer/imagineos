@@ -11,6 +11,8 @@
 - Heap global bump de 1 MiB e page tables user derivadas das mappings Limine.
 - Parser ELF64 x86_64, loader de `PT_LOAD`, zero de BSS e stacks user.
 - GDT ring 3, gate `int 0x80`, syscalls de I/O, yield, exit, PID e clear.
+- ABI de syscalls v1 documentada e compartilhada entre kernel e crate `imagineos`; syscall 16 consulta a versão.
+- Wrappers Rust `no_std` para console, RAMFS, processos e argumentos; init, getty, shell e utilitários usam a crate em vez de assembly duplicado.
 - Scheduler cooperativo e programas separados para init/getty/shell.
 - RAMFS USTAR montado por path; `/sbin/init` inicia como PID 1, `/sbin/getty` inicia `/bin/shell`, e comandos externos são resolvidos em `/bin`.
 - Built-ins `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type` e `exit`; parser com aspas, escapes e expansão simples de variáveis.

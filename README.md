@@ -29,6 +29,12 @@ The shell provides `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear
 
 This is a small shell, not a full POSIX language implementation: pipelines, redirection, aliases, functions, and control-flow syntax are not supported. Rust `std` is unnecessary: the kernel remains `no_std` and exposes OS operations through its own syscalls. The USTAR base stays immutable; `mkdir`, `touch`, and `rm` update a bounded in-memory overlay and changes disappear at reboot. Scheduling is cooperative round-robin; timer preemption, heap reclamation, and full W^X permissions are also pending.
 
+Rust user programs can use the reusable `no_std` crate in `userland/api/`.
+Syscall numbers and shared data structures live in `shared/abi/`; ABI v1 and
+its error and argument conventions are documented in
+[documentation/syscall-abi.md](documentation/syscall-abi.md). This userspace
+API is ImagineOS-specific and does not provide Rust `std` or POSIX compatibility.
+
 More details: [documentation/README.md](documentation/README.md), including the
 [boot flow](documentation/boot-flow.md) and
 [userspace program development guide](documentation/userspace.md).

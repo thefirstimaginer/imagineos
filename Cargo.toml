@@ -3,8 +3,13 @@ name = "dreamcore"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["shared/abi", "userland/api"]
+resolver = "2"
+
 [dependencies]
 limine = "0.5.0"
+imagineos-abi = { path = "shared/abi" }
 
 [[bin]]
 name = "dreamcore"

@@ -13,9 +13,6 @@ Crie `userland/utilities/hello.rs`:
 #![no_std]
 #![no_main]
 
-#[allow(dead_code)]
-mod common;
-
 #[no_mangle]
 extern "C" fn _start(
     _argc: usize,
@@ -23,15 +20,26 @@ extern "C" fn _start(
     _envc: usize,
     _envp: *const *const u8,
 ) -> ! {
-    common::write(b"Hello from ImagineOS!\n");
-    common::exit(0)
+    if imagineos::syscall::abi_version() != Ok(imagineos::abi::ABI_VERSION) {
+        imagineos::process::exit(2);
+    }
+    if imagineos::console::write_all(b"Hello from ImagineOS!\n").is_err() {
+        imagineos::process::exit(1);
+    }
+    imagineos::process::exit(0)
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
+    imagineos::process::exit(127)
 }
 ```
 
-Os utilitários em `userland/utilities/` compartilham `common.rs`, que fornece
-wrappers para escrever no console, encerrar o processo e acessar algumas
-operações do RAMFS. O ponto de entrada é `_start`, não `main`; o kernel chama
-essa função com `argc`, `argv`, `envc` e `envp`.
+O crate reutilizável fica em `userland/api/` e é ligado automaticamente pelo
+Makefile. O ponto de entrada é `_start`, não `main`; o kernel chama essa função
+com `argc`, `argv`, `envc` e `envp`. `userland/utilities/common.rs` permanece
+como fachada de compatibilidade enquanto utilitários mais antigos migram para
+a API tipada `imagineos`.
 
 Adicione `hello` à variável `USER_UTILITIES` no `GNUmakefile`, por exemplo:
 
@@ -77,30 +85,32 @@ estão em [Testes](testing.md).
   e vetor de argumentos, seguidos da contagem e vetor do ambiente. Argumentos
   e entradas de ambiente são strings terminadas em NUL; a contagem informa
   quantos itens há em cada vetor.
-- Para utilitários, importe `common` como no exemplo. A implementação atual
+- Para utilitários existentes, `common` preserva uma fachada temporária. Novos
+  programas devem depender da crate `imagineos`, que oferece módulos `console`,
+  `fs`, `process` e `args`, além dos tipos `Result` e `Error`. A API atual
+  oferece `console::write_all`, `console::read_char`, `fs::read_file`,
+  `fs::write_file`, `fs::list_directory`, operações de diretório e arquivos,
+  `process::pid`, `process::yield_now`, `process::exec` e `process::exit`.
+- A implementação de transição atual
   oferece `argument`, `environment_value`, `resolve_path`, `write`,
   `read_char`, `clear`, `read_file`, `write_file`, `list_directory`, `mkdir`,
   `touch`, `remove` e `exit`.
 - As chamadas de sistema usam `int 0x80`: número em `RAX`; argumentos em
-  `RDI`, `RSI`, `RDX`, `R10`, `R8` e `R9`, nessa ordem. O ABI é específico do
-  ImagineOS e ainda não é uma interface estável para terceiros.
-- Os números implementados atualmente são: `1` escrever; `2` ler um caractere
-  da entrada do console; `3` ceder a execução; `4` encerrar; `5` obter PID;
-  `6` limpar o console; `7` iniciar ELF; `8` verificar diretório; `9` verificar
-  arquivo; `10` ler arquivo; `11` listar diretório; `12` criar diretório;
-  `13` criar arquivo vazio; `14` remover arquivo ou diretório; `15` gravar
-  arquivo no overlay do RAMFS.
-- Os wrappers de `common.rs` tratam apenas parte dessas chamadas. Para usar
-  outra chamada, consulte a implementação atual em
-  [`dnu/abi/syscall.rs`](../dnu/abi/syscall.rs) e siga os wrappers existentes
-  antes de adicionar código assembly próprio.
+  `RDI`, `RSI`, `RDX`, `R10`, `R8` e `R9`, nessa ordem. Esse contrato é a ABI
+  v1 do ImagineOS; números e semânticas não devem ser reutilizados ou alterados.
+  O kernel e as aplicações compartilham as definições em
+  [`shared/abi`](../shared/abi/src/lib.rs). A syscall `16` consulta a versão
+  para que programas possam detectar incompatibilidade.
+- A lista completa de chamadas, registradores, resultados, erros e limites está
+  em [ABI de syscalls](syscall-abi.md). Não adicione assembly de syscall em
+  aplicações; estenda a crate `imagineos` e mantenha o contrato documentado.
 
 ## Limitações atuais
 
 - **Formato e linguagem:** o loader aceita ELF64 little-endian, arquitetura
   x86_64 e executáveis estáticos `ET_EXEC`. O fluxo do Makefile compila Rust
-  `no_std`; não há biblioteca padrão, libc, linker dinâmico, PIE nem suporte
-  documentado a toolchains de outras linguagens.
+  `no_std` usando a crate `imagineos`; não há biblioteca padrão, libc, linker
+  dinâmico, PIE nem suporte documentado a toolchains de outras linguagens.
 - **Entrada e execução:** o programa não recebe stdin/stdout/stderr como
   descritores de arquivo. Há chamadas para console, leitura de caractere,
   yield, exit e criação de processos, mas não há pipes, redirecionamento,
