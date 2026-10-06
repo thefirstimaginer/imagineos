@@ -17,11 +17,23 @@ Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/ramfs.tar`
 
 `dnu/exec/elf.rs` valida ELF64 little-endian x86_64 ET_EXEC, limites da tabela de programas, segmentos `PT_LOAD` e entrypoint executável. `dnu/exec/process.rs` mapeia segmentos/BSS, `argv`, `envp` e stack em cada CR3; inicia ring 3 via `iretq` e executa novos binários do RAMFS. O frame `int 0x80` inclui I/O, `yield`, `exit`, PID, `clear`, `exec`, consulta de arquivos/diretórios, leitura de arquivo e listagem de diretório. Cópias entre user/kernel são traduzidas página a página.
 
-`dnu/fs/ramfs.rs` monta o USTAR e expõe paths, leitura e listagem de diretórios. Um overlay fixo de até 128 nós representa arquivos vazios, diretórios e whiteouts mutáveis; `mkdir`, `touch` e `rm` alteram somente esse overlay em RAM, sem escrever no tar. As alterações desaparecem no reboot. As imagens executáveis são construídas no staging do Make e empacotadas dentro de `ramfs.tar`, nunca copiadas separadamente ao ESP. O shell tem built-ins de sessão, expande variáveis simples e procura comandos externos nos diretórios de `PATH`.
+`dnu/fs/ramfs.rs` monta o USTAR e expõe paths, leitura e listagem de diretórios. Um overlay fixo de até 128 nós representa arquivos, diretórios e whiteouts mutáveis; `mkdir`, `touch`, `rm` e gravações de até 4 KiB alteram somente esse overlay em RAM, sem escrever no tar. As alterações desaparecem no reboot. As imagens executáveis são construídas no staging do Make e empacotadas dentro de `ramfs.tar`, nunca copiadas separadamente ao ESP. O shell tem built-ins de sessão, expande variáveis simples e procura comandos externos nos diretórios de `PATH`.
+
+`dnu/config.rs` carrega `/home/.global/global.conf` depois de montar o RAMFS.
+O charset aceito é UTF-8 e o layout de teclado (`us` ou `abnt2`) é consultado
+durante o polling do PS/2. `globalconf` e `vi` gravam arquivos de até 4 KiB
+somente no overlay de memória; a configuração embutida para builds é a cópia
+em `ramfs/home/.global/global.conf`.
 
 ## Console e entrada
 
-`dnu/console/framebuffer.rs` escreve pixels RGB32, inclui fonte 5x7 de fallback e carrega a primeira fonte PSF1/PSF2 em `ramfs/system/fonts`. O cursor pisca via polling do TSC enquanto o syscall de leitura aguarda. `dnu/drivers/keyboard.rs` faz polling do controlador PS/2 set-1 e converte teclas US/AltGr em `char`; o shell serializa a entrada em UTF-8. COM1 continua disponível para diagnóstico e terminal QEMU.
+`dnu/console/framebuffer.rs` escreve pixels RGB32, inclui glifos de fallback
+ASCII/português, decodifica saída UTF-8 com substituição para sequências
+inválidas e carrega a primeira fonte PSF1/PSF2 em `ramfs/system/fonts`.
+`dnu/drivers/keyboard.rs` faz polling do controlador PS/2 set-1 e converte
+teclas US ou ABNT2, incluindo acentos compostos e eventos de setas. A entrada
+serial também decodifica UTF-8. COM1 continua disponível para diagnóstico e
+terminal QEMU.
 
 ## Limites
 

@@ -79,7 +79,8 @@ estão em [Testes](testing.md).
   quantos itens há em cada vetor.
 - Para utilitários, importe `common` como no exemplo. A implementação atual
   oferece `argument`, `environment_value`, `resolve_path`, `write`,
-  `read_file`, `list_directory`, `mkdir`, `touch`, `remove` e `exit`.
+  `read_char`, `clear`, `read_file`, `write_file`, `list_directory`, `mkdir`,
+  `touch`, `remove` e `exit`.
 - As chamadas de sistema usam `int 0x80`: número em `RAX`; argumentos em
   `RDI`, `RSI`, `RDX`, `R10`, `R8` e `R9`, nessa ordem. O ABI é específico do
   ImagineOS e ainda não é uma interface estável para terceiros.
@@ -87,7 +88,8 @@ estão em [Testes](testing.md).
   da entrada do console; `3` ceder a execução; `4` encerrar; `5` obter PID;
   `6` limpar o console; `7` iniciar ELF; `8` verificar diretório; `9` verificar
   arquivo; `10` ler arquivo; `11` listar diretório; `12` criar diretório;
-  `13` criar arquivo vazio; `14` remover arquivo ou diretório.
+  `13` criar arquivo vazio; `14` remover arquivo ou diretório; `15` gravar
+  arquivo no overlay do RAMFS.
 - Os wrappers de `common.rs` tratam apenas parte dessas chamadas. Para usar
   outra chamada, consulte a implementação atual em
   [`dnu/abi/syscall.rs`](../dnu/abi/syscall.rs) e siga os wrappers existentes
@@ -118,9 +120,9 @@ estão em [Testes](testing.md).
   de arquivo e listagem de diretório têm buffers de até 4 KiB. Wrappers de
   utilitários também podem impor limites menores.
 - **Arquivos e persistência:** o conteúdo base do RAMFS é um arquivo USTAR
-  somente de leitura. `mkdir`, `touch` e `remove` alteram apenas um overlay
-  volátil em memória; não há armazenamento persistente nem acesso a disco ou
-  rede. Alterações desaparecem ao reiniciar.
+  somente de leitura. `mkdir`, `touch`, `remove` e gravações de até 4 KiB
+  alteram apenas um overlay volátil em memória; não há armazenamento
+  persistente nem acesso a disco ou rede. Alterações desaparecem ao reiniciar.
 - **Estado de validação:** a implementação é experimental. Compilar e
   empacotar um programa não comprova que ele funciona no boot real; teste a
   ISO em QEMU/OVMF e verifique o comportamento no shell.
@@ -128,3 +130,26 @@ estão em [Testes](testing.md).
 Essas limitações descrevem o runtime atual e podem mudar conforme o ABI e o
 sistema evoluírem. Confira também [Estado atual e limitações](status.md) e
 [Arquitetura](architecture.md).
+
+## Configuração global, teclado e charset
+
+O arquivo inicial `ramfs/home/.global/global.conf` é incluído no USTAR como
+`/home/.global/global.conf`. O kernel lê esse arquivo durante o boot:
+
+```ini
+charset=utf-8
+keyboard=abnt2
+```
+
+UTF-8 é o único charset implementado. O driver de teclado usa o layout
+selecionado pelo arquivo; `abnt2` inclui `ç/Ç`, AltGr, teclas estendidas e
+composição básica de acentos (`´`, `` ` ``, `~`, `^` e `¨`). O layout `us`
+também está disponível. O shell recebe valores Unicode e grava texto em UTF-8.
+
+`globalconf set KEY VALUE` atualiza a cópia volátil do arquivo e aplica a
+configuração válida imediatamente. Essa alteração não sobrevive ao reboot.
+Para definir valores padrão que persistam entre builds, edite o arquivo fonte
+em `ramfs/home/.global/global.conf` antes de compilar. O framebuffer fornece
+glifos internos para ASCII e caracteres portugueses comuns e usa o mapa
+Unicode das fontes PSF quando disponível, recorrendo aos glifos internos
+quando uma fonte não contiver o caractere solicitado.

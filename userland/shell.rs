@@ -176,7 +176,7 @@ extern "C" fn _start(
                     write("\u{8} \u{8}");
                 }
             }
-            value if !value.is_control() => {
+            value if !value.is_control() && !is_keyboard_event(value) => {
                 let mut encoded = [0u8; 4];
                 let bytes = value.encode_utf8(&mut encoded).as_bytes();
                 if length + bytes.len() <= line.len() {
@@ -191,6 +191,10 @@ extern "C" fn _start(
         }
         syscall0(SYS_YIELD);
     }
+}
+
+fn is_keyboard_event(character: char) -> bool {
+    ('\u{f0000}'..='\u{f0006}').contains(&character)
 }
 
 fn prompt(state: &ShellState) {

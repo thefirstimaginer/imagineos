@@ -19,10 +19,16 @@ pub const SYS_READDIR: u64 = 11;
 pub const SYS_MKDIR: u64 = 12;
 pub const SYS_TOUCH: u64 = 13;
 pub const SYS_REMOVE: u64 = 14;
+pub const SYS_WRITE_FILE: u64 = 15;
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
 unsafe impl Sync for SharedKeyboard {}
 static KEYBOARD: SharedKeyboard = SharedKeyboard(UnsafeCell::new(Keyboard::new()));
+
+struct SharedUtf8Decoder(UnsafeCell<crate::utf8::Decoder>);
+unsafe impl Sync for SharedUtf8Decoder {}
+static SERIAL_UTF8: SharedUtf8Decoder =
+    SharedUtf8Decoder(UnsafeCell::new(crate::utf8::Decoder::new()));
 
 #[repr(C)]
 pub struct TrapFrame {
@@ -248,6 +254,44 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
             }
             frame
         }
+        SYS_WRITE_FILE => {
+            let mut path_buffer = [0u8; 256];
+            let path = match copy_user_path(frame_ref.rdi, frame_ref.rsi, &mut path_buffer) {
+                Ok(path) => path,
+                Err(error) => {
+                    frame_ref.rax = error as u64;
+                    return frame;
+                }
+            };
+            let length = match usize::try_from(frame_ref.r10) {
+                Ok(length) if length <= crate::ramfs::MAX_WRITE_FILE_SIZE => length,
+                _ => {
+                    frame_ref.rax = (-28i64) as u64;
+                    return frame;
+                }
+            };
+            let mut contents = [0u8; crate::ramfs::MAX_WRITE_FILE_SIZE];
+            if !process::copy_from_current_user(frame_ref.rdx, &mut contents[..length]) {
+                frame_ref.rax = (-14i64) as u64;
+                return frame;
+            }
+            if crate::config::is_global_config_path(path)
+                && crate::config::validate(&contents[..length]).is_err()
+            {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
+            match crate::ramfs::write_file(path, &contents[..length]) {
+                Ok(()) => {
+                    if crate::config::is_global_config_path(path) {
+                        let _ = crate::config::load(&contents[..length]);
+                    }
+                    frame_ref.rax = length as u64;
+                }
+                Err(error) => frame_ref.rax = fs_error_code(error) as u64,
+            }
+            frame
+        }
         SYS_MKDIR | SYS_TOUCH | SYS_REMOVE => {
             let mut path_buffer = [0u8; 256];
             let path = match copy_user_path(frame_ref.rdi, frame_ref.rsi, &mut path_buffer) {
@@ -343,8 +387,12 @@ fn read_tsc() -> u64 {
 
 fn serial_read_char() -> Option<char> {
     unsafe {
+        let decoder = &mut *SERIAL_UTF8.0.get();
+        if let Some(character) = decoder.push_pending() {
+            return Some(character);
+        }
         if in_port(0x3fd) & 1 != 0 {
-            Some(in_port(0x3f8) as char)
+            decoder.push(in_port(0x3f8))
         } else {
             None
         }

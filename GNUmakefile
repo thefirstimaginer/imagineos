@@ -8,7 +8,7 @@ KERNEL_FEATURES ?=
 KERNEL := target/$(TARGET)/release/dreamcore
 ISO_DIR := .build/iso
 RAMFS_IMAGE := .build/ramfs.tar
-USER_UTILITIES := cat grep ls mkdir rm touch hello
+USER_UTILITIES := cat globalconf grep ls mkdir rm touch vi hello
 RAMFS_DIRS := bin sbin home system/fonts tmp usr
 USER_PROGRAMS := .build/user/sbin/init .build/user/sbin/getty \
 	.build/user/bin/shell \

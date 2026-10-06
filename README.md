@@ -25,7 +25,7 @@ Kernel sources live in `dnu/`; userspace programs (including init and getty)
 live in `userland/`. The USTAR module serves as the initial RAM filesystem;
 there is no disk-backed root filesystem or `switch_root` implementation yet.
 
-The shell provides `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type`, and `exit`. External commands are searched through `PATH` and launched from `/bin`; utilities include `ls`, `cat`, fixed-string `grep`, `mkdir`, `touch`, and `rm`. `argv` and exported environment entries are passed to child ELFs. PSF/PSF2 fonts are searched in `ramfs/system/fonts`; a built-in framebuffer font is used when none can be loaded. The prompt cursor blinks while input is polled.
+The shell provides `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type`, and `exit`. External commands are searched through `PATH` and launched from `/bin`; utilities include `ls`, `cat`, fixed-string `grep`, `mkdir`, `touch`, `rm`, `vi`, and `globalconf`. `argv` and exported environment entries are passed to child ELFs. PSF/PSF2 fonts are searched in `ramfs/system/fonts`; built-in ASCII/Portuguese glyphs are used when a loaded font lacks a character. The prompt cursor blinks while input is polled.
 
 This is a small shell, not a full POSIX language implementation: pipelines, redirection, aliases, functions, and control-flow syntax are not supported. Rust `std` is unnecessary: the kernel remains `no_std` and exposes OS operations through its own syscalls. The USTAR base stays immutable; `mkdir`, `touch`, and `rm` update a bounded in-memory overlay and changes disappear at reboot. Scheduling is cooperative round-robin; timer preemption, heap reclamation, and full W^X permissions are also pending.
 

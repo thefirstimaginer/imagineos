@@ -2,12 +2,15 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 
 pub const SYS_WRITE: u64 = 1;
+pub const SYS_READ: u64 = 2;
+pub const SYS_CLEAR: u64 = 6;
 pub const SYS_EXIT: u64 = 4;
 pub const SYS_READ_FILE: u64 = 10;
 pub const SYS_READDIR: u64 = 11;
 pub const SYS_MKDIR: u64 = 12;
 pub const SYS_TOUCH: u64 = 13;
 pub const SYS_REMOVE: u64 = 14;
+pub const SYS_WRITE_FILE: u64 = 15;
 
 pub unsafe fn argument(argv: *const *const u8, index: usize) -> Option<&'static [u8]> {
     let pointer = *argv.add(index);
@@ -68,6 +71,16 @@ pub fn write(bytes: &[u8]) {
     }
 }
 
+pub fn read_char() -> char {
+    char::from_u32(unsafe { syscall3(SYS_READ, 0, 0, 0) as u32 }).unwrap_or('\u{fffd}')
+}
+
+pub fn clear() {
+    unsafe {
+        syscall3(SYS_CLEAR, 0, 0, 0);
+    }
+}
+
 pub fn read_file(path: &[u8], output: &mut [u8]) -> i64 {
     unsafe {
         syscall4(
@@ -76,6 +89,18 @@ pub fn read_file(path: &[u8], output: &mut [u8]) -> i64 {
             path.len() as u64,
             output.as_mut_ptr() as u64,
             output.len() as u64,
+        ) as i64
+    }
+}
+
+pub fn write_file(path: &[u8], contents: &[u8]) -> i64 {
+    unsafe {
+        syscall4(
+            SYS_WRITE_FILE,
+            path.as_ptr() as u64,
+            path.len() as u64,
+            contents.as_ptr() as u64,
+            contents.len() as u64,
         ) as i64
     }
 }

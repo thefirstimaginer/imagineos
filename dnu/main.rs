@@ -6,6 +6,8 @@ use core::panic::PanicInfo;
 use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
 use limine::BaseRevision;
 
+#[path = "config.rs"]
+mod config;
 #[path = "exec/elf.rs"]
 mod elf;
 #[path = "console/framebuffer.rs"]
@@ -28,6 +30,8 @@ mod process;
 mod ramfs;
 #[path = "abi/syscall.rs"]
 mod syscall;
+#[path = "console/utf8.rs"]
+mod utf8;
 
 #[used]
 #[link_section = ".requests"]
@@ -113,6 +117,13 @@ pub extern "C" fn _start() -> ! {
         halt();
     };
     ramfs::mount(ramfs_image);
+    if let Some(settings) = ramfs::read(config::GLOBAL_CONFIG_PATH) {
+        if config::load(settings).is_err() {
+            console_write("Global configuration invalid; using defaults\n");
+        }
+    } else {
+        console_write("Global configuration missing; using defaults\n");
+    }
     let Some(init_program) = ramfs::read("/sbin/init") else {
         console_write("RAMFS has no /sbin/init; stopping safely\n");
         halt();
@@ -140,9 +151,7 @@ pub(crate) fn console_write(text: &str) {
 
 pub(crate) fn console_write_bytes(bytes: &[u8]) {
     serial_write(bytes);
-    if let Ok(text) = core::str::from_utf8(bytes) {
-        framebuffer::write_str(text);
-    }
+    framebuffer::write_utf8(bytes);
 }
 
 fn console_number(mut value: u64) {

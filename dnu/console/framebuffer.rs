@@ -134,6 +134,27 @@ pub fn write_str(text: &str) {
     }
 }
 
+pub fn write_utf8(bytes: &[u8]) {
+    let mut remaining = bytes;
+    while !remaining.is_empty() {
+        match core::str::from_utf8(remaining) {
+            Ok(text) => {
+                write_str(text);
+                return;
+            }
+            Err(error) => {
+                let valid = error.valid_up_to();
+                if valid != 0 {
+                    write_str(core::str::from_utf8(&remaining[..valid]).unwrap_or(""));
+                }
+                write_char('\u{fffd}');
+                let invalid = error.error_len().unwrap_or(remaining.len() - valid);
+                remaining = &remaining[(valid + invalid).min(remaining.len())..];
+            }
+        }
+    }
+}
+
 pub fn write_char(character: char) {
     let console = unsafe { &mut *CONSOLE.0.get() };
     if console.address.is_null() {
@@ -153,7 +174,10 @@ pub fn write_char(character: char) {
                 erase_cell(console, console.cursor_x, console.cursor_y);
             }
         }
-        '\t' => console.cursor_x += console.font_width * 4,
+        '\t' => {
+            let tab_width = console.font_width * 4;
+            console.cursor_x = (console.cursor_x / tab_width + 1) * tab_width;
+        }
         _ => draw_glyph(console, character),
     }
     if console.cursor_x + console.font_width > console.width {
@@ -161,9 +185,7 @@ pub fn write_char(character: char) {
         console.cursor_y += console.font_height;
     }
     if console.cursor_y + console.font_height > console.height {
-        clear();
-        console.cursor_x = 0;
-        console.cursor_y = 0;
+        scroll_one_line(console);
     }
 }
 
@@ -209,17 +231,57 @@ fn erase_cell(console: &Console, x: usize, y: usize) {
     }
 }
 
+fn scroll_one_line(console: &mut Console) {
+    let rows = console.font_height.min(console.height);
+    if rows == 0 {
+        return;
+    }
+    let remaining_rows = console.height - rows;
+    for y in 0..remaining_rows {
+        for x in 0..console.width {
+            let source = unsafe {
+                ptr::read_volatile(
+                    console
+                        .address
+                        .add((y + rows) * console.pitch + x * 4)
+                        .cast::<u32>(),
+                )
+            };
+            unsafe {
+                ptr::write_volatile(
+                    console.address.add(y * console.pitch + x * 4).cast::<u32>(),
+                    source,
+                );
+            }
+        }
+    }
+    for y in remaining_rows..console.height {
+        for x in 0..console.width {
+            pixel(console, x, y, 0x101820);
+        }
+    }
+    console.cursor_y = console.cursor_y.saturating_sub(rows);
+    console.cursor_visible = false;
+}
+
 fn draw_glyph(console: &mut Console, character: char) {
     if console.font.is_null() {
+        erase_cell(console, console.cursor_x, console.cursor_y);
         draw_builtin(console, character);
         console.cursor_x += console.font_width;
         return;
     }
     let font = unsafe { core::slice::from_raw_parts(console.font, console.font_size) };
-    let glyph = glyph_index(console, font, character).unwrap_or(b'?' as usize);
+    let Some(glyph) = glyph_index(console, font, character) else {
+        erase_cell(console, console.cursor_x, console.cursor_y);
+        draw_builtin(console, character);
+        console.cursor_x += console.font_width;
+        return;
+    };
     if glyph >= console.glyph_count || console.font_width > 32 || console.font_height > 64 {
         return;
     }
+    erase_cell(console, console.cursor_x, console.cursor_y);
     let start = console.glyph_offset + glyph * console.glyph_bytes;
     let row_bytes = (console.font_width + 7) / 8;
     for row in 0..console.font_height {
@@ -304,7 +366,79 @@ fn glyph_index(console: &Console, font: &[u8], character: char) -> Option<usize>
 }
 
 fn draw_builtin(console: &Console, character: char) {
-    let pattern: [u8; 5] = match character.to_ascii_uppercase() {
+    let (base, accent) = match character {
+        'á' | 'Á' => ('A', Some(Accent::Acute)),
+        'é' | 'É' => ('E', Some(Accent::Acute)),
+        'í' | 'Í' => ('I', Some(Accent::Acute)),
+        'ó' | 'Ó' => ('O', Some(Accent::Acute)),
+        'ú' | 'Ú' => ('U', Some(Accent::Acute)),
+        'à' | 'À' => ('A', Some(Accent::Grave)),
+        'ã' | 'Ã' => ('A', Some(Accent::Tilde)),
+        'õ' | 'Õ' => ('O', Some(Accent::Tilde)),
+        'â' | 'Â' => ('A', Some(Accent::Circumflex)),
+        'ê' | 'Ê' => ('E', Some(Accent::Circumflex)),
+        'ô' | 'Ô' => ('O', Some(Accent::Circumflex)),
+        'ç' | 'Ç' => ('C', Some(Accent::Cedilla)),
+        'ü' | 'Ü' => ('U', Some(Accent::Diaeresis)),
+        _ => (character.to_ascii_uppercase(), None),
+    };
+    let mut pattern = builtin_pattern(base);
+    if let Some(accent) = accent {
+        for column in &mut pattern {
+            *column = (*column << 1) & 0x7f;
+        }
+        match accent {
+            Accent::Acute => {
+                pattern[2] |= 0b0000001;
+                pattern[3] |= 0b0000010;
+            }
+            Accent::Grave => {
+                pattern[1] |= 0b0000010;
+                pattern[2] |= 0b0000001;
+            }
+            Accent::Tilde => {
+                pattern[1] |= 0b0000010;
+                pattern[2] |= 0b0000001;
+                pattern[3] |= 0b0000010;
+            }
+            Accent::Circumflex => {
+                pattern[1] |= 0b0000010;
+                pattern[2] |= 0b0000001;
+                pattern[3] |= 0b0000010;
+            }
+            Accent::Cedilla => pattern[2] |= 0b1000000,
+            Accent::Diaeresis => {
+                pattern[1] |= 0b0000001;
+                pattern[3] |= 0b0000001;
+            }
+        }
+    }
+    for (column, bits) in pattern.iter().enumerate() {
+        for row in 0..7 {
+            if bits & (1 << row) != 0 {
+                pixel(
+                    console,
+                    console.cursor_x + column,
+                    console.cursor_y + row,
+                    0xdce8e8,
+                );
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Accent {
+    Acute,
+    Grave,
+    Tilde,
+    Circumflex,
+    Cedilla,
+    Diaeresis,
+}
+
+fn builtin_pattern(character: char) -> [u8; 5] {
+    match character.to_ascii_uppercase() {
         'A' => [0x7e, 0x11, 0x11, 0x11, 0x7e],
         'B' => [0x7f, 0x49, 0x49, 0x49, 0x36],
         'C' => [0x3e, 0x41, 0x41, 0x41, 0x22],
@@ -353,24 +487,27 @@ fn draw_builtin(console: &Console, character: char) {
         '?' => [0x02, 0x01, 0x51, 0x09, 0x06],
         '!' => [0x00, 0x00, 0x5f, 0x00, 0x00],
         '\'' => [0x00, 0x03, 0x01, 0x00, 0x00],
+        '(' => [0x00, 0x1c, 0x22, 0x41, 0x00],
+        ')' => [0x00, 0x41, 0x22, 0x1c, 0x00],
+        '*' => [0x14, 0x08, 0x3e, 0x08, 0x14],
+        '@' => [0x3e, 0x41, 0x5d, 0x55, 0x1e],
+        '[' => [0x00, 0x7f, 0x41, 0x41, 0x00],
+        ']' => [0x00, 0x41, 0x41, 0x7f, 0x00],
+        '^' => [0x08, 0x04, 0x02, 0x04, 0x08],
+        '`' => [0x00, 0x01, 0x02, 0x00, 0x00],
+        '{' => [0x00, 0x08, 0x36, 0x41, 0x00],
+        '}' => [0x00, 0x41, 0x36, 0x08, 0x00],
+        '~' => [0x08, 0x04, 0x08, 0x10, 0x08],
+        '%' => [0x63, 0x13, 0x08, 0x64, 0x63],
+        '&' => [0x36, 0x49, 0x55, 0x22, 0x50],
+        '\\' => [0x02, 0x04, 0x08, 0x10, 0x20],
+        '$' => [0x24, 0x2a, 0x7f, 0x2a, 0x12],
         '|' => [0x00, 0x00, 0x7f, 0x00, 0x00],
         '"' => [0x03, 0x00, 0x03, 0x00, 0x00],
         '#' => [0x14, 0x7f, 0x14, 0x7f, 0x14],
         '=' => [0x14, 0x14, 0x14, 0x14, 0x14],
         ' ' => [0; 5],
         _ => [0x7f, 0x41, 0x5d, 0x41, 0x7f],
-    };
-    for (column, bits) in pattern.iter().enumerate() {
-        for row in 0..7 {
-            if bits & (1 << row) != 0 {
-                pixel(
-                    console,
-                    console.cursor_x + column,
-                    console.cursor_y + row,
-                    0xdce8e8,
-                );
-            }
-        }
     }
 }
 
@@ -394,4 +531,17 @@ fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::builtin_pattern;
+
+    #[test]
+    fn built_in_font_covers_common_symbols_in_addition_to_letters() {
+        assert_ne!(builtin_pattern('A'), builtin_pattern('?'));
+        assert_ne!(builtin_pattern('@'), builtin_pattern('?'));
+        assert_ne!(builtin_pattern('['), builtin_pattern('?'));
+        assert_ne!(builtin_pattern('~'), builtin_pattern('?'));
+    }
 }

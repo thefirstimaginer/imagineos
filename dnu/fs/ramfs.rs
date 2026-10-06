@@ -1,6 +1,7 @@
 use core::cell::UnsafeCell;
 
 const BLOCK_SIZE: usize = 512;
+pub const MAX_WRITE_FILE_SIZE: usize = 4096;
 
 pub struct Archive<'a> {
     bytes: &'a [u8],
@@ -31,6 +32,8 @@ struct OverlayNode {
     path: [u8; 256],
     path_length: usize,
     kind: NodeKind,
+    data: [u8; MAX_WRITE_FILE_SIZE],
+    data_length: usize,
 }
 
 impl OverlayNode {
@@ -38,6 +41,8 @@ impl OverlayNode {
         path: [0; 256],
         path_length: 0,
         kind: NodeKind::Empty,
+        data: [0; MAX_WRITE_FILE_SIZE],
+        data_length: 0,
     };
 
     fn path(&self) -> &str {
@@ -307,7 +312,10 @@ pub fn read(path: &str) -> Option<&'static [u8]> {
         return None;
     }
     match find_overlay_node(fs, path).map(|node| node.kind) {
-        Some(NodeKind::File) => Some(&[]),
+        Some(NodeKind::File) => {
+            let node = find_overlay_node(fs, path)?;
+            Some(&node.data[..node.data_length])
+        }
         Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => None,
         Some(NodeKind::Empty) | None => fs.archive.as_ref()?.find(path),
     }
@@ -414,6 +422,33 @@ pub fn create_file(path: &str) -> Result<(), FsError> {
     }
     ensure_parent_directory(path)?;
     insert_overlay(path, NodeKind::File)
+}
+
+pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
+    if bytes.len() > MAX_WRITE_FILE_SIZE {
+        return Err(FsError::NoSpace);
+    }
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path.is_empty() {
+        return Err(FsError::IsDirectory);
+    }
+    if is_directory(path) {
+        return Err(FsError::IsDirectory);
+    }
+    if !is_file(path) {
+        ensure_parent_directory(path)?;
+    }
+    insert_overlay(path, NodeKind::File)?;
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    let node = fs
+        .overlay
+        .iter_mut()
+        .find(|node| node.kind == NodeKind::File && node.path() == path)
+        .ok_or(FsError::NoSpace)?;
+    node.data[..bytes.len()].copy_from_slice(bytes);
+    node.data[bytes.len()..].fill(0);
+    node.data_length = bytes.len();
+    Ok(())
 }
 
 pub fn create_directory(path: &str) -> Result<(), FsError> {
@@ -573,11 +608,13 @@ fn insert_overlay(path: &str, kind: NodeKind) -> Result<(), FsError> {
                 .position(|node| node.kind == NodeKind::Empty)
         })
         .ok_or(FsError::NoSpace)?;
-    let mut node = OverlayNode::EMPTY;
+    let node = &mut fs.overlay[slot];
+    node.path.fill(0);
     node.path[..path.len()].copy_from_slice(path.as_bytes());
     node.path_length = path.len();
     node.kind = kind;
-    fs.overlay[slot] = node;
+    node.data.fill(0);
+    node.data_length = 0;
     Ok(())
 }
 
@@ -718,6 +755,29 @@ mod tests {
         assert_eq!(super::create_file("/var/log/app/empty.txt"), Ok(()));
         assert_eq!(super::read("/var/log/app/empty.txt"), Some(&[][..]));
         assert_eq!(
+            super::write_file("/var/log/app/empty.txt", "ação\n".as_bytes()),
+            Ok(())
+        );
+        assert_eq!(
+            super::read("/var/log/app/empty.txt"),
+            Some("ação\n".as_bytes())
+        );
+        assert_eq!(
+            super::write_file("/var/log/app/empty.txt", b"replacement"),
+            Ok(())
+        );
+        assert_eq!(
+            super::read("/var/log/app/empty.txt"),
+            Some(&b"replacement"[..])
+        );
+        assert_eq!(
+            super::write_file(
+                "/var/log/app/empty.txt",
+                &[0; super::MAX_WRITE_FILE_SIZE + 1]
+            ),
+            Err(super::FsError::NoSpace)
+        );
+        assert_eq!(
             super::create_file("/missing/file"),
             Err(super::FsError::NotDirectory)
         );
@@ -743,6 +803,8 @@ mod tests {
             Box::leak(archive_with_file(b"bin", b"legacy", b"read-only").into_boxed_slice());
         super::mount(lower_file);
         assert_eq!(super::read("/bin/legacy"), Some(&b"read-only"[..]));
+        assert_eq!(super::write_file("/bin/legacy", b"updated"), Ok(()));
+        assert_eq!(super::read("/bin/legacy"), Some(&b"updated"[..]));
         assert_eq!(super::remove("/bin/legacy", false), Ok(()));
         assert_eq!(super::read("/bin/legacy"), None);
     }
