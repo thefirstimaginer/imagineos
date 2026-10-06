@@ -31,6 +31,7 @@
 - `fdtest` validado no QEMU: stdio, open/read/write/append/close funcionam com as tabelas de descritores fora da estrutura de processo.
 - Interface síncrona de setores de 512 bytes, driver ATA PIO do primary-master (LBA28) e parser da GPT primária com validação CRC32.
 - DFS persistente com superbloco/inodes/bitmap protegidos por checksum, extents, journal redo de metadados, replay no mount, diretórios, arquivos e metadados UID/GID/modo.
+- Login/getty com UID/GID e hostname, conta adicional opcional com senha derivada por PBKDF2-HMAC-SHA-256, verificação de permissões owner/group/other e os utilitários `su`/`sudo`.
 - Instalador e ferramenta host formatam a partição DFS e semeiam a árvore USTAR instalada; o boot tenta montar o DFS após o initramfs RAMFS e usa-o para carregar `/sbin/init`, mantendo RAMFS como fallback.
 - A fachada RAMFS roteia operações para DFS quando montado; `ls` suporta metadados e oculta nomes iniciados por ponto por padrão (`-a` para mostrar).
 - Imagem GPT inicializável testada em QEMU/OVMF: o boot pelo disco confirmou ATA primary-master, 2.097.152 setores, localização da partição DFS via GPT e início do shell.
@@ -54,12 +55,12 @@
 ## Ainda ausente ou nao validado
 
 - O scheduler não é preemptivo; faltam reclaim de frames, W^X, heap de userspace, drivers de rede e suporte completo a layouts de teclado. O armazenamento cobre apenas IDE primary-master PIO/LBA28 e GPT primária.
-- Sinais são cooperativos, não possuem máscaras, permissões por usuário nem
-  handlers aninhados. Falhas de CPU em ring 3 terminam o processo, mas ainda
+- Sinais são cooperativos, não possuem máscaras nem handlers aninhados.
+  Falhas de CPU em ring 3 terminam o processo, mas ainda
   não são encaminhadas a um handler `SIGSEGV`. `ps` não é uma atualização
   contínua: não há `top` nem contabilidade de CPU.
 - Um boot QEMU em imagem GPT confirmou montagem do DFS e início de `/sbin/init`, getty e shell; em uma repetição, o OVMF caiu no shell UEFI em vez de iniciar a imagem, então o boot pelo disco ainda precisa de uma verificação repetível. Não foi validada a persistência de uma escrita via shell nem a recuperação sob cortes de energia. O journal protege metadados, não dados dos arquivos, e pressupõe gravação atômica de setor e flush confiável. O importador USTAR não valida checksums nem cobre entradas especiais.
-- O DFS tem 256 nós, caminhos de até 255 bytes, 14 extents por arquivo e remoção recursiva limitada a 32 níveis. UID/GID/modo são exibidos, mas não há enforcement de permissões. Sem partição DFS válida, o fallback RAMFS é volátil e limitado a 128 nós/4 KiB por arquivo.
+- O DFS tem 256 nós, caminhos de até 255 bytes, 14 extents por arquivo e remoção recursiva limitada a 32 níveis. Há suporte a uma conta adicional UID/GID 1000, sem grupos suplementares ou alteração de senha após a instalação. A senha root padrão continua `root`. Sem partição DFS válida, o fallback RAMFS é volátil e limitado a 128 nós/4 KiB por arquivo.
 - `ls` ainda aceita somente um caminho e opções separadas; opções curtas combinadas não são suportadas. O shell ainda não tem pipelines, redirecionamento, aliases, funções ou `if/for/while`. UTF-8 é o único charset suportado e o mapa ABNT2 cobre apenas as teclas implementadas.
 
 Os testes locais do DFS cobrem remount, metadados, ocultação, remoção recursiva,

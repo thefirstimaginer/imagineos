@@ -11,6 +11,7 @@ pub mod process;
 pub mod shutdown;
 pub mod signals;
 pub mod syscall;
+pub mod users;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Error {

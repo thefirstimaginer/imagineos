@@ -22,20 +22,20 @@ fn run() -> imagineos::Result<()> {
 
     let mut selected = [0u8; 64];
     imagineos::console::write_all(b"Disco de destino [/dev/hda]: ")?;
-    let length = read_line(&mut selected)?;
+    let length = read_line(&mut selected, false)?;
     if length != 0 && &selected[..length] != TARGET_NAME {
         imagineos::console::write_all(b"distroinstall: destino nao suportado\n")?;
         return Err(imagineos::Error::from_errno(19));
     }
 
+    let mut account_config = configure_installation()?;
     imagineos::console::write_all(
         b"\nATENCAO: todos os dados e particoes de /dev/hda serao apagados.\n\
           A instalacao cria uma ESP UEFI e reserva o restante para o DFS.\n\
-          O ImagineOS continuara usando o RAMFS volatil nesta versao.\n\
           Digite `APAGAR /dev/hda` para a primeira confirmacao: ",
     )?;
     let mut confirmation = [0u8; 64];
-    let length = read_line(&mut confirmation)?;
+    let length = read_line(&mut confirmation, false)?;
     if &confirmation[..length] != FIRST_CONFIRMATION {
         imagineos::console::write_all(b"Instalacao cancelada.\n")?;
         return Ok(());
@@ -44,7 +44,7 @@ fn run() -> imagineos::Result<()> {
     imagineos::console::write_all(
         b"Ultima confirmacao: digite `INSTALAR` para particionar e formatar /dev/hda: ",
     )?;
-    let length = read_line(&mut confirmation)?;
+    let length = read_line(&mut confirmation, false)?;
     if &confirmation[..length] != SECOND_CONFIRMATION {
         imagineos::console::write_all(b"Instalacao cancelada; o disco nao foi alterado.\n")?;
         return Ok(());
@@ -53,13 +53,41 @@ fn run() -> imagineos::Result<()> {
     imagineos::console::write_all(
         b"Instalando. Nao desligue o computador; uma falha de I/O pode deixar o disco inutilizavel.\n",
     )?;
-    imagineos::fs::install_to_disk(0)?;
+    let result = imagineos::fs::install_to_disk_with_config(0, &account_config);
+    account_config.password.fill(0);
+    result?;
     imagineos::console::write_all(
         b"ImagineOS instalado em /dev/hda. Reinicie para testar o boot pelo disco.\n",
     )
 }
 
-fn read_line(output: &mut [u8]) -> imagineos::Result<usize> {
+fn configure_installation() -> imagineos::Result<imagineos::abi::InstallConfig> {
+    let mut config = imagineos::abi::InstallConfig::default();
+    imagineos::console::write_all(
+        b"\nConfiguracao inicial (opcional). Sem usuario adicional, o login sera root/root.\n\
+          Criar um usuario agora? [s/N]: ",
+    )?;
+    let mut answer = [0u8; 8];
+    let answer_length = read_line(&mut answer, false)?;
+    config.add_user = u8::from(answer_length != 0 && matches!(answer.first(), Some(b's' | b'S')));
+
+    if config.add_user != 0 {
+        imagineos::console::write_all(b"Nome de usuario (letras minusculas, numeros, - e _): ")?;
+        config.username_length = read_line(&mut config.username, false)? as u8;
+        imagineos::console::write_all(b"Senha: ")?;
+        config.password_length = read_line(&mut config.password, true)? as u8;
+        imagineos::console::write_all(b"Este usuario tera permissao para sudo? [s/N]: ")?;
+        let answer_length = read_line(&mut answer, false)?;
+        config.administrator =
+            u8::from(answer_length != 0 && matches!(answer.first(), Some(b's' | b'S')));
+    }
+
+    imagineos::console::write_all(b"Hostname [imagineos]: ")?;
+    config.hostname_length = read_line(&mut config.hostname, false)? as u8;
+    Ok(config)
+}
+
+fn read_line(output: &mut [u8], mask: bool) -> imagineos::Result<usize> {
     let mut length = 0usize;
     loop {
         let character = imagineos::console::read_char()?;
@@ -78,7 +106,12 @@ fn read_line(output: &mut [u8]) -> imagineos::Result<usize> {
                 if length < output.len() {
                     output[length] = character as u8;
                     length += 1;
-                    imagineos::console::write_all(&[character as u8])?;
+                    if mask {
+                        imagineos::console::write_all(b"*")?;
+                    } else {
+                        let byte = [character as u8];
+                        imagineos::console::write_all(&byte)?;
+                    }
                 } else {
                     imagineos::console::write_all(b"\x07")?;
                 }
@@ -110,7 +143,13 @@ extern "C" fn _start(
     _envp: *const *const u8,
 ) -> ! {
     if let Err(error) = run() {
-        let _ = imagineos::console::write_error(b"distroinstall: falha ao instalar no disco\n");
+        let message = if error.code() == 95 {
+            b"distroinstall: CPU sem suporte a RDRAND; nao e seguro criar o salt da senha\n"
+                as &[u8]
+        } else {
+            b"distroinstall: falha ao instalar no disco\n"
+        };
+        let _ = imagineos::console::write_error(message);
         imagineos::process::exit(error.code());
     }
     imagineos::process::exit(0)

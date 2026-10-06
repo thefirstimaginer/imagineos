@@ -52,19 +52,25 @@ chamadas recebem novos números.
 | 23 | `install_disk` | `RDI=índice do disco` | `0` após instalação inicializável; operação destrutiva |
 | 24 | `stat` | `RDI=caminho`, `RSI=tamanho`, `RDX=destino UserStat` | `0` |
 | 25 | `dmesg` | `RDI=destino`, `RSI=capacidade` | bytes da parte mais recente do log circular do kernel |
-| 26 | `shutdown_request` | nenhum | `0`; posta um pedido para o init |
+| 26 | `shutdown_request` | nenhum | UID 0: `0` e posta um pedido; outros recebem `-EPERM` |
 | 27 | `shutdown_poll` | nenhum | PID 1: `1` se havia pedido, `0` caso contrário; outros recebem `-EPERM` |
 | 28 | `power_off` | nenhum | PID 1 sincroniza o disco e solicita desligamento; outros recebem `-EPERM` |
-| 29 | `kill` | `RDI=PID`, `RSI=sinal` | `0`; `-EINVAL` para sinal desconhecido, `-ESRCH` para PID inexistente, `-EPERM` ao sinalizar PID 1 |
+| 29 | `kill` | `RDI=PID`, `RSI=sinal` | `0`; `-EINVAL` para sinal desconhecido, `-ESRCH` para PID inexistente, `-EPERM` sem permissão sobre o alvo |
 | 30 | `sigaction` | `RDI=sinal`, `RSI=handler`, `RDX=restorer` | `0`; handler `0` restaura ação padrão, `1` ignora, endereço maior que `1` registra handler |
 | 31 | `sigreturn` | nenhum | restaura o contexto salvo ao retornar de um handler |
-| 32 | `process_list` | `RDI=destino ProcessInfo[]`, `RSI=capacidade em itens` | número de processos copiados (máximo 4) |
+| 32 | `process_list` | `RDI=destino ProcessInfo[]`, `RSI=capacidade em itens` | número de processos copiados (máximo 8) |
+| 33 | `authenticate` | `RDI=usuário`, `RSI=tamanho`, `RDX=senha`, `R10=tamanho`, `R8=UID solicitado` (`0xffffffff` seleciona UID da conta) | `0` e troca da identidade autenticada; `-EPERM` se falhar |
+| 34 | `getidentity` | `RDI=destino UserIdentity` | `0` e copia UID/GID/flag administrativa/nome/hostname |
+| 35 | `install_disk_config` | `RDI=índice`, `RSI=ponteiro InstallConfig` | `0` após instalação e gravação das configurações no DFS |
 
-`install_disk` aceita apenas o processo `/bin/distroinstall` incluído na mídia
-live; o RAMFS instalado omite o utilitário e seus payloads. Discos são
-anunciados para descoberta, não como FDs de bloco graváveis. A confirmação
-dupla é feita pelo utilitário e não substitui permissões/capabilities gerais
-de sistema, que ainda não existem.
+`install_disk` e `install_disk_config` aceitam apenas o processo
+`/bin/distroinstall` incluído na mídia live e UID 0; o RAMFS instalado omite o
+utilitário e seus payloads. Discos são anunciados para descoberta, não como FDs
+de bloco graváveis. `InstallConfig` tem comprimentos fixos para nome (32 bytes),
+senha (64 bytes) e hostname (64 bytes), além de flags `add_user` e
+`administrator`. O instalador valida o contrato, prepara o hash e exige RDRAND
+antes de apagar o disco. A configuração é salva em `/etc/hostname` e, se
+solicitado, `/etc/users.db`.
 
 `UserArg` é uma estrutura `#[repr(C)]` composta por dois `u64`: endereço e
 comprimento. `exec` aceita até 12 argumentos e 12 entradas de ambiente, cada
@@ -77,14 +83,16 @@ Cada processo tem 16 slots de descritor: `0` stdin, `1` stdout, `2` stderr e
 `exec`; descritores de arquivo herdam caminho, flags e offset por cópia, não
 como uma descrição de arquivo compartilhada. Stdin lê caracteres Unicode do
 console e os entrega em UTF-8; stdout/stderr escrevem no console/framebuffer.
-Os arquivos abertos são arquivos do RAMFS; escrita faz copy-up para o overlay
-volátil e cada arquivo continua limitado a 4 KiB.
+Os arquivos abertos são arquivos do RAMFS/DFS; no fallback RAMFS a escrita faz
+copy-up para o overlay volátil e cada arquivo continua limitado a 4 KiB.
 
 Flags aceitas por `open`: `OPEN_READ=1`, `OPEN_WRITE=2`, `OPEN_CREATE=4`,
 `OPEN_TRUNCATE=8` e `OPEN_APPEND=16`. É necessário solicitar leitura ou escrita;
 truncate e append exigem escrita e não podem ser combinados. O kernel ainda
 não oferece diretórios como streams, seek, pipes, sockets, dispositivos por
-FD, permissões ou compartilhamento atômico de offsets entre processos.
+FD ou compartilhamento atômico de offsets entre processos. Leitura, escrita,
+listagem e execução verificam owner/group/other com UID/GID; UID 0 é o único
+bypass. O sinal só pode ser enviado ao próprio UID ou por UID 0.
 
 Erros usados atualmente incluem `EPERM=1`, `ENOENT=2`, `ESRCH=3`, `EFAULT=14`, `ENODEV=19`, `EINVAL=22`,
 `E2BIG=7`, `ENOEXEC=8`, `EAGAIN=11`, `ENOSPC=28`, `ENOSYS=38`,
@@ -101,8 +109,8 @@ cronológica; se o buffer do userspace for menor, recebe apenas a parte final.
 O buffer mantém os últimos 4 KiB de mensagens enviadas pelo logger do kernel.
 As syscalls 26–28 implementam um mailbox IPC limitado a pedidos de
 desligamento: solicitações repetidas antes da leitura são agrupadas. Não é um
-sistema de mensagens genérico. O kernel permite que qualquer processo peça o
-desligamento, mas somente PID 1 pode consumir o pedido ou iniciar o poweroff.
+sistema de mensagens genérico. Somente UID 0 pode pedir o desligamento; PID 1
+pode consumir o pedido ou iniciar o poweroff.
 Antes do poweroff, o kernel executa `flush` no disco ATA detectado. A rotina
 usa o RSDP do Limine para encontrar o FADT, os registradores PM1 e o estado S5
 `_S5_` na DSDT; formatos AML ou registradores que não forem reconhecidos fazem
@@ -115,14 +123,14 @@ processo suspenso. HUP, INT, SEGV e TERM terminam o processo por padrão, mas
 podem ser ignorados ou capturados. Um handler recebe o número do sinal em
 `RDI`; ao retornar, o stub de sinal da API executa `sigreturn`. Sinais ficam
 pendentes até o processo voltar a uma syscall, pois o scheduler atual é
-cooperativo. Não há máscaras, filas de ocorrências repetidas, IDs de usuário,
-permissões POSIX ou handlers aninhados. PID 1 é protegido e não pode receber
+cooperativo. Não há máscaras, filas de ocorrências repetidas ou handlers
+aninhados. PID 1 é protegido e não pode receber
 sinais via `kill`. Exceções originadas em ring 3 encerram apenas o processo
 afetado; elas ainda não são entregues a um handler `SIGSEGV`.
 
 `ProcessInfo` é uma estrutura `#[repr(C)]` com PID, estado numérico, máscara de
 sinais pendentes e nome do executável em um campo fixo de 64 bytes. A syscall
-de listagem retorna um snapshot, limitado aos quatro slots do scheduler; não
+de listagem retorna um snapshot, limitado aos oito slots do scheduler; não
 fornece uso de CPU, estados de serviço ou atualização contínua.
 
 ## Crate Rust de userspace

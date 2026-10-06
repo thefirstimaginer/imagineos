@@ -81,3 +81,11 @@ O scheduler e cooperativo e nao ha timer/APIC ou preempcao. Todas as paginas use
 O driver atual suporta apenas o master IDE primário via PIO e LBA28; não há enumeração PCI, AHCI, NVMe, VirtIO, interrupções de disco, cache ou concorrência de I/O. A GPT secundária não é usada como fallback. O ESP contém os arquivos de boot e o módulo RAMFS; a imagem de teste também tem uma partição DFS formatada e semeada.
 
 O shell não implementa a gramática POSIX completa: sem pipes, redirecionamento, aliases, funções ou comandos compostos. `ls`, `cat`, `grep`, `mkdir`, `touch` e `rm` são ELFs externos; `grep` é literal e os leitores têm limite de 4 KiB. Os metadados DFS têm journal, mas os dados dos arquivos não são journaled; sem DFS, alterações ficam no overlay volátil. `cp` e `mv` ainda não existem.
+
+Getty autentica `root`/`root` ou a conta adicional persistida pelo instalador.
+Processos carregam UID/GID e flag administrativa herdados; o kernel aplica os
+bits owner/group/other em operações de arquivos e só aceita elevação `sudo`
+para uma conta administradora autenticada. A senha da conta adicional é
+armazenada como PBKDF2-HMAC-SHA-256 com salt RDRAND. O root padrão continua
+com senha fixa `root`; não há grupos suplementares, ACLs ou alteração posterior
+de senha.

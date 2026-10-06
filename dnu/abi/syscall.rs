@@ -7,11 +7,12 @@ use crate::{framebuffer, process};
 use imagineos_abi::UserStat;
 use imagineos_abi::SYS_STAT;
 use imagineos_abi::{
-    OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION, SYS_CLEAR,
-    SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_DMESG, SYS_EXEC, SYS_EXIT, SYS_GETPID,
-    SYS_INSTALL_DISK, SYS_ISDIR, SYS_ISFILE, SYS_MKDIR, SYS_OPEN, SYS_POWER_OFF, SYS_READ,
-    SYS_READDIR, SYS_READ_FD, SYS_READ_FILE, SYS_REMOVE, SYS_SHUTDOWN_POLL, SYS_SHUTDOWN_REQUEST,
-    SYS_TOUCH, SYS_WRITE, SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
+    OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION,
+    SYS_AUTHENTICATE, SYS_CLEAR, SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_DMESG, SYS_EXEC,
+    SYS_EXIT, SYS_GETIDENTITY, SYS_GETPID, SYS_INSTALL_DISK, SYS_INSTALL_DISK_CONFIG, SYS_ISDIR,
+    SYS_ISFILE, SYS_MKDIR, SYS_OPEN, SYS_POWER_OFF, SYS_READ, SYS_READDIR, SYS_READ_FD,
+    SYS_READ_FILE, SYS_REMOVE, SYS_SHUTDOWN_POLL, SYS_SHUTDOWN_REQUEST, SYS_TOUCH, SYS_WRITE,
+    SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
 };
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
@@ -68,13 +69,57 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
             frame_ref.rax = process::current_pid() as u64;
             frame
         }
+        SYS_GETIDENTITY => {
+            let identity = process::current_identity();
+            let bytes = unsafe {
+                core::slice::from_raw_parts(
+                    (&identity as *const imagineos_abi::UserIdentity).cast::<u8>(),
+                    core::mem::size_of::<imagineos_abi::UserIdentity>(),
+                )
+            };
+            frame_ref.rax = if process::copy_to_current_user(frame_ref.rdi, bytes) {
+                0
+            } else {
+                (-14i64) as u64
+            };
+            frame
+        }
+        SYS_AUTHENTICATE => {
+            let username_length = frame_ref.rsi as usize;
+            let password_length = frame_ref.r10 as usize;
+            let mut username = [0u8; imagineos_abi::ACCOUNT_NAME_SIZE];
+            let mut password = [0u8; imagineos_abi::ACCOUNT_PASSWORD_SIZE];
+            if username_length == 0
+                || username_length > username.len()
+                || password_length == 0
+                || password_length > password.len()
+                || !process::copy_from_current_user(frame_ref.rdi, &mut username[..username_length])
+                || !process::copy_from_current_user(frame_ref.rdx, &mut password[..password_length])
+                || username[..username_length].contains(&0)
+                || password[..password_length].contains(&0)
+            {
+                frame_ref.rax = (-22i64) as u64;
+            } else {
+                frame_ref.rax = process::authenticate_current(
+                    &username[..username_length],
+                    &password[..password_length],
+                    frame_ref.r8 as u32,
+                ) as u64;
+            }
+            password.fill(0);
+            frame
+        }
         SYS_ABI_VERSION => {
             frame_ref.rax = imagineos_abi::ABI_VERSION;
             frame
         }
         SYS_SHUTDOWN_REQUEST => {
-            crate::power::request_shutdown();
-            frame_ref.rax = 0;
+            frame_ref.rax = if process::current_credentials().0 == 0 {
+                crate::power::request_shutdown();
+                0
+            } else {
+                (-1i64) as u64
+            };
             frame
         }
         SYS_SHUTDOWN_POLL => {
@@ -169,19 +214,41 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
             };
             frame
         }
-        SYS_INSTALL_DISK => {
-            frame_ref.rax = if !process::can_install_to_disk() {
+        SYS_INSTALL_DISK | SYS_INSTALL_DISK_CONFIG => {
+            frame_ref.rax = if !process::can_install_to_disk()
+                || process::current_credentials().0 != 0
+            {
                 (-1i64) as u64
             } else if frame_ref.rdi != 0 {
                 (-19i64) as u64
             } else {
-                match crate::installer::install_primary_master() {
+                let mut install_config = imagineos_abi::InstallConfig::default();
+                let config_is_valid = frame_ref.rax == SYS_INSTALL_DISK
+                    || process::copy_from_current_user(frame_ref.rsi, unsafe {
+                        core::slice::from_raw_parts_mut(
+                            (&mut install_config as *mut imagineos_abi::InstallConfig).cast::<u8>(),
+                            core::mem::size_of::<imagineos_abi::InstallConfig>(),
+                        )
+                    });
+                if !config_is_valid {
+                    frame_ref.rax = (-14i64) as u64;
+                    return frame;
+                }
+                if let Err(()) = crate::accounts::validate_install_config(&install_config) {
+                    frame_ref.rax = (-22i64) as u64;
+                    return frame;
+                }
+                let result = crate::installer::install_primary_master(&install_config);
+                install_config.password.fill(0);
+                match result {
                     Ok(()) => 0,
                     Err(crate::installer::InstallError::NoDisk) => (-19i64) as u64,
                     Err(crate::installer::InstallError::DiskTooSmall) => (-28i64) as u64,
                     Err(crate::installer::InstallError::MissingPayload) => (-2i64) as u64,
                     Err(crate::installer::InstallError::PayloadTooLarge) => (-28i64) as u64,
                     Err(crate::installer::InstallError::DfsFormat) => (-5i64) as u64,
+                    Err(crate::installer::InstallError::InvalidAccountConfig) => (-22i64) as u64,
+                    Err(crate::installer::InstallError::EntropyUnavailable) => (-95i64) as u64,
                     Err(crate::installer::InstallError::Block(_)) => (-5i64) as u64,
                 }
             };
@@ -344,6 +411,10 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
                 frame_ref.rax = (-22i64) as u64;
                 return frame;
             };
+            if !access_allowed(path, 4) {
+                frame_ref.rax = (-13i64) as u64;
+                return frame;
+            }
             frame_ref.rax = crate::ramfs::is_directory(path) as u64;
             frame
         }
@@ -366,6 +437,10 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
                 frame_ref.rax = (-22i64) as u64;
                 return frame;
             };
+            if !access_allowed(path, 4) {
+                frame_ref.rax = (-13i64) as u64;
+                return frame;
+            }
             frame_ref.rax = crate::ramfs::is_file(path) as u64;
             frame
         }
@@ -392,6 +467,10 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
                 frame_ref.rax = (-22i64) as u64;
                 return frame;
             };
+            if !access_allowed(path, if frame_ref.rax == SYS_READ_FILE { 4 } else { 5 }) {
+                frame_ref.rax = (-13i64) as u64;
+                return frame;
+            }
             let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
             let length = if frame_ref.rax == SYS_READ_FILE {
                 if crate::ramfs::is_directory(path) {
@@ -493,6 +572,15 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
                     return frame;
                 }
             };
+            let allowed = if crate::ramfs::is_file(path) {
+                access_allowed(path, 2)
+            } else {
+                parent_access_allowed(path, 3)
+            };
+            if !allowed {
+                frame_ref.rax = (-13i64) as u64;
+                return frame;
+            }
             let mut contents = [0u8; imagineos_abi::MAX_WRITE_FILE_SIZE];
             if !process::copy_from_current_user(frame_ref.rdx, &mut contents[..length]) {
                 frame_ref.rax = (-14i64) as u64;
@@ -504,7 +592,8 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
                 frame_ref.rax = (-22i64) as u64;
                 return frame;
             }
-            match crate::ramfs::write_file(path, &contents[..length]) {
+            let (uid, gid, _) = process::current_credentials();
+            match crate::ramfs::write_file_as(path, &contents[..length], uid, gid) {
                 Ok(()) => {
                     if crate::config::is_global_config_path(path) {
                         let _ = crate::config::load(&contents[..length]);
@@ -539,12 +628,22 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
                     return frame;
                 }
             };
+            let parent_access = if frame_ref.rax == SYS_MKDIR && frame_ref.rdx != 0 {
+                recursive_parent_access_allowed(path, 3)
+            } else {
+                parent_access_allowed(path, 3)
+            };
+            if !parent_access {
+                frame_ref.rax = (-13i64) as u64;
+                return frame;
+            }
+            let (uid, gid, _) = process::current_credentials();
             let result = match frame_ref.rax {
                 SYS_MKDIR if frame_ref.rdx != 0 => {
-                    crate::ramfs::create_directory_with_parents(path, true)
+                    crate::ramfs::create_directory_with_parents_as(path, true, uid, gid)
                 }
-                SYS_MKDIR => crate::ramfs::create_directory(path),
-                SYS_TOUCH => crate::ramfs::create_file(path),
+                SYS_MKDIR => crate::ramfs::create_directory_as(path, uid, gid),
+                SYS_TOUCH => crate::ramfs::create_file_as(path, uid, gid),
                 SYS_REMOVE => crate::ramfs::remove(path, frame_ref.rdx != 0),
                 _ => unreachable!(),
             };
@@ -597,18 +696,32 @@ fn open_file(frame: &mut TrapFrame) -> *mut TrapFrame {
         frame.rax = (-21i64) as u64;
         return frame;
     }
+    let exists = crate::ramfs::is_file(path);
+    if exists
+        && ((flags & OPEN_READ != 0 && !access_allowed(path, 4))
+            || (flags & OPEN_WRITE != 0 && !access_allowed(path, 2)))
+    {
+        frame.rax = (-13i64) as u64;
+        return frame;
+    }
+    if !exists && flags & OPEN_CREATE != 0 && !parent_access_allowed(path, 3) {
+        frame.rax = (-13i64) as u64;
+        return frame;
+    }
     if !crate::ramfs::is_file(path) {
         if flags & OPEN_CREATE == 0 {
             frame.rax = (-2i64) as u64;
             return frame;
         }
-        if let Err(error) = crate::ramfs::create_file(path) {
+        let (uid, gid, _) = process::current_credentials();
+        if let Err(error) = crate::ramfs::create_file_as(path, uid, gid) {
             frame.rax = fs_error_code(error) as u64;
             return frame;
         }
     }
     if flags & OPEN_TRUNCATE != 0 {
-        if let Err(error) = crate::ramfs::write_file(path, &[]) {
+        let (uid, gid, _) = process::current_credentials();
+        if let Err(error) = crate::ramfs::write_file_as(path, &[], uid, gid) {
             frame.rax = fs_error_code(error) as u64;
             return frame;
         }
@@ -629,6 +742,111 @@ fn open_file(frame: &mut TrapFrame) -> *mut TrapFrame {
     frame
 }
 
+fn access_allowed(path: &str, requested: u16) -> bool {
+    let (uid, gid, _) = process::current_credentials();
+    if uid == 0 {
+        return true;
+    }
+    if !ancestors_searchable(path, uid, gid) {
+        return false;
+    }
+    let Some(metadata) = crate::ramfs::metadata(path) else {
+        return false;
+    };
+    crate::permissions::allows(
+        metadata.mode,
+        metadata.uid,
+        metadata.gid,
+        uid,
+        gid,
+        requested,
+    )
+}
+
+fn ancestors_searchable(path: &str, uid: u32, gid: u32) -> bool {
+    let mut prefix = [0u8; imagineos_abi::MAX_MUTABLE_PATH];
+    let mut length = 0usize;
+    let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+    for component in parent
+        .trim_matches('/')
+        .split('/')
+        .take_while(|part| !part.is_empty())
+    {
+        if length != 0 {
+            prefix[length] = b'/';
+            length += 1;
+        }
+        if length + component.len() > prefix.len() {
+            return false;
+        }
+        prefix[length..length + component.len()].copy_from_slice(component.as_bytes());
+        length += component.len();
+        let directory = core::str::from_utf8(&prefix[..length]).unwrap_or("");
+        if !crate::ramfs::metadata(directory).is_some_and(|metadata| {
+            if !metadata.is_directory {
+                return false;
+            }
+            crate::permissions::allows(metadata.mode, metadata.uid, metadata.gid, uid, gid, 1)
+        }) {
+            return false;
+        }
+    }
+    true
+}
+
+fn parent_access_allowed(path: &str, requested: u16) -> bool {
+    let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+    access_allowed(parent, requested)
+}
+
+fn recursive_parent_access_allowed(path: &str, requested: u16) -> bool {
+    let (uid, gid, _) = process::current_credentials();
+    if uid == 0 {
+        return true;
+    }
+    let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+    let mut prefix = [0u8; imagineos_abi::MAX_MUTABLE_PATH];
+    let mut length = 0usize;
+    let mut last_existing = crate::ramfs::metadata("");
+    for component in parent.trim_matches('/').split('/') {
+        if component.is_empty() {
+            continue;
+        }
+        if length != 0 {
+            prefix[length] = b'/';
+            length += 1;
+        }
+        if length + component.len() > prefix.len() {
+            return false;
+        }
+        prefix[length..length + component.len()].copy_from_slice(component.as_bytes());
+        length += component.len();
+        let current = core::str::from_utf8(&prefix[..length]).unwrap_or("");
+        match crate::ramfs::metadata(current) {
+            Some(metadata) if metadata.is_directory => {
+                if !mode_allows(metadata, uid, gid, 1) {
+                    return false;
+                }
+                last_existing = Some(metadata);
+            }
+            Some(_) => return false,
+            None => break,
+        }
+    }
+    last_existing.is_some_and(|metadata| mode_allows(metadata, uid, gid, requested))
+}
+
+fn mode_allows(metadata: crate::dfs::Metadata, uid: u32, gid: u32, requested: u16) -> bool {
+    crate::permissions::allows(
+        metadata.mode,
+        metadata.uid,
+        metadata.gid,
+        uid,
+        gid,
+        requested,
+    )
+}
+
 fn read_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
     let (Ok(fd), Ok(capacity)) = (usize::try_from(frame.rdi), usize::try_from(frame.rdx)) else {
         frame.rax = (-22i64) as u64;
@@ -646,6 +864,14 @@ fn read_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
         frame.rax = (-9i64) as u64;
         return frame;
     };
+    if descriptor.kind == process::DescriptorKind::File {
+        let path = core::str::from_utf8(&descriptor.path[..descriptor.path_length])
+            .expect("descriptor path is validated on open");
+        if !access_allowed(path, 4) {
+            frame.rax = (-13i64) as u64;
+            return frame;
+        }
+    }
     let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
     let length = match descriptor.kind {
         process::DescriptorKind::Stdin => {
@@ -711,6 +937,14 @@ fn write_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
         frame.rax = (-9i64) as u64;
         return frame;
     };
+    if descriptor.kind == process::DescriptorKind::File {
+        let path = core::str::from_utf8(&descriptor.path[..descriptor.path_length])
+            .expect("descriptor path is validated on open");
+        if !access_allowed(path, 2) {
+            frame.rax = (-13i64) as u64;
+            return frame;
+        }
+    }
     let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
     if !process::copy_from_current_user(frame.rsi, &mut buffer[..length]) {
         frame.rax = (-14i64) as u64;

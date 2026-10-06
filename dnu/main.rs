@@ -5,6 +5,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+mod accounts;
 #[path = "drivers/ata.rs"]
 pub mod ata;
 #[path = "drivers/block.rs"]
@@ -13,6 +14,7 @@ pub mod block;
 mod boot_info;
 #[path = "config.rs"]
 mod config;
+mod crypto;
 #[path = "fs/dfs.rs"]
 mod dfs;
 #[path = "exec/elf.rs"]
@@ -37,6 +39,8 @@ mod keyboard;
 mod memory;
 #[path = "arch/x86_64/paging.rs"]
 mod paging;
+#[path = "fs/permissions.rs"]
+mod permissions;
 #[path = "power.rs"]
 mod power;
 #[path = "exec/process.rs"]
@@ -205,7 +209,7 @@ pub(crate) fn console_write(text: &str) {
 
 pub(crate) fn console_write_bytes(bytes: &[u8]) {
     serial_write(bytes);
-    framebuffer::write_utf8(bytes);
+    framebuffer::write_ansi(bytes);
 }
 
 pub(crate) fn serial_log_timestamp() {

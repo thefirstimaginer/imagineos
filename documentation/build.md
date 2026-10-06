@@ -68,8 +68,9 @@ remova somente `.build/imagineos-disk.img` e rode `make disk-image` novamente.
 
 Para testar o instalador que roda no userspace, use `make run-installer`. Ele
 inicia a ISO e anexa `.build/installer-target.img`, uma imagem de 1 GiB criada
-apenas se ainda não existir. Execute `distroinstall` no shell e confirme o
-alvo com as duas frases solicitadas; todos os dados da imagem alvo serão
+apenas se ainda não existir. Execute `distroinstall` no shell, informe
+opcionalmente conta/senha/hostname e confirme o alvo com as duas frases
+solicitadas; todos os dados da imagem alvo serão
 apagados. Depois, `make run-disk DISK_IMAGE=.build/installer-target.img` testa
 o boot pela instalação e a raiz DFS sem a ISO. Não use essa operação em um
 disco físico com dados a preservar.

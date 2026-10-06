@@ -105,6 +105,11 @@ struct Process {
     active: bool,
     stopped: bool,
     allows_disk_install: bool,
+    uid: u32,
+    gid: u32,
+    is_admin: bool,
+    username: [u8; imagineos_abi::ACCOUNT_NAME_SIZE],
+    username_length: usize,
     frame: *mut TrapFrame,
     address_space: Option<AddressSpace>,
     name: [u8; imagineos_abi::PROCESS_NAME_SIZE],
@@ -120,6 +125,18 @@ impl Process {
         active: false,
         stopped: false,
         allows_disk_install: false,
+        uid: 0,
+        gid: 0,
+        is_admin: true,
+        username: {
+            let mut name = [0; imagineos_abi::ACCOUNT_NAME_SIZE];
+            name[0] = b'r';
+            name[1] = b'o';
+            name[2] = b'o';
+            name[3] = b't';
+            name
+        },
+        username_length: 4,
         frame: ptr::null_mut(),
         address_space: None,
         name: [0; imagineos_abi::PROCESS_NAME_SIZE],
@@ -283,6 +300,15 @@ fn load_elf(
         active: true,
         stopped: false,
         allows_disk_install,
+        uid: 0,
+        gid: 0,
+        is_admin: true,
+        username: {
+            let mut username = [0; imagineos_abi::ACCOUNT_NAME_SIZE];
+            username[..4].copy_from_slice(b"root");
+            username
+        },
+        username_length: 4,
         frame,
         address_space: Some(address_space),
         name: process_name,
@@ -431,6 +457,12 @@ pub fn current_pid() -> usize {
     scheduler.processes[scheduler.current].pid
 }
 
+pub fn current_credentials() -> (u32, u32, bool) {
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    let process = scheduler.processes[scheduler.current];
+    (process.uid, process.gid, process.is_admin)
+}
+
 pub fn yield_current(frame: *mut TrapFrame) -> *mut TrapFrame {
     schedule(frame, false)
 }
@@ -453,6 +485,7 @@ pub fn send_signal(pid: usize, signal: u64) -> i64 {
         return -22;
     }
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let sender_uid = scheduler.processes[scheduler.current].uid;
     let Some(process) = scheduler
         .processes
         .iter_mut()
@@ -460,6 +493,9 @@ pub fn send_signal(pid: usize, signal: u64) -> i64 {
     else {
         return -3;
     };
+    if sender_uid != 0 && sender_uid != process.uid {
+        return -1;
+    }
     if process.pid == 1 {
         return -1;
     }
@@ -627,6 +663,12 @@ pub fn spawn_current(
     environment: &[&[u8]],
     frame: *mut TrapFrame,
 ) -> *mut TrapFrame {
+    if !has_access(path, 1) {
+        unsafe {
+            (*frame).rax = (-13i64) as u64;
+        }
+        return frame;
+    }
     let Some(image) = crate::ramfs::read(path) else {
         unsafe {
             (*frame).rax = (-2i64) as u64;
@@ -680,12 +722,117 @@ pub fn spawn_current(
         }
     }
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let parent = scheduler.processes[parent_slot];
+    let mut process = process;
+    process.uid = parent.uid;
+    process.gid = parent.gid;
+    process.is_admin = parent.is_admin;
+    process.username = parent.username;
+    process.username_length = parent.username_length;
     scheduler.processes[slot] = process;
     scheduler.count = scheduler.count.max(slot + 1);
     unsafe {
         (*frame).rax = pid as u64;
     }
     schedule(frame, false)
+}
+
+fn has_access(path: &str, requested: u16) -> bool {
+    let (uid, gid, _) = current_credentials();
+    if uid == 0 {
+        return true;
+    }
+    let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+    let mut prefix = [0u8; imagineos_abi::MAX_MUTABLE_PATH];
+    let mut length = 0usize;
+    for component in parent.trim_matches('/').split('/') {
+        if component.is_empty() {
+            continue;
+        }
+        if length != 0 {
+            prefix[length] = b'/';
+            length += 1;
+        }
+        if length + component.len() > prefix.len() {
+            return false;
+        }
+        prefix[length..length + component.len()].copy_from_slice(component.as_bytes());
+        length += component.len();
+        let directory = core::str::from_utf8(&prefix[..length]).unwrap_or("");
+        let Some(metadata) = crate::ramfs::metadata(directory) else {
+            return false;
+        };
+        if !metadata.is_directory
+            || !crate::permissions::allows(metadata.mode, metadata.uid, metadata.gid, uid, gid, 1)
+        {
+            return false;
+        }
+    }
+    let Some(metadata) = crate::ramfs::metadata(path) else {
+        return false;
+    };
+    crate::permissions::allows(
+        metadata.mode,
+        metadata.uid,
+        metadata.gid,
+        uid,
+        gid,
+        requested,
+    )
+}
+
+pub fn authenticate_current(username: &[u8], password: &[u8], target_uid: u32) -> i64 {
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let current = &mut scheduler.processes[scheduler.current];
+    let is_self = username == &current.username[..current.username_length];
+    if target_uid == 0 && is_self && current.uid != 0 {
+        // sudo authenticates the caller, then elevates only an explicitly enabled account.
+        if !current.is_admin || crate::accounts::authenticate(username, password).is_none() {
+            return -1;
+        }
+        current.uid = 0;
+        current.gid = 0;
+        current.is_admin = true;
+        current.username = [0; imagineos_abi::ACCOUNT_NAME_SIZE];
+        current.username[..4].copy_from_slice(b"root");
+        current.username_length = 4;
+        return 0;
+    }
+    let Some(account) = crate::accounts::authenticate(username, password) else {
+        return -1;
+    };
+    if target_uid != u32::MAX && account.uid != target_uid {
+        return -1;
+    }
+    current.uid = account.uid;
+    current.gid = account.gid;
+    current.is_admin = account.administrator;
+    current.username = account.username;
+    current.username_length = account.username_length;
+    0
+}
+
+pub fn current_identity() -> imagineos_abi::UserIdentity {
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    let process = scheduler.processes[scheduler.current];
+    let mut identity = imagineos_abi::UserIdentity {
+        uid: process.uid,
+        gid: process.gid,
+        is_admin: u32::from(process.is_admin),
+        username_length: process.username_length as u32,
+        username: process.username,
+        ..imagineos_abi::UserIdentity::default()
+    };
+    if let Some(hostname) = crate::ramfs::read("/etc/hostname") {
+        let hostname = hostname.strip_suffix(b"\n").unwrap_or(hostname);
+        let length = hostname.len().min(identity.hostname.len());
+        identity.hostname[..length].copy_from_slice(&hostname[..length]);
+        identity.hostname_length = length as u32;
+    } else {
+        identity.hostname[..9].copy_from_slice(b"imagineos");
+        identity.hostname_length = 9;
+    }
+    identity
 }
 
 fn valid_signal(signal: u64) -> bool {

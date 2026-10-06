@@ -19,19 +19,21 @@ O shell e um ELF x86_64 em ring 3. A entrada vem dos syscalls `read` via COM1 ou
 | `shutdown [--help]` | Solicita ao init o encerramento do sistema |
 | `ps [--help]` | Mostra um snapshot dos processos ativos |
 | `kill [-SIGNAL] PID...` | Envia um sinal suportado a um ou mais processos |
+| `su [USUARIO]` | Autentica a conta-alvo e inicia um shell com essa identidade |
+| `sudo COMANDO [ARG...]` | Autentica o usuário e executa um comando como root (conta administrativa) |
 | `echo [-n] texto` | Escreve texto; expande `$NAME` e `${NAME}` |
 | `type NAME` | Identifica builtin ou executavel encontrado por PATH |
 | `exit` | Encerra o shell atual |
 
 Comandos externos são procurados da esquerda para a direita em `PATH`, cujo
 valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch`,
-`rm`, `vi`, `globalconf`, `distroinstall`, `dmesg`, `uname`, `shutdown`, `ps`
-e `kill` em
+`rm`, `vi`, `globalconf`, `distroinstall`, `dmesg`, `uname`, `shutdown`, `ps`,
+`kill`, `su` e `sudo` em
 `/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers
 limitados.
 
 `ps` lista PID, estado (`running` ou `stopped`) e caminho do executável no
-instante da chamada. O scheduler suporta no máximo quatro processos e não há
+instante da chamada. O scheduler suporta no máximo oito processos e não há
 atualização interativa como em `top`. `kill` aceita os sinais HUP, INT, KILL,
 SEGV, TERM, CONT e STOP por número ou nome (`kill -TERM 4` ou
 `kill -s SIGSTOP 4`); `kill -l` lista a seleção disponível. Sem opção, envia
@@ -42,6 +44,7 @@ getty quando o processo atual da sessão termina.
 `shutdown` envia um pedido IPC ao processo `/sbin/init` (PID 1). O init
 continua supervisionando enquanto o shell executa e encaminha o pedido ao
 kernel, que sincroniza o cache do disco ATA antes de solicitar o desligamento.
+O pedido só é aceito para UID 0.
 O pedido ainda não encerra serviços nem envia sinais aos demais processos.
 O desligamento usa as tabelas ACPI fornecidas pelo firmware para localizar os
 registradores de energia e o estado S5; se essas tabelas ou os registradores
@@ -59,8 +62,19 @@ mostrar todos os metadados e as opções independentes `-s`/`--size`,
 `-t`/`--type`, `-o`/`--owner`, `-p`/`--permissions` e `-h`/`--human-readable`.
 Por exemplo, `ls -l -a /home` mostra também dotfiles com tipo, tamanho,
 UID:GID e modo. Opções curtas combinadas e múltiplos caminhos não são aceitos.
-Os metadados de dono e permissões ainda não são aplicados como controles de
-acesso.
+O kernel aplica permissões owner/group/other às operações de arquivo e
+diretório; UID 0 ignora as restrições, enquanto um usuário comum precisa ter
+bits compatíveis. A conta administrativa comum só obtém UID 0 para o comando
+executado por `sudo`.
+
+Ao iniciar, o getty pede usuário e senha; a senha é mascarada. A conta de
+fallback da mídia live é `root` com senha `root`. No `distroinstall`, escolha
+opcionalmente hostname, nome/senha de uma conta UID 1000 e se ela poderá usar
+`sudo`. O prompt mostra `usuario@hostname:diretorio$` para conta comum e `#`
+para UID 0. O framebuffer interpreta cores ANSI SGR de primeiro plano.
+Senhas da conta adicional ficam em `/etc/users.db` como PBKDF2-HMAC-SHA-256
+com salt via RDRAND; hardware sem RDRAND impede a instalação com nova conta.
+Por segurança, não use a senha padrão `root` em uma instalação exposta.
 
 `ls /dev` lista os dispositivos de bloco detectados. No momento, o único
 dispositivo suportado é `/dev/hda` (ATA primary-master). `distroinstall`

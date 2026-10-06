@@ -21,6 +21,10 @@ rustup run stable rustc --edition 2021 --test dnu/config.rs -o /tmp/dreamcore-co
 /tmp/dreamcore-config-tests
 rustup run stable rustc --edition 2021 --test dnu/console/utf8.rs -o /tmp/dreamcore-utf8-tests
 /tmp/dreamcore-utf8-tests
+rustup run stable rustc --edition 2021 --test dnu/fs/permissions.rs -o /tmp/imagineos-permissions-tests
+/tmp/imagineos-permissions-tests
+rustup run stable rustc --edition 2021 --test dnu/crypto.rs -o /tmp/imagineos-crypto-tests
+/tmp/imagineos-crypto-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/keyboard.rs -o /tmp/dreamcore-keyboard-tests
 /tmp/dreamcore-keyboard-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/storage.rs -o /tmp/imagineos-storage-tests
@@ -44,6 +48,7 @@ tar -tf .build/ramfs.tar
 O tar deve conter `sbin/init`, `sbin/getty`, `bin/shell`, `bin/ls`, `bin/cat`,
 `bin/grep`, `bin/globalconf`, `bin/distroinstall`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
 `bin/hello`, `bin/fdtest`, `bin/dmesg`, `bin/uname`, `bin/kill`, `bin/ps`,
+`bin/su`, `bin/sudo`,
 `home/.global/global.conf` e `system/fonts/zap-vga16.psf`, além dos payloads
 em `system/install/`.
 O RAMFS live fornece `system/install/bootstrap.elf` e `system/install/dzImage`;
@@ -54,8 +59,13 @@ Para reativar os logs de cada etapa de carregamento: `make KERNEL_FEATURES=kerne
 
 ## Boot manual
 
-Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty/shell. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `fdtest`, `dmesg -n 10`, `uname -a`, `cat /home/readme.txt`,
-`grep ImagineOS /home/readme.txt`, `ps`, `kill -l` e `read NAME`. Teste
+Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty. Entre como `root`/`root` e confirme o prompt de root. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `fdtest`, `dmesg -n 10`, `uname -a`, `cat /home/readme.txt`,
+`grep ImagineOS /home/readme.txt`, `ps`, `kill -l` e `read NAME`. Na imagem
+alvo descartável, configure um usuário não administrador e um administrador
+separadamente; verifique login com senha correta/incorreta, acesso negado ao
+`/etc/users.db`, criação de arquivos no próprio `/home/usuario`, recusa de
+escrita em `/etc`, `sudo uname -a` apenas para o administrador e `su` com senha
+da conta de destino. Teste
 `kill -STOP PID` seguido de `kill -CONT PID` em outro processo e confirme a
 mudança de estado no snapshot do `ps`; Ctrl+C no shell deve encerrar somente a
 sessão atual, que o init deve recriar. `fdtest` verifica stdio,

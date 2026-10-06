@@ -174,6 +174,21 @@ pub fn install_to_disk(index: usize) -> Result<()> {
     .map(|_| ())
 }
 
+pub fn install_to_disk_with_config(index: usize, config: &crate::abi::InstallConfig) -> Result<()> {
+    checked(syscall::invoke(
+        crate::abi::SYS_INSTALL_DISK_CONFIG,
+        [
+            index as u64,
+            (config as *const crate::abi::InstallConfig) as u64,
+            0,
+            0,
+            0,
+            0,
+        ],
+    ))
+    .map(|_| ())
+}
+
 pub fn is_dir(path: &str) -> Result<bool> {
     let path = path_bytes(path, crate::abi::MAX_PATH_QUERY)?;
     Ok(checked(syscall::invoke(

@@ -22,6 +22,10 @@ struct Console {
     glyph_offset: usize,
     unicode_offset: usize,
     has_unicode_table: bool,
+    ansi_state: u8,
+    ansi_value: u16,
+    ansi_has_value: bool,
+    foreground: u32,
 }
 
 impl Console {
@@ -46,6 +50,10 @@ impl Console {
             glyph_offset: 0,
             unicode_offset: 0,
             has_unicode_table: false,
+            ansi_state: 0,
+            ansi_value: 0,
+            ansi_has_value: false,
+            foreground: 0xdce8e8,
         }
     }
 }
@@ -154,6 +162,97 @@ pub fn write_utf8(bytes: &[u8]) {
             }
         }
     }
+}
+
+pub fn write_ansi(bytes: &[u8]) {
+    let mut plain = [0u8; 4096];
+    let mut plain_length = 0usize;
+    for &byte in bytes {
+        let flush_plain = {
+            let console = unsafe { &mut *CONSOLE.0.get() };
+            match console.ansi_state {
+                0 if byte == 0x1b => {
+                    console.ansi_state = 1;
+                    true
+                }
+                0 => {
+                    plain[plain_length] = byte;
+                    plain_length += 1;
+                    false
+                }
+                1 => {
+                    console.ansi_state = if byte == b'[' { 2 } else { 0 };
+                    console.ansi_value = 0;
+                    console.ansi_has_value = false;
+                    false
+                }
+                2 if byte.is_ascii_digit() => {
+                    console.ansi_value = console
+                        .ansi_value
+                        .saturating_mul(10)
+                        .saturating_add((byte - b'0') as u16);
+                    console.ansi_has_value = true;
+                    false
+                }
+                2 if byte == b';' => {
+                    if console.ansi_value == 0 {
+                        console.foreground = 0xdce8e8;
+                    } else {
+                        set_ansi_foreground(console, console.ansi_value);
+                    }
+                    console.ansi_value = 0;
+                    console.ansi_has_value = false;
+                    false
+                }
+                2 if byte == b'm' => {
+                    if console.ansi_value == 0 || !console.ansi_has_value {
+                        console.foreground = 0xdce8e8;
+                    } else {
+                        set_ansi_foreground(console, console.ansi_value);
+                    }
+                    console.ansi_state = 0;
+                    false
+                }
+                2 => {
+                    console.ansi_state = 0;
+                    false
+                }
+                _ => {
+                    console.ansi_state = 0;
+                    false
+                }
+            }
+        };
+        if flush_plain && plain_length != 0 {
+            write_utf8(&plain[..plain_length]);
+            plain_length = 0;
+        }
+    }
+    if plain_length != 0 {
+        write_utf8(&plain[..plain_length]);
+    }
+}
+
+fn set_ansi_foreground(console: &mut Console, color: u16) {
+    console.foreground = match color {
+        30 => 0x101820,
+        31 => 0xff6b6b,
+        32 => 0x79d279,
+        33 => 0xf2c879,
+        34 => 0x78a9ff,
+        35 => 0xd79bff,
+        36 => 0x72d6d6,
+        37 => 0xdce8e8,
+        90 => 0x74808a,
+        91 => 0xff8b8b,
+        92 => 0x9be69b,
+        93 => 0xffdc8a,
+        94 => 0x91b9ff,
+        95 => 0xe2afff,
+        96 => 0x8ce6e6,
+        97 => 0xffffff,
+        _ => console.foreground,
+    };
 }
 
 pub fn write_char(character: char) {
@@ -289,7 +388,7 @@ fn draw_glyph(console: &mut Console, character: char) {
                     console,
                     console.cursor_x + column,
                     console.cursor_y + row,
-                    0xdce8e8,
+                    console.foreground,
                 );
             }
         }

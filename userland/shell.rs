@@ -133,6 +133,21 @@ extern "C" fn _start(
     _envp: *const *const u8,
 ) -> ! {
     let mut state = ShellState::new();
+    let identity = match imagineos::users::identity() {
+        Ok(identity) => identity,
+        Err(_) => imagineos::process::exit(1),
+    };
+    let username = &identity.username[..identity.username_length as usize];
+    let hostname = &identity.hostname[..identity.hostname_length as usize];
+    state.set_variable(b"USER", username);
+    state.set_variable(b"HOSTNAME", hostname);
+    if identity.uid != 0 {
+        let mut home = [0u8; 48];
+        home[..6].copy_from_slice(b"/home/");
+        let home_length = 6 + username.len();
+        home[6..home_length].copy_from_slice(username);
+        state.set_variable(b"HOME", &home[..home_length]);
+    }
     let mut line = [0u8; 128];
     let mut length = 0usize;
     prompt(&state);
@@ -180,9 +195,25 @@ fn is_keyboard_event(character: char) -> bool {
 }
 
 fn prompt(state: &ShellState) {
-    write("Astrid:");
+    let identity = match imagineos::users::identity() {
+        Ok(identity) => identity,
+        Err(_) => imagineos::process::exit(1),
+    };
+    let username = core::str::from_utf8(&identity.username[..identity.username_length as usize])
+        .unwrap_or("root");
+    let hostname = core::str::from_utf8(&identity.hostname[..identity.hostname_length as usize])
+        .unwrap_or("imagineos");
+    write("\x1b[32m");
+    write(username);
+    write("\x1b[0m@\x1b[36m");
+    write(hostname);
+    write("\x1b[0m:\x1b[34m");
     write_bytes(&state.cwd[..state.cwd_length]);
-    write("$ ");
+    if identity.uid == 0 {
+        write("\x1b[0m# ");
+    } else {
+        write("\x1b[0m$ ");
+    }
 }
 
 fn run_command(state: &mut ShellState, line: &[u8]) {

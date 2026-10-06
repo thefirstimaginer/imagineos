@@ -26,6 +26,8 @@ pub enum InstallError {
     MissingPayload,
     PayloadTooLarge,
     DfsFormat,
+    InvalidAccountConfig,
+    EntropyUnavailable,
     Block(BlockError),
 }
 
@@ -54,7 +56,9 @@ struct FileToInstall<'a> {
     cluster_count: u16,
 }
 
-pub fn install_primary_master() -> Result<(), InstallError> {
+pub fn install_primary_master(
+    account_config: &imagineos_abi::InstallConfig,
+) -> Result<(), InstallError> {
     let device = ata::PrimaryMaster;
     if device.sector_count() == 0 {
         return Err(InstallError::NoDisk);
@@ -67,7 +71,7 @@ pub fn install_primary_master() -> Result<(), InstallError> {
     let startup = ramfs::read("/system/install/startup.nsh").ok_or(InstallError::MissingPayload)?;
     let ramfs_image =
         ramfs::read("/system/install/ramfs-installed.tar").ok_or(InstallError::MissingPayload)?;
-    install(
+    install_configured(
         &device,
         bootstrap,
         dz_image,
@@ -75,6 +79,7 @@ pub fn install_primary_master() -> Result<(), InstallError> {
         efi,
         config,
         startup,
+        Some(account_config),
     )
 }
 
@@ -87,6 +92,38 @@ pub fn install(
     config: &[u8],
     startup: &[u8],
 ) -> Result<(), InstallError> {
+    install_configured(
+        device,
+        bootstrap,
+        dz_image,
+        ramfs_image,
+        efi,
+        config,
+        startup,
+        None,
+    )
+}
+
+fn install_configured(
+    device: &impl BlockDevice,
+    bootstrap: &[u8],
+    dz_image: &[u8],
+    ramfs_image: &[u8],
+    efi: &[u8],
+    config: &[u8],
+    startup: &[u8],
+    account_config: Option<&imagineos_abi::InstallConfig>,
+) -> Result<(), InstallError> {
+    if let Some(config) = account_config {
+        crate::accounts::validate_install_config(config)
+            .map_err(|_| InstallError::InvalidAccountConfig)?;
+    }
+    let account_database = match account_config {
+        Some(config) if config.add_user != 0 => Some(
+            crate::accounts::make_database(config).map_err(|_| InstallError::EntropyUnavailable)?,
+        ),
+        _ => None,
+    };
     if device.sector_count() < MIN_DISK_SECTORS {
         return Err(InstallError::DiskTooSmall);
     }
@@ -177,6 +214,30 @@ pub fn install(
     .map_err(|_| InstallError::DfsFormat)?;
     dfs.seed_from_ustar(device, ramfs_image)
         .map_err(|_| InstallError::DfsFormat)?;
+    if let Some(config) = account_config {
+        match dfs.create_directory(device, "etc", 0o755, 0, 0) {
+            Ok(()) | Err(super::dfs::DfsError::AlreadyExists) => {}
+            Err(_) => return Err(InstallError::DfsFormat),
+        }
+        let hostname = crate::accounts::hostname(config);
+        dfs.write_file(device, "etc/hostname", 0, hostname, true, 0o644, 0, 0)
+            .map_err(|_| InstallError::DfsFormat)?;
+        if let Some(database) = account_database {
+            dfs.write_file(device, "etc/users.db", 0, &database, true, 0o600, 0, 0)
+                .map_err(|_| InstallError::DfsFormat)?;
+            let mut home_path = [0u8; 40];
+            home_path[..5].copy_from_slice(b"home/");
+            let home_length = 5 + config.username_length as usize;
+            home_path[5..home_length]
+                .copy_from_slice(&config.username[..config.username_length as usize]);
+            let home_path = core::str::from_utf8(&home_path[..home_length])
+                .map_err(|_| InstallError::InvalidAccountConfig)?;
+            match dfs.create_directory(device, home_path, 0o750, 1000, 1000) {
+                Ok(()) | Err(super::dfs::DfsError::AlreadyExists) => {}
+                Err(_) => return Err(InstallError::DfsFormat),
+            }
+        }
+    }
     device.flush().map_err(InstallError::Block)?;
     Ok(())
 }

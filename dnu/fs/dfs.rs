@@ -964,6 +964,18 @@ pub fn file_len(path: &str) -> Result<usize, DfsError> {
 }
 
 pub fn write_at(path: &str, offset: usize, input: &[u8], create: bool) -> Result<usize, DfsError> {
+    write_at_as(path, offset, input, create, 0o644, 0, 0)
+}
+
+pub fn write_at_as(
+    path: &str,
+    offset: usize,
+    input: &[u8],
+    create: bool,
+    mode: u16,
+    uid: u32,
+    gid: u32,
+) -> Result<usize, DfsError> {
     let fs = unsafe { (*MOUNTED_DFS.0.get()).ok_or(DfsError::InvalidFilesystem)? };
     fs.write_file(
         &crate::ata::PrimaryMaster,
@@ -971,18 +983,28 @@ pub fn write_at(path: &str, offset: usize, input: &[u8], create: bool) -> Result
         offset as u64,
         input,
         create,
-        0o644,
-        0,
-        0,
+        mode,
+        uid,
+        gid,
     )
 }
 
 pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), DfsError> {
+    write_file_as(path, bytes, 0o644, 0, 0)
+}
+
+pub fn write_file_as(
+    path: &str,
+    bytes: &[u8],
+    mode: u16,
+    uid: u32,
+    gid: u32,
+) -> Result<(), DfsError> {
     if stat(path).is_ok() {
         let fs = unsafe { (*MOUNTED_DFS.0.get()).ok_or(DfsError::InvalidFilesystem)? };
         fs.truncate(&crate::ata::PrimaryMaster, path)?;
     }
-    write_at(path, 0, bytes, true).map(|_| ())
+    write_at_as(path, 0, bytes, true, mode, uid, gid).map(|_| ())
 }
 
 pub fn create_file(path: &str) -> Result<(), DfsError> {
@@ -990,9 +1012,18 @@ pub fn create_file(path: &str) -> Result<(), DfsError> {
 }
 
 pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), DfsError> {
+    create_directory_with_parents_as(path, parents, 0, 0)
+}
+
+pub fn create_directory_with_parents_as(
+    path: &str,
+    parents: bool,
+    uid: u32,
+    gid: u32,
+) -> Result<(), DfsError> {
     let path = canonical_path(path)?;
     if !parents {
-        return create_directory(path);
+        return create_directory_as(path, 0o755, uid, gid);
     }
     let mut current = [0u8; MAX_PATH + 1];
     let mut length = 0;
@@ -1011,7 +1042,9 @@ pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), Df
         match stat(current_path) {
             Ok(metadata) if metadata.is_directory => continue,
             Ok(_) => return Err(DfsError::AlreadyExists),
-            Err(DfsError::NotFound) => create_directory(current_path)?,
+            Err(DfsError::NotFound) => {
+                create_directory_as_with_mode(current_path, 0o755, uid, gid)?
+            }
             Err(error) => return Err(error),
         }
     }
@@ -1019,8 +1052,21 @@ pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), Df
 }
 
 pub fn create_directory(path: &str) -> Result<(), DfsError> {
+    create_directory_as(path, 0o755, 0, 0)
+}
+
+pub fn create_directory_as(path: &str, mode: u16, uid: u32, gid: u32) -> Result<(), DfsError> {
     let fs = unsafe { (*MOUNTED_DFS.0.get()).ok_or(DfsError::InvalidFilesystem)? };
-    fs.create_directory(&crate::ata::PrimaryMaster, path, 0o755, 0, 0)
+    fs.create_directory(&crate::ata::PrimaryMaster, path, mode, uid, gid)
+}
+
+fn create_directory_as_with_mode(
+    path: &str,
+    mode: u16,
+    uid: u32,
+    gid: u32,
+) -> Result<(), DfsError> {
+    create_directory_as(path, mode, uid, gid)
 }
 
 pub fn remove(path: &str, recursive: bool) -> Result<(), DfsError> {

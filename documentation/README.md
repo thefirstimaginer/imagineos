@@ -35,10 +35,11 @@ O sistema ja possui:
 
 O DFS inclui journal redo de metadados, recuperação no mount, importação do
 USTAR do sistema instalado e fallback para o RAMFS. Seu limite atual é de 256
-nós e 14 extents por arquivo; conteúdo de arquivo não é journaled e permissões
-ainda são apenas metadados. Timer/APIC, preempção, reclaim de frames, W^X,
-drivers de armazenamento além de ATA PIO e enforcement de permissões ainda
-faltam. O fluxo de boot e as limitações estão descritos em
+nós e 14 extents por arquivo; conteúdo de arquivo não é journaled. O kernel
+aplica permissões owner/group/other; ainda faltam grupos suplementares, ACLs,
+administração de contas após instalação, timer/APIC, preempção, reclaim de
+frames, W^X e drivers de armazenamento além de ATA PIO. O fluxo de boot e as
+limitações estão descritos em
 [Fluxo de boot e processo init](boot-flow.md).
 
 ## Objetivo

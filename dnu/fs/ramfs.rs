@@ -35,6 +35,9 @@ struct OverlayNode {
     kind: NodeKind,
     data: [u8; MAX_WRITE_FILE_SIZE],
     data_length: usize,
+    mode: u16,
+    uid: u32,
+    gid: u32,
 }
 
 impl OverlayNode {
@@ -44,6 +47,9 @@ impl OverlayNode {
         kind: NodeKind::Empty,
         data: [0; MAX_WRITE_FILE_SIZE],
         data_length: 0,
+        mode: 0,
+        uid: 0,
+        gid: 0,
     };
 
     fn path(&self) -> &str {
@@ -107,6 +113,49 @@ impl<'a> Archive<'a> {
 
             let padded_size = size.checked_add(BLOCK_SIZE - 1)? & !(BLOCK_SIZE - 1);
             offset = data_start.checked_add(padded_size)?;
+        }
+        None
+    }
+
+    fn metadata(&self, wanted: &str) -> Option<crate::dfs::Metadata> {
+        let wanted = wanted.trim_start_matches('/');
+        let mut offset = 0usize;
+        while offset.checked_add(BLOCK_SIZE)? <= self.bytes.len() {
+            let header = &self.bytes[offset..offset + BLOCK_SIZE];
+            if header.iter().all(|byte| *byte == 0) {
+                return None;
+            }
+            let name = field(&header[..100]);
+            let prefix = field(&header[345..500]);
+            let mut path = [0u8; 256];
+            let mut path_length = if prefix.is_empty() {
+                path[..name.len()].copy_from_slice(name);
+                name.len()
+            } else {
+                let length = prefix.len().checked_add(1)?.checked_add(name.len())?;
+                if length > path.len() {
+                    return None;
+                }
+                path[..prefix.len()].copy_from_slice(prefix);
+                path[prefix.len()] = b'/';
+                path[prefix.len() + 1..length].copy_from_slice(name);
+                length
+            };
+            while path_length != 0 && path[path_length - 1] == b'/' {
+                path_length -= 1;
+            }
+            if &path[..path_length] == wanted.as_bytes() {
+                return Some(crate::dfs::Metadata {
+                    size: parse_octal(&header[124..136])? as u64,
+                    mode: parse_octal(&header[100..108]).unwrap_or(0o644) as u16,
+                    uid: parse_octal(&header[108..116]).unwrap_or(0) as u32,
+                    gid: parse_octal(&header[116..124]).unwrap_or(0) as u32,
+                    is_directory: header[156] == b'5',
+                });
+            }
+            let size = parse_octal(&header[124..136])?;
+            let padded_size = size.checked_add(BLOCK_SIZE - 1)? & !(BLOCK_SIZE - 1);
+            offset = offset.checked_add(BLOCK_SIZE)?.checked_add(padded_size)?;
         }
         None
     }
@@ -418,7 +467,24 @@ pub fn metadata(path: &str) -> Option<crate::dfs::Metadata> {
     if crate::dfs::is_mounted() {
         return crate::dfs::stat(path).ok();
     }
+    let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
+    if let Some(node) = find_overlay_node(fs, path) {
+        return Some(crate::dfs::Metadata {
+            size: node.data_length as u64,
+            mode: node.mode,
+            uid: node.uid,
+            gid: node.gid,
+            is_directory: matches!(node.kind, NodeKind::Directory | NodeKind::OpaqueDirectory),
+        });
+    }
     if is_directory(path) {
+        if let Some(metadata) = fs
+            .archive
+            .as_ref()
+            .and_then(|archive| archive.metadata(path))
+        {
+            return Some(metadata);
+        }
         return Some(crate::dfs::Metadata {
             size: 0,
             mode: 0o755,
@@ -437,6 +503,13 @@ pub fn metadata(path: &str) -> Option<crate::dfs::Metadata> {
         });
     }
     let size = file_len(path).ok()?;
+    if let Some(metadata) = fs
+        .archive
+        .as_ref()
+        .and_then(|archive| archive.metadata(path))
+    {
+        return Some(metadata);
+    }
     Some(crate::dfs::Metadata {
         size: size as u64,
         mode: 0o644,
@@ -513,9 +586,15 @@ pub fn list_directory_with_hidden(
 }
 
 pub fn create_file(path: &str) -> Result<(), FsError> {
+    create_file_as(path, 0, 0)
+}
+
+pub fn create_file_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if crate::dfs::is_mounted() {
-        return crate::dfs::create_file(path).map_err(map_dfs_error);
+        return crate::dfs::write_at_as(path, 0, &[], true, 0o644, uid, gid)
+            .map(|_| ())
+            .map_err(map_dfs_error);
     }
     if path == "dev" || path == "dev/hda" {
         return Err(FsError::InvalidPath);
@@ -530,12 +609,16 @@ pub fn create_file(path: &str) -> Result<(), FsError> {
         return Err(FsError::IsDirectory);
     }
     ensure_parent_directory(path)?;
-    insert_overlay(path, NodeKind::File)
+    insert_overlay_as(path, NodeKind::File, 0o644, uid, gid)
 }
 
 pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
+    write_file_as(path, bytes, 0, 0)
+}
+
+pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(), FsError> {
     if crate::dfs::is_mounted() {
-        return crate::dfs::write_file(path, bytes).map_err(map_dfs_error);
+        return crate::dfs::write_file_as(path, bytes, 0o644, uid, gid).map_err(map_dfs_error);
     }
     if bytes.len() > MAX_WRITE_FILE_SIZE {
         return Err(FsError::NoSpace);
@@ -553,7 +636,11 @@ pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
     if !is_file(path) {
         ensure_parent_directory(path)?;
     }
-    insert_overlay(path, NodeKind::File)?;
+    let old_metadata = metadata(path);
+    let (mode, owner_uid, owner_gid) = old_metadata.map_or((0o644, uid, gid), |metadata| {
+        (metadata.mode, metadata.uid, metadata.gid)
+    });
+    insert_overlay_as(path, NodeKind::File, mode, owner_uid, owner_gid)?;
     let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
     let node = fs
         .overlay
@@ -628,9 +715,30 @@ pub fn create_directory(path: &str) -> Result<(), FsError> {
     create_directory_with_parents(path, false)
 }
 
-pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), FsError> {
+pub fn create_directory_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if crate::dfs::is_mounted() {
-        return crate::dfs::create_directory_with_parents(path, parents).map_err(map_dfs_error);
+        return crate::dfs::create_directory_as(path, 0o755, uid, gid).map_err(map_dfs_error);
+    }
+    if path.is_empty() {
+        return Err(FsError::AlreadyExists);
+    }
+    create_directory_one_as(path, uid, gid)
+}
+
+pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), FsError> {
+    create_directory_with_parents_as(path, parents, 0, 0)
+}
+
+pub fn create_directory_with_parents_as(
+    path: &str,
+    parents: bool,
+    uid: u32,
+    gid: u32,
+) -> Result<(), FsError> {
+    if crate::dfs::is_mounted() {
+        return crate::dfs::create_directory_with_parents_as(path, parents, uid, gid)
+            .map_err(map_dfs_error);
     }
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() {
@@ -658,14 +766,18 @@ pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), Fs
             if is_file(current_path) {
                 return Err(FsError::AlreadyExists);
             }
-            create_directory_one(current_path)?;
+            create_directory_one_as(current_path, uid, gid)?;
         }
         return Ok(());
     }
-    create_directory_one(path)
+    create_directory_one_as(path, uid, gid)
 }
 
 fn create_directory_one(path: &str) -> Result<(), FsError> {
+    create_directory_one_as(path, 0, 0)
+}
+
+fn create_directory_one_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
     if is_file(path) || is_directory(path) {
         return Err(FsError::AlreadyExists);
     }
@@ -675,13 +787,16 @@ fn create_directory_one(path: &str) -> Result<(), FsError> {
         .archive
         .as_ref()
         .is_some_and(|archive| archive.is_directory(path));
-    insert_overlay(
+    insert_overlay_as(
         path,
         if hides_archive {
             NodeKind::OpaqueDirectory
         } else {
             NodeKind::Directory
         },
+        0o755,
+        uid,
+        gid,
     )
 }
 
@@ -790,6 +905,26 @@ fn ensure_parent_directory(path: &str) -> Result<(), FsError> {
 }
 
 fn insert_overlay(path: &str, kind: NodeKind) -> Result<(), FsError> {
+    insert_overlay_as(
+        path,
+        kind,
+        if matches!(kind, NodeKind::Directory | NodeKind::OpaqueDirectory) {
+            0o755
+        } else {
+            0o644
+        },
+        0,
+        0,
+    )
+}
+
+fn insert_overlay_as(
+    path: &str,
+    kind: NodeKind,
+    mode: u16,
+    uid: u32,
+    gid: u32,
+) -> Result<(), FsError> {
     if path.len() > 256 {
         return Err(FsError::InvalidPath);
     }
@@ -809,6 +944,9 @@ fn insert_overlay(path: &str, kind: NodeKind) -> Result<(), FsError> {
     node.path[..path.len()].copy_from_slice(path.as_bytes());
     node.path_length = path.len();
     node.kind = kind;
+    node.mode = mode;
+    node.uid = uid;
+    node.gid = gid;
     node.data.fill(0);
     node.data_length = 0;
     Ok(())

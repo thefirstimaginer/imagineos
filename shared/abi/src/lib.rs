@@ -34,6 +34,9 @@ pub const SYS_KILL: u64 = 29;
 pub const SYS_SIGACTION: u64 = 30;
 pub const SYS_SIGRETURN: u64 = 31;
 pub const SYS_PROCESS_LIST: u64 = 32;
+pub const SYS_AUTHENTICATE: u64 = 33;
+pub const SYS_GETIDENTITY: u64 = 34;
+pub const SYS_INSTALL_DISK_CONFIG: u64 = 35;
 
 pub const SIGNAL_HUP: u64 = 1;
 pub const SIGNAL_INT: u64 = 2;
@@ -47,8 +50,11 @@ pub const SIGNAL_IGNORE: u64 = 1;
 
 pub const PROCESS_RUNNING: u32 = 1;
 pub const PROCESS_STOPPED: u32 = 2;
-pub const MAX_PROCESSES: usize = 4;
+pub const MAX_PROCESSES: usize = 8;
 pub const PROCESS_NAME_SIZE: usize = 64;
+pub const ACCOUNT_NAME_SIZE: usize = 32;
+pub const ACCOUNT_PASSWORD_SIZE: usize = 64;
+pub const HOSTNAME_SIZE: usize = 64;
 
 pub const FD_STDIN: u64 = 0;
 pub const FD_STDOUT: u64 = 1;
@@ -94,6 +100,62 @@ pub struct ProcessInfo {
     pub state: u32,
     pub pending_signals: u32,
     pub name: [u8; PROCESS_NAME_SIZE],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InstallConfig {
+    pub username_length: u8,
+    pub password_length: u8,
+    pub hostname_length: u8,
+    pub add_user: u8,
+    pub administrator: u8,
+    pub reserved: [u8; 3],
+    pub username: [u8; ACCOUNT_NAME_SIZE],
+    pub password: [u8; ACCOUNT_PASSWORD_SIZE],
+    pub hostname: [u8; HOSTNAME_SIZE],
+}
+
+impl Default for InstallConfig {
+    fn default() -> Self {
+        Self {
+            username_length: 0,
+            password_length: 0,
+            hostname_length: 0,
+            add_user: 0,
+            administrator: 0,
+            reserved: [0; 3],
+            username: [0; ACCOUNT_NAME_SIZE],
+            password: [0; ACCOUNT_PASSWORD_SIZE],
+            hostname: [0; HOSTNAME_SIZE],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UserIdentity {
+    pub uid: u32,
+    pub gid: u32,
+    pub is_admin: u32,
+    pub username_length: u32,
+    pub username: [u8; ACCOUNT_NAME_SIZE],
+    pub hostname_length: u32,
+    pub hostname: [u8; HOSTNAME_SIZE],
+}
+
+impl Default for UserIdentity {
+    fn default() -> Self {
+        Self {
+            uid: 0,
+            gid: 0,
+            is_admin: 0,
+            username_length: 0,
+            username: [0; ACCOUNT_NAME_SIZE],
+            hostname_length: 0,
+            hostname: [0; HOSTNAME_SIZE],
+        }
+    }
 }
 
 impl Default for ProcessInfo {

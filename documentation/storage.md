@@ -43,8 +43,9 @@ Limites e ressalvas atuais:
 - dados de arquivo não são journaled. Uma queda durante uma escrita pode
   deixar o conteúdo parcialmente atualizado, embora os metadados sejam
   recuperáveis;
-- UID, GID e modo são armazenados e exibidos, mas permissões ainda não são
-  impostas e não há identidade de usuário;
+- UID, GID e modo são armazenados e exibidos; o kernel aplica owner/group/other
+  em operações de arquivo e diretório. O UID 0 ignora permissões; ainda não há
+  grupos suplementares, ACLs ou gerenciamento de contas após a instalação;
 - sem DFS montável, alterações no overlay do RAMFS são voláteis. O overlay
   continua limitado a 128 nós e arquivos de 4 KiB.
 

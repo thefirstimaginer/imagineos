@@ -11,7 +11,7 @@ DZ_IMAGE := .build/dzImage
 ISO_DIR := .build/iso
 RAMFS_IMAGE := .build/ramfs.tar
 RAMFS_INSTALLED_IMAGE := .build/ramfs-installed.tar
-USER_UTILITIES := cat dmesg distroinstall fdtest globalconf grep kill ls mkdir ps rm shutdown touch uname vi hello
+USER_UTILITIES := cat dmesg distroinstall fdtest globalconf grep kill ls mkdir ps rm shutdown su sudo touch uname vi hello
 RAMFS_DIRS := bin dev sbin home system/fonts system/install tmp usr
 USER_API_MANIFEST := userland/api/Cargo.toml
 USER_API_TARGET_DIR := .build/user/api-target
@@ -75,7 +75,8 @@ $(RAMFS_IMAGE): kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) $(RAMFS_FILES) 
 	cp .build/user/sbin/getty .build/ramfs/sbin/getty
 	cp .build/user/bin/shell .build/ramfs/bin/shell
 	for utility in $(USER_UTILITIES); do cp .build/user/utilities/$$utility .build/ramfs/bin/$$utility; done
-	tar --format=ustar --exclude=bin/distroinstall --exclude='system/install/*' \
+	tar --format=ustar --numeric-owner --owner=0 --group=0 \
+		--exclude=bin/distroinstall --exclude='system/install/*' \
 		-C .build/ramfs -cf $(RAMFS_INSTALLED_IMAGE) bin dev sbin home system tmp usr
 	cp $(BOOTSTRAP) .build/ramfs/system/install/bootstrap.elf
 	cp $(DZ_IMAGE) .build/ramfs/system/install/dzImage
@@ -83,7 +84,8 @@ $(RAMFS_IMAGE): kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) $(RAMFS_FILES) 
 	cp limine.conf .build/ramfs/system/install/limine.conf
 	cp tools/startup.nsh .build/ramfs/system/install/startup.nsh
 	cp $(RAMFS_INSTALLED_IMAGE) .build/ramfs/system/install/ramfs-installed.tar
-	tar --format=ustar -C .build/ramfs -cf $@ bin dev sbin home system tmp usr
+	tar --format=ustar --numeric-owner --owner=0 --group=0 \
+		-C .build/ramfs -cf $@ bin dev sbin home system tmp usr
 
 .PHONY: user-programs
 user-programs: $(USER_PROGRAMS)
@@ -116,7 +118,7 @@ $(USER_API_RLIB): $(USER_API_MANIFEST) userland/api/src/lib.rs \
 	userland/api/src/args.rs userland/api/src/console.rs userland/api/src/fs.rs \
 	userland/api/src/kernel_log.rs userland/api/src/legacy.rs \
 	userland/api/src/process.rs userland/api/src/shutdown.rs userland/api/src/signals.rs \
-	userland/api/src/syscall.rs \
+	userland/api/src/syscall.rs userland/api/src/users.rs \
 	shared/abi/Cargo.toml shared/abi/src/lib.rs
 	rustup run stable cargo build --manifest-path $(USER_API_MANIFEST) \
 		--target $(TARGET) --release --target-dir $(USER_API_TARGET_DIR)
@@ -137,7 +139,7 @@ iso: kernel $(RAMFS_IMAGE)
 	cp $(RAMFS_IMAGE) $(ISO_DIR)/boot/ramfs.tar
 	cp limine.conf $(ISO_DIR)/limine.conf
 	cp toolchain/limine-binary/BOOTX64.EFI $(ISO_DIR)/EFI/BOOT/BOOTX64.EFI
-	dd if=/dev/zero of=$(ISO_DIR)/efi.img bs=1M count=31
+	dd if=/dev/zero of=$(ISO_DIR)/efi.img bs=1M count=64
 	mkfs.vfat $(ISO_DIR)/efi.img
 	mmd -i $(ISO_DIR)/efi.img ::/EFI ::/EFI/BOOT ::/boot
 	mcopy -i $(ISO_DIR)/efi.img $(ISO_DIR)/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/

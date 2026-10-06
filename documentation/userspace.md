@@ -90,9 +90,13 @@ estão em [Testes](testing.md).
   `fs::open` com `OpenOptions`, leitura/escrita/fechamento de descritores,
   stdin/stdout/stderr, `fs::install_to_disk`, `kernel_log::read`,
   `process::pid`, `process::yield_now`, `process::exec` e `process::exit`.
+- `users::identity` consulta UID, GID, nome, hostname e flag administrativa;
+  `users::authenticate` valida a credencial e troca a identidade do processo
+  apenas após validação no kernel. `fs::install_to_disk_with_config` envia os
+  dados iniciais de conta/hostname ao instalador.
 - `shutdown::request`, `shutdown::take_request` e `shutdown::power_off` fornecem
-  um mailbox IPC de pedido de desligamento. Qualquer programa pode solicitar
-  shutdown; somente PID 1 pode consumir pedidos e pedir ao kernel para desligar.
+  um mailbox IPC de pedido de desligamento. Somente UID 0 pode solicitar; PID 1
+  pode consumir pedidos e pedir ao kernel para desligar.
 - A crate `imagineos_rt` contém `main!`, `print!`/`println!` e converte o
   resultado da função principal em código de saída. `main!(user_main)` chama
   `fn user_main() -> i32`, `fn user_main() -> imagineos_rt::imagineos::Result<()>`
@@ -127,11 +131,33 @@ estão em [Testes](testing.md).
   do sinal e retornam pelo stub `sigreturn`; KILL e STOP não podem ser
   capturados/ignorados, e PID 1 é protegido. `SIGINT` é gerado por Ctrl+C na
   entrada PS/2 ou serial.
-- `process::list` retorna um snapshot de até quatro processos, consumido pelo
-  utilitário `ps`. Não há `top`, contabilidade de CPU, permissões de envio de
-  sinal por UID, mascaramento de sinais, handlers aninhados ou entrega de
+- `process::list` retorna um snapshot de até oito processos, consumido pelo
+  utilitário `ps`. O kernel permite sinalizar apenas processos do mesmo UID ou
+  processos de qualquer UID quando o emissor é root. Não há `top`, contabilidade
+  de CPU, mascaramento de sinais, handlers aninhados ou entrega de
   exceções de CPU a handlers `SIGSEGV`. Uma falha de ring 3 encerra o processo
   afetado, sem parar o kernel.
+- No login, `getty` autentica a conta e inicia o shell com um prompt
+  `usuario@hostname:diretorio$` (ou `#` para UID 0). O framebuffer interpreta
+  códigos ANSI SGR de primeiro plano para as cores ANSI básicas; o serial recebe
+  as sequências originais. `su` inicia um shell separado após autenticar a
+  conta-alvo. `sudo` executa um único comando como UID 0 e exige que a conta
+  autenticada tenha a flag administrativa; a decisão é validada no kernel.
+- A conta inicial é `root` com senha `root`, tanto na mídia live quanto como
+  fallback. Durante `distroinstall`, é possível configurar hostname e uma
+  conta adicional UID/GID 1000, além de marcar essa conta como administradora.
+  A senha adicional é armazenada em `/etc/users.db` como PBKDF2-HMAC-SHA-256
+  com 10.000 iterações e salt aleatório de 128 bits obtido via RDRAND. Se a CPU
+  não fornecer RDRAND, a instalação configurada é recusada antes de particionar
+  o disco. A senha root continua fixa em `root`; altere-a somente quando houver
+  um mecanismo persistente de credenciais adequado.
+- O kernel aplica bits owner/group/other de `mode` e UID/GID em leitura,
+  escrita, listagem, criação, remoção, abertura e execução; UID 0 pode ignorar
+  essas restrições. Administradores comuns não recebem bypass automático:
+  precisam autenticar com `sudo`. A implementação atual aceita uma única conta
+  adicional, um GID primário por conta e não oferece `useradd`, grupos
+  suplementares, alteração de senha, `su` para sessões em outro terminal ou
+  ACLs. Os processos herdam UID/GID/flag administrativa ao executar filhos.
 - A lista completa de chamadas, registradores, resultados, erros e limites está
   em [ABI de syscalls](syscall-abi.md). Não adicione assembly de syscall em
   aplicações; estenda a crate `imagineos` e mantenha o contrato documentado.
@@ -147,7 +173,7 @@ estão em [Testes](testing.md).
   descritores de dispositivos, seek, espera/coleta de processo ou um contrato
   POSIX. Sinais não são preemptivos: são tratados ao retornar de syscalls; o
   shell também não implementa pipes nem redirecionamento.
-- **Recursos de processo:** há no máximo quatro slots de processo, incluindo
+- **Recursos de processo:** há no máximo oito slots de processo, incluindo
   processos ativos; o scheduler é cooperativo, sem preempção por timer. Um
   programa que não cede a execução pode impedir que outros avancem. `ps` é
   apenas uma fotografia dos processos ativos, sem métricas de CPU ou atualização
@@ -173,8 +199,8 @@ estão em [Testes](testing.md).
   255 bytes e 14 extents por arquivo. O importador USTAR ainda não valida o
   checksum nem importa todos os tipos de entrada. Se o DFS não montar, o
   sistema usa o USTAR como raiz e gravações ficam no overlay volátil de até
-  128 nós e 4 KiB por arquivo. O modo/UID/GID são metadados, não controles de
-  acesso.
+  128 nós e 4 KiB por arquivo. O kernel aplica permissões owner/group/other
+  em ambas as raízes, mas não há ACLs ou grupos suplementares.
 - **Estado de validação:** a implementação é experimental. Compilar e
   empacotar um programa não comprova que ele funciona no boot real; teste a
   ISO em QEMU/OVMF e verifique o comportamento no shell.
@@ -197,7 +223,8 @@ tipo, `-o` UID:GID e `-p` permissões. `-h` formata o tamanho com unidades
 binárias. As opções longas correspondentes são `--all`, `--long`, `--size`,
 `--type`, `--owner`, `--permissions` e `--human-readable`. Opções curtas
 combinadas (como `-al`) e múltiplos caminhos ainda não são aceitos. As
-permissões impressas são metadados; o kernel ainda não as impõe.
+permissões impressas são owner/group/other aplicadas pelo kernel às operações
+de arquivo, diretório e execução; UID 0 pode ignorá-las.
 
 ## Configuração global, teclado e charset
 

@@ -46,8 +46,9 @@ UEFI
    Se `/sbin/init` não existir, o kernel para com uma mensagem `KERNEL PANIC`.
 7. O programa `init` inicia `/sbin/getty` e continua em loop cooperativo,
    verificando o mailbox de desligamento e reiniciando o getty quando sua
-   sessão termina. Getty inicia `/bin/shell`; `shutdown` envia um pedido IPC a
-   PID 1. Quando recebe o pedido, init solicita o flush do armazenamento e o
+   sessão termina. Getty autentica o usuário e inicia `/bin/shell`;
+   `shutdown` envia um pedido IPC a PID 1, aceito somente para UID 0. Quando
+   recebe o pedido, init solicita o flush do armazenamento e o
    poweroff via PM1 (I/O ou MMIO) ou Sleep Control no modo ACPI reduzido.
    Os utilitários e o shell ficam em `/bin`.
 
