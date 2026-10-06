@@ -165,7 +165,8 @@ também está disponível. O shell recebe valores Unicode e grava texto em UTF-8
 `globalconf set KEY VALUE` atualiza a cópia volátil do arquivo e aplica a
 configuração válida imediatamente. Essa alteração não sobrevive ao reboot.
 Para definir valores padrão que persistam entre builds, edite o arquivo fonte
-em `ramfs/home/.global/global.conf` antes de compilar. O framebuffer fornece
-glifos internos para ASCII e caracteres portugueses comuns e usa o mapa
-Unicode das fontes PSF quando disponível, recorrendo aos glifos internos
-quando uma fonte não contiver o caractere solicitado.
+em `ramfs/home/.global/global.conf` antes de compilar. O framebuffer usa o mapa
+Unicode da fonte PSF carregada; se um caractere não existir, tenta desenhar o
+glifo `?`. A fonte de fallback do kernel é
+`tools/fonts/zap-vga32.psf`; fontes residentes no disco só poderão ser usadas
+quando houver suporte a um filesystem persistente.

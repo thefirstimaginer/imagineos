@@ -266,16 +266,11 @@ fn scroll_one_line(console: &mut Console) {
 
 fn draw_glyph(console: &mut Console, character: char) {
     if console.font.is_null() {
-        erase_cell(console, console.cursor_x, console.cursor_y);
-        draw_builtin(console, character);
-        console.cursor_x += console.font_width;
         return;
     }
     let font = unsafe { core::slice::from_raw_parts(console.font, console.font_size) };
-    let Some(glyph) = glyph_index(console, font, character) else {
-        erase_cell(console, console.cursor_x, console.cursor_y);
-        draw_builtin(console, character);
-        console.cursor_x += console.font_width;
+    let glyph = glyph_index(console, font, character).or_else(|| glyph_index(console, font, '?'));
+    let Some(glyph) = glyph else {
         return;
     };
     if glyph >= console.glyph_count || console.font_width > 32 || console.font_height > 64 {
@@ -301,7 +296,7 @@ fn draw_glyph(console: &mut Console, character: char) {
 }
 
 fn glyph_index(console: &Console, font: &[u8], character: char) -> Option<usize> {
-    if (character as usize) < console.glyph_count {
+    if character.is_ascii() && (character as usize) < console.glyph_count {
         return Some(character as usize);
     }
     if !console.has_unicode_table || console.unicode_offset >= font.len() {
@@ -365,152 +360,6 @@ fn glyph_index(console: &Console, font: &[u8], character: char) -> Option<usize>
     None
 }
 
-fn draw_builtin(console: &Console, character: char) {
-    let (base, accent) = match character {
-        'á' | 'Á' => ('A', Some(Accent::Acute)),
-        'é' | 'É' => ('E', Some(Accent::Acute)),
-        'í' | 'Í' => ('I', Some(Accent::Acute)),
-        'ó' | 'Ó' => ('O', Some(Accent::Acute)),
-        'ú' | 'Ú' => ('U', Some(Accent::Acute)),
-        'à' | 'À' => ('A', Some(Accent::Grave)),
-        'ã' | 'Ã' => ('A', Some(Accent::Tilde)),
-        'õ' | 'Õ' => ('O', Some(Accent::Tilde)),
-        'â' | 'Â' => ('A', Some(Accent::Circumflex)),
-        'ê' | 'Ê' => ('E', Some(Accent::Circumflex)),
-        'ô' | 'Ô' => ('O', Some(Accent::Circumflex)),
-        'ç' | 'Ç' => ('C', Some(Accent::Cedilla)),
-        'ü' | 'Ü' => ('U', Some(Accent::Diaeresis)),
-        _ => (character.to_ascii_uppercase(), None),
-    };
-    let mut pattern = builtin_pattern(base);
-    if let Some(accent) = accent {
-        for column in &mut pattern {
-            *column = (*column << 1) & 0x7f;
-        }
-        match accent {
-            Accent::Acute => {
-                pattern[2] |= 0b0000001;
-                pattern[3] |= 0b0000010;
-            }
-            Accent::Grave => {
-                pattern[1] |= 0b0000010;
-                pattern[2] |= 0b0000001;
-            }
-            Accent::Tilde => {
-                pattern[1] |= 0b0000010;
-                pattern[2] |= 0b0000001;
-                pattern[3] |= 0b0000010;
-            }
-            Accent::Circumflex => {
-                pattern[1] |= 0b0000010;
-                pattern[2] |= 0b0000001;
-                pattern[3] |= 0b0000010;
-            }
-            Accent::Cedilla => pattern[2] |= 0b1000000,
-            Accent::Diaeresis => {
-                pattern[1] |= 0b0000001;
-                pattern[3] |= 0b0000001;
-            }
-        }
-    }
-    for (column, bits) in pattern.iter().enumerate() {
-        for row in 0..7 {
-            if bits & (1 << row) != 0 {
-                pixel(
-                    console,
-                    console.cursor_x + column,
-                    console.cursor_y + row,
-                    0xdce8e8,
-                );
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Accent {
-    Acute,
-    Grave,
-    Tilde,
-    Circumflex,
-    Cedilla,
-    Diaeresis,
-}
-
-fn builtin_pattern(character: char) -> [u8; 5] {
-    match character.to_ascii_uppercase() {
-        'A' => [0x7e, 0x11, 0x11, 0x11, 0x7e],
-        'B' => [0x7f, 0x49, 0x49, 0x49, 0x36],
-        'C' => [0x3e, 0x41, 0x41, 0x41, 0x22],
-        'D' => [0x7f, 0x41, 0x41, 0x22, 0x1c],
-        'E' => [0x7f, 0x49, 0x49, 0x49, 0x41],
-        'F' => [0x7f, 0x09, 0x09, 0x09, 0x01],
-        'G' => [0x3e, 0x41, 0x49, 0x49, 0x7a],
-        'H' => [0x7f, 0x08, 0x08, 0x08, 0x7f],
-        'I' => [0x00, 0x41, 0x7f, 0x41, 0x00],
-        'J' => [0x20, 0x40, 0x41, 0x3f, 0x01],
-        'K' => [0x7f, 0x08, 0x14, 0x22, 0x41],
-        'L' => [0x7f, 0x40, 0x40, 0x40, 0x40],
-        'M' => [0x7f, 0x02, 0x0c, 0x02, 0x7f],
-        'N' => [0x7f, 0x04, 0x08, 0x10, 0x7f],
-        'O' => [0x3e, 0x41, 0x41, 0x41, 0x3e],
-        'P' => [0x7f, 0x09, 0x09, 0x09, 0x06],
-        'Q' => [0x3e, 0x41, 0x51, 0x21, 0x5e],
-        'R' => [0x7f, 0x09, 0x19, 0x29, 0x46],
-        'S' => [0x46, 0x49, 0x49, 0x49, 0x31],
-        'T' => [0x01, 0x01, 0x7f, 0x01, 0x01],
-        'U' => [0x3f, 0x40, 0x40, 0x40, 0x3f],
-        'V' => [0x1f, 0x20, 0x40, 0x20, 0x1f],
-        'W' => [0x3f, 0x40, 0x38, 0x40, 0x3f],
-        'X' => [0x63, 0x14, 0x08, 0x14, 0x63],
-        'Y' => [0x07, 0x08, 0x70, 0x08, 0x07],
-        'Z' => [0x61, 0x51, 0x49, 0x45, 0x43],
-        '0' => [0x3e, 0x51, 0x49, 0x45, 0x3e],
-        '1' => [0x00, 0x42, 0x7f, 0x40, 0x00],
-        '2' => [0x42, 0x61, 0x51, 0x49, 0x46],
-        '3' => [0x21, 0x41, 0x45, 0x4b, 0x31],
-        '4' => [0x18, 0x14, 0x12, 0x7f, 0x10],
-        '5' => [0x27, 0x45, 0x45, 0x45, 0x39],
-        '6' => [0x3c, 0x4a, 0x49, 0x49, 0x30],
-        '7' => [0x01, 0x71, 0x09, 0x05, 0x03],
-        '8' => [0x36, 0x49, 0x49, 0x49, 0x36],
-        '9' => [0x06, 0x49, 0x49, 0x29, 0x1e],
-        ':' => [0x00, 0x36, 0x36, 0x00, 0x00],
-        ';' => [0x00, 0x56, 0x36, 0x00, 0x00],
-        '.' => [0x00, 0x60, 0x60, 0x00, 0x00],
-        ',' => [0x00, 0x40, 0x30, 0x00, 0x00],
-        '-' => [0x08, 0x08, 0x08, 0x08, 0x08],
-        '_' => [0x40, 0x40, 0x40, 0x40, 0x40],
-        '/' => [0x20, 0x10, 0x08, 0x04, 0x02],
-        '>' => [0x00, 0x41, 0x22, 0x14, 0x08],
-        '<' => [0x08, 0x14, 0x22, 0x41, 0x00],
-        '?' => [0x02, 0x01, 0x51, 0x09, 0x06],
-        '!' => [0x00, 0x00, 0x5f, 0x00, 0x00],
-        '\'' => [0x00, 0x03, 0x01, 0x00, 0x00],
-        '(' => [0x00, 0x1c, 0x22, 0x41, 0x00],
-        ')' => [0x00, 0x41, 0x22, 0x1c, 0x00],
-        '*' => [0x14, 0x08, 0x3e, 0x08, 0x14],
-        '@' => [0x3e, 0x41, 0x5d, 0x55, 0x1e],
-        '[' => [0x00, 0x7f, 0x41, 0x41, 0x00],
-        ']' => [0x00, 0x41, 0x41, 0x7f, 0x00],
-        '^' => [0x08, 0x04, 0x02, 0x04, 0x08],
-        '`' => [0x00, 0x01, 0x02, 0x00, 0x00],
-        '{' => [0x00, 0x08, 0x36, 0x41, 0x00],
-        '}' => [0x00, 0x41, 0x36, 0x08, 0x00],
-        '~' => [0x08, 0x04, 0x08, 0x10, 0x08],
-        '%' => [0x63, 0x13, 0x08, 0x64, 0x63],
-        '&' => [0x36, 0x49, 0x55, 0x22, 0x50],
-        '\\' => [0x02, 0x04, 0x08, 0x10, 0x20],
-        '$' => [0x24, 0x2a, 0x7f, 0x2a, 0x12],
-        '|' => [0x00, 0x00, 0x7f, 0x00, 0x00],
-        '"' => [0x03, 0x00, 0x03, 0x00, 0x00],
-        '#' => [0x14, 0x7f, 0x14, 0x7f, 0x14],
-        '=' => [0x14, 0x14, 0x14, 0x14, 0x14],
-        ' ' => [0; 5],
-        _ => [0x7f, 0x41, 0x5d, 0x41, 0x7f],
-    }
-}
-
 fn pixel(console: &Console, x: usize, y: usize, color: u32) {
     if x >= console.width || y >= console.height {
         return;
@@ -531,17 +380,4 @@ fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::builtin_pattern;
-
-    #[test]
-    fn built_in_font_covers_common_symbols_in_addition_to_letters() {
-        assert_ne!(builtin_pattern('A'), builtin_pattern('?'));
-        assert_ne!(builtin_pattern('@'), builtin_pattern('?'));
-        assert_ne!(builtin_pattern('['), builtin_pattern('?'));
-        assert_ne!(builtin_pattern('~'), builtin_pattern('?'));
-    }
 }

@@ -29,7 +29,7 @@ OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE.fd
 
 all: kernel
 
-kernel: linker.ld
+kernel: linker.ld tools/fonts/zap-vga32.psf
 	rustup run stable cargo build --release --target $(TARGET) $(if $(KERNEL_FEATURES),--features $(KERNEL_FEATURES),)
 
 $(RAMFS_IMAGE): kernel $(USER_PROGRAMS) $(RAMFS_FILES) toolchain/limine-binary/BOOTX64.EFI limine.conf tools/startup.nsh

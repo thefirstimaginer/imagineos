@@ -34,6 +34,14 @@ O boot pelo disco ainda usa `ramfs.tar` como raiz. O instalador prepara uma
 imagem de teste inicializável; não é um instalador executado dentro do
 ImagineOS nem uma instalação persistente do DFS.
 
+Essa mensagem não é apenas um placeholder: o USTAR do Limine é montado e
+permanece como a raiz usada para procurar `/sbin/init` e os arquivos dos
+programas. Embora o kernel encontre a partição GPT reservada para DFS, não
+existe ainda driver de filesystem que permita montá-la ou trocar a raiz. A
+inicialização usa o RAMFS como initramfs disponível, mas não executa
+`switch_root`/`pivot_root`; portanto, uma raiz persistente em disco depende da
+implementação futura do DFS/VFS.
+
 ## Dispositivos e instalador do sistema
 
 O disco ATA primary-master detectado aparece como `/dev/hda` e é listado por

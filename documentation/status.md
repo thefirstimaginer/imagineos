@@ -5,8 +5,12 @@
 - Entry point `no_std` x86_64 e requisicoes da crate `limine` 0.5.0.
 - GDT de kernel, TSS com stack propria e IDT fatal para excecoes de CPU.
 - Frame allocator monotonicamente crescente sobre regioes `USABLE` via HHDM.
-- Console COM1, framebuffer RGB32, glifos embutidos ASCII/português e fontes PSF1/PSF2.
-- Cursor do prompt piscante durante polling de entrada; fontes pesquisadas em `ramfs/system/fonts`.
+- Logs do kernel com tempo decorrido em colchetes; console COM1 e framebuffer RGB32.
+- Fontes PSF1/PSF2 pesquisadas em `ramfs/system/fonts`, com PSF2 embutida
+  `tools/fonts/zap-vga32.psf` como fallback; caracteres ausentes usam `?`.
+- Kernel panic explícita se `/sbin/init` não existir no RAMFS montado.
+- Prefixos de tempo, fonte PSF2 de fallback e panic por `init` ausente
+  verificados em boot QEMU/OVMF.
 - Polling de teclado PS/2 set-1, layouts US/ABNT2, acentos compostos e eventos de setas.
 - Heap global bump de 1 MiB e page tables user derivadas das mappings Limine.
 - Parser ELF64 x86_64, loader de `PT_LOAD`, zero de BSS e stacks user.
@@ -34,7 +38,7 @@
 - O PIC legado continua mascarado e IF desabilitado em ring 3 ate existir timer/APIC.
 - Checkpoints `process:`/`elf:` ficam desabilitados no build normal; `make KERNEL_FEATURES=kernel-debug iso` os reativa para diagnostico.
 - O scheduler nao e preemptivo; sem reclaim de frames, W^X, heap user, drivers de rede ou suporte completo a layouts de teclado. O driver de disco cobre apenas IDE primário PIO/LBA28; a escrita foi validada pelo caminho do instalador, mas não há testes de energia/interrupção ou recuperação de falhas.
-- Não há implementação do DFS/VFS nem persistência: a partição DFS criada pelo instalador permanece vazia, e o sistema continua montando o RAMFS inicial como raiz.
+- Não há implementação do DFS/VFS nem persistência: a partição DFS criada pelo instalador permanece vazia, e o sistema continua montando o RAMFS inicial como raiz; portanto ainda não é possível carregar fontes nem a raiz persistente do disco.
 - Shell ainda não tem pipelines, redirecionamento, aliases, funções ou `if/for/while`. Não há escrita persistente; `mkdir`, `touch`, `rm`, `vi` e `globalconf` alteram um overlay em RAM e as alterações se perdem no reboot. O único charset suportado é UTF-8 e o mapa ABNT2 cobre apenas as teclas implementadas pelo driver.
 
 O check Rust e os testes locais ELF/USTAR passam, mas isso nao substitui o teste de boot real.

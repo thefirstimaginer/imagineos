@@ -165,6 +165,7 @@ extern "C" fn dreamcore_exception_handler(
     cs: u64,
     cr2: u64,
 ) -> ! {
+    crate::serial_log_timestamp();
     serial_write(b"FATAL EXCEPTION vector=0x");
     serial_hex(vector);
     serial_write(b" error=0x");

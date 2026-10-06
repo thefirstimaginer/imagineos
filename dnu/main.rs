@@ -3,6 +3,7 @@
 
 use core::arch::asm;
 use core::panic::PanicInfo;
+use core::sync::atomic::{AtomicBool, Ordering};
 use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
 use limine::BaseRevision;
 
@@ -38,6 +39,8 @@ mod process;
 mod ramfs;
 #[path = "abi/syscall.rs"]
 mod syscall;
+#[path = "time.rs"]
+mod time;
 #[path = "console/utf8.rs"]
 mod utf8;
 
@@ -61,25 +64,28 @@ static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 #[link_section = ".requests"]
 static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
+static LOG_LINE_START: AtomicBool = AtomicBool::new(true);
+static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/fonts/zap-vga32.psf");
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     unsafe {
         asm!("cli", options(nomem, nostack, preserves_flags));
     }
 
+    time::init();
     serial_init();
     mask_legacy_pic();
     gdt::init();
     idt::init();
-    serial_write(b"ImagineOS Astrid w/ Dreamcore Kernel\r\n");
 
     if !BASE_REVISION.is_supported() {
-        serial_write(b"Limine protocol revision unsupported\r\n");
+        console_write("Limine protocol revision unsupported\n");
         halt();
     }
 
     let Some(memory_map) = MEMORY_MAP_REQUEST.get_response() else {
-        serial_write(b"Limine memory map unavailable\r\n");
+        console_write("Limine memory map unavailable\n");
         halt();
     };
 
@@ -90,7 +96,7 @@ pub extern "C" fn _start() -> ! {
     let hhdm_offset = hhdm.offset();
     let frame_count = memory::init(memory_map.entries(), hhdm_offset);
     let Some(boot_frame) = memory::allocate_frame() else {
-        serial_write(b"No usable physical frames\r\n");
+        console_write("No usable physical frames\n");
         halt();
     };
     unsafe {
@@ -101,6 +107,9 @@ pub extern "C" fn _start() -> ! {
             .get_response()
             .and_then(|response| response.framebuffers().next()),
     );
+    if !framebuffer::load_font(EMBEDDED_FONT) {
+        kernel_panic("embedded .psf is invalid!\n");
+    }
     console_write("ImagineOS Astrid w/ Dreamcore Kernel\n");
     console_write("Frame allocator ready; usable frames: ");
     console_number(frame_count.saturating_sub(1) as u64);
@@ -165,19 +174,20 @@ pub extern "C" fn _start() -> ! {
     } else {
         console_write("Global configuration missing; using defaults\n");
     }
-    let Some(init_program) = ramfs::read("/sbin/init") else {
-        console_write("RAMFS has no /sbin/init; stopping safely\n");
-        halt();
-    };
-
     if let Some(font) = ramfs::find_font() {
         if !framebuffer::load_font(font) {
-            console_write("RAMFS font invalid; using framebuffer built-in font\n");
+            console_write("RAMFS PSF invalid; retaining embedded zap-vga32.psf\n");
         }
     } else {
-        console_write("RAMFS font not found; using framebuffer built-in font\n");
+        console_write("RAMFS PSF not found; retaining embedded zap-vga32.psf\n");
     }
-    console_write("RAMFS mounted; loading /sbin/init as PID 1 in ring 3\n");
+    console_write(
+        "RAMFS initramfs mounted as current root; persistent DFS root is not implemented\n",
+    );
+    let Some(init_program) = ramfs::read("/sbin/init") else {
+        kernel_panic("required /sbin/init not found in the mounted initramfs\n");
+    };
+    console_write("Loading /sbin/init as PID 1 in ring 3\n");
     if process::init(&[(init_program, 1)]).is_err() {
         console_write("ELF loader failed; stopping safely\n");
         halt();
@@ -186,13 +196,36 @@ pub extern "C" fn _start() -> ! {
 }
 
 pub(crate) fn console_write(text: &str) {
-    serial_write(text.as_bytes());
-    framebuffer::write_str(text);
+    let mut remaining = text.as_bytes();
+    while !remaining.is_empty() {
+        if LOG_LINE_START.swap(false, Ordering::Relaxed) {
+            let mut timestamp = [0; 32];
+            let timestamp = time::format_elapsed(&mut timestamp);
+            serial_write(timestamp);
+            framebuffer::write_utf8(timestamp);
+        }
+        let length = remaining
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(remaining.len(), |newline| newline + 1);
+        let line = &remaining[..length];
+        serial_write(line);
+        framebuffer::write_utf8(line);
+        if line.last() == Some(&b'\n') {
+            LOG_LINE_START.store(true, Ordering::Relaxed);
+        }
+        remaining = &remaining[length..];
+    }
 }
 
 pub(crate) fn console_write_bytes(bytes: &[u8]) {
     serial_write(bytes);
     framebuffer::write_utf8(bytes);
+}
+
+pub(crate) fn serial_log_timestamp() {
+    let mut timestamp = [0; 32];
+    serial_write(time::format_elapsed(&mut timestamp));
 }
 
 fn console_number(mut value: u64) {
@@ -303,8 +336,13 @@ pub(crate) fn kernel_halt() -> ! {
     halt()
 }
 
+fn kernel_panic(message: &str) -> ! {
+    console_write("KERNEL PANIC: ");
+    console_write(message);
+    halt()
+}
+
 #[panic_handler]
 fn panic(_info: &PanicInfo<'_>) -> ! {
-    serial_write(b"KERNEL PANIC\r\n");
-    halt()
+    kernel_panic("unrecoverable kernel error\n")
 }

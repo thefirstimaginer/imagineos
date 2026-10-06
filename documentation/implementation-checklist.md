@@ -12,7 +12,7 @@
 ## Console e init
 
 - [x] Driver COM1 e framebuffer RGB32.
-- [x] Fonte de fallback e carregamento PSF1/PSF2.
+- [x] Fonte PSF2 embutida no kernel como fallback e carregamento PSF1/PSF2 do RAMFS.
 - [x] Entrada PS/2 com conversao UTF-8 basica.
 - [x] Parser USTAR e cadeia de ELFs `/init -> /getty -> /shell`.
 - [ ] Testar teclado e console visual no guest.

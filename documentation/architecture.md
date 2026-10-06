@@ -7,7 +7,13 @@ ISO.
 
 ## Boot
 
-Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/ramfs.tar`. O kernel é linkado em `0xffffffff80000000` com PADDRs a partir de 1 MiB, para satisfazer a regra do Limine contra PHDRs lower-half. O kernel monta o USTAR diretamente da memória e carrega `/sbin/init` como PID 1 em ring 3. O arquivo também contém `/sbin/getty`, `/bin/shell` e `/system/fonts`.
+Limine carrega `target/x86_64-unknown-none/release/dreamcore` e `boot/ramfs.tar`. O kernel é linkado em `0xffffffff80000000` com PADDRs a partir de 1 MiB, para satisfazer a regra do Limine contra PHDRs lower-half. O kernel monta o USTAR diretamente da memória como seu root atual e carrega `/sbin/init` como PID 1 em ring 3. O arquivo também contém `/sbin/getty`, `/bin/shell` e `/system/fonts`.
+
+As mensagens do kernel recebem um prefixo de tempo decorrido desde o entry
+point, calibrado pelo PIT quando possível e convertido a partir do TSC. O
+parser do RAMFS procura fontes em `system/fonts`; se não encontrar uma fonte
+PSF válida, o kernel mantém a PSF2 `tools/fonts/zap-vga32.psf` que está
+embutida no binário. Um `/sbin/init` ausente no RAMFS causa `KERNEL PANIC`.
 
 ## CPU e memória
 
@@ -37,9 +43,11 @@ O RAMFS instalado omite o utilitário e os payloads de instalação.
 
 ## Console e entrada
 
-`dnu/console/framebuffer.rs` escreve pixels RGB32, inclui glifos de fallback
-ASCII/português, decodifica saída UTF-8 com substituição para sequências
-inválidas e carrega a primeira fonte PSF1/PSF2 em `ramfs/system/fonts`.
+`dnu/console/framebuffer.rs` escreve pixels RGB32, decodifica saída UTF-8 com
+substituição para sequências inválidas e carrega a primeira fonte PSF1/PSF2 em
+`ramfs/system/fonts`, usando a PSF2 empacotada no kernel como fallback. Uma
+fonte persistente no disco não pode ser consultada até haver um filesystem DFS
+montável.
 `dnu/drivers/keyboard.rs` faz polling do controlador PS/2 set-1 e converte
 teclas US ou ABNT2, incluindo acentos compostos e eventos de setas. A entrada
 serial também decodifica UTF-8. COM1 continua disponível para diagnóstico e

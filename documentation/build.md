@@ -25,7 +25,8 @@ A ISO UEFI será gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
 O arquivo USTAR `ramfs.tar` é produzido a partir da árvore `ramfs/`. As fontes
 do kernel ficam em `dnu/`; os programas Rust de `userland/` são compilados no
 staging e incluídos sem extensão: `/sbin/init`, `/sbin/getty` e os comandos em
-`/bin/`.
+`/bin/`. A fonte `tools/fonts/zap-vga32.psf` é incorporada ao kernel e usada
+como fallback se o RAMFS não fornecer uma fonte PSF válida.
 
 ## Executar com QEMU
 
