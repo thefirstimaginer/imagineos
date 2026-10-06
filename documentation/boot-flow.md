@@ -10,7 +10,7 @@ UEFI
   -> repasse das respostas Limine e reservas de memória
   -> montagem do USTAR como initramfs
   -> montagem/recovery do DFS GPT como raiz persistente, se disponível
-  -> /sbin/init (PID 1, ring 3)
+  -> /sbin/init (PID 1, ring 3; supervisiona pedidos de desligamento)
   -> /sbin/getty
   -> /bin/shell
 ```
@@ -27,8 +27,10 @@ UEFI
    não pode reutilizar as páginas que guardam essas tabelas. Passa ao kernel o
    mapa, framebuffer, módulos e as regiões físicas reservadas.
 4. O kernel inicializa as estruturas de CPU e memória, prepara o console com
-   `tools/fonts/zap-vga16.psf` como fallback e monta o USTAR fornecido pelo
-   Limine como initramfs.
+   `tools/fonts/zap-vga16.psf` como fallback, usa o RSDP do Limine para
+   descobrir o estado ACPI S5 e monta o USTAR fornecido pelo Limine como
+   initramfs. A leitura das tabelas ACPI mapeia no HHDM as páginas de firmware
+   que ainda não estavam mapeadas.
 5. Se detectar o disco e encontrar uma partição DFS pela GPT, o kernel monta o
    filesystem e reproduz qualquer transação de journal comprometida. Nesse
    caso, a fachada de arquivos encaminha operações e leituras de `/sbin/init`
@@ -42,8 +44,12 @@ UEFI
    final dos arquivos no USTAR não tem sufixo `.elf`, embora seus conteúdos
    sejam executáveis ELF.
    Se `/sbin/init` não existir, o kernel para com uma mensagem `KERNEL PANIC`.
-7. O programa `init` inicia `/sbin/getty`; getty inicia `/bin/shell`. Os
-   utilitários e o shell ficam em `/bin`.
+7. O programa `init` inicia `/sbin/getty` e continua em loop cooperativo,
+   verificando o mailbox de desligamento enquanto cede a CPU. Getty inicia
+   `/bin/shell`; o utilitário `shutdown` envia um pedido IPC a PID 1. Quando
+   recebe o pedido, init solicita o flush do armazenamento e o poweroff ao
+   kernel via estado ACPI S5 descoberto nas tabelas do firmware.
+   Os utilitários e o shell ficam em `/bin`.
 
 ## Relação com o modelo Linux
 
@@ -57,17 +63,20 @@ DFS é a raiz ativa para as operações do sistema.
 
 As linhas de log do kernel começam com `[segundos.milissegundos]`, medidos a
 partir do entry point por TSC calibrado pelo PIT quando possível. Saída de
-programas userspace não recebe esses prefixos.
+programas userspace não recebe esses prefixos. `dmesg` lê o buffer circular de
+4 KiB dessas mensagens de kernel. Saída do firmware UEFI, Limine e do bootstrap
+acontece antes do entry point e ainda não é incluída no buffer.
 
 O início em ring 3 e o uso de um ELF para PID 1 seguem a mesma separação
 fundamental entre kernel e userspace. O modelo de processos ainda é muito menor
-que o Linux: a chamada `exec` do DNU cria outro processo e suspende o
-chamador até esse processo terminar; ela não substitui a imagem do processo
+que o Linux: a chamada `exec` do DNU cria outro processo, e o chamador volta a
+executar quando for agendado novamente; ela não substitui a imagem do processo
 chamador como `execve` faz no Linux. Também não há chamadas de `wait`, coleta
 de processos filhos, reinício de serviços ou recuperação das páginas de um
 processo encerrado. Portanto, quando a cadeia getty/shell termina, `init`
-encerra e o kernel para ao não haver outro processo ativo. Esse fluxo é
-intencionalmente inicial, não um gerenciador de serviços completo.
+permanece ativo para supervisionar pedidos; ainda não reinicia serviços, envia
+sinais, coleta filhos nem encerra outros processos individualmente. Esse fluxo
+é intencionalmente inicial, não um gerenciador de serviços completo.
 
 ## Organização do repositório
 

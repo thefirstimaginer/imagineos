@@ -88,8 +88,11 @@ estão em [Testes](testing.md).
   oferece `console::write_all`, `console::read_char`, `fs::read_file`,
   `fs::write_file`, `fs::list_directory`, operações de diretório e arquivos,
   `fs::open` com `OpenOptions`, leitura/escrita/fechamento de descritores,
-  stdin/stdout/stderr, `process::pid`, `process::yield_now`, `process::exec` e
-  `process::exit`.
+  stdin/stdout/stderr, `fs::install_to_disk`, `kernel_log::read`,
+  `process::pid`, `process::yield_now`, `process::exec` e `process::exit`.
+- `shutdown::request`, `shutdown::take_request` e `shutdown::power_off` fornecem
+  um mailbox IPC de pedido de desligamento. Qualquer programa pode solicitar
+  shutdown; somente PID 1 pode consumir pedidos e pedir ao kernel para desligar.
 - A crate `imagineos_rt` contém `main!`, `print!`/`println!` e converte o
   resultado da função principal em código de saída. `main!(user_main)` chama
   `fn user_main() -> i32`, `fn user_main() -> imagineos_rt::imagineos::Result<()>`
@@ -110,6 +113,14 @@ estão em [Testes](testing.md).
   O kernel e as aplicações compartilham as definições em
   [`shared/abi`](../shared/abi/src/lib.rs). A syscall `16` consulta a versão
   para que programas possam detectar incompatibilidade.
+- A syscall `25` e `imagineos::kernel_log::read` expõem o buffer circular de
+  4 KiB do kernel; o utilitário `dmesg` aceita `-n LINES` para selecionar as
+  linhas mais recentes. Logs de UEFI, Limine e bootstrap ainda não são
+  preservados pelo kernel.
+- `shutdown` pede encerramento via `/sbin/init`; o kernel sincroniza o disco
+  ATA antes do poweroff e usa o estado S5 obtido das tabelas ACPI. Ainda não há
+  encerramento de serviços por sinais; o parser atual é limitado ao RSDP,
+  FADT/DSDT e registradores PM1 de I/O.
 - A lista completa de chamadas, registradores, resultados, erros e limites está
   em [ABI de syscalls](syscall-abi.md). Não adicione assembly de syscall em
   aplicações; estenda a crate `imagineos` e mantenha o contrato documentado.

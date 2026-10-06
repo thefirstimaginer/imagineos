@@ -26,6 +26,10 @@ pub const SYS_DISK_COUNT: u64 = 21;
 pub const SYS_DISK_SECTORS: u64 = 22;
 pub const SYS_INSTALL_DISK: u64 = 23;
 pub const SYS_STAT: u64 = 24;
+pub const SYS_DMESG: u64 = 25;
+pub const SYS_SHUTDOWN_REQUEST: u64 = 26;
+pub const SYS_SHUTDOWN_POLL: u64 = 27;
+pub const SYS_POWER_OFF: u64 = 28;
 
 pub const FD_STDIN: u64 = 0;
 pub const FD_STDOUT: u64 = 1;

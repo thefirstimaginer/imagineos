@@ -14,11 +14,33 @@ O shell e um ELF x86_64 em ring 3. A entrada vem dos syscalls `read` via COM1 ou
 | `read NAME` | Le uma linha e salva na variavel |
 | `clear` | Limpa o framebuffer |
 | `pid` | Mostra o PID do shell |
+| `dmesg [-n LINES]` | Exibe as mensagens recentes do buffer do kernel |
+| `uname [OPCOES]` | Exibe informações do sistema e da arquitetura |
+| `shutdown [--help]` | Solicita ao init o encerramento do sistema |
 | `echo [-n] texto` | Escreve texto; expande `$NAME` e `${NAME}` |
 | `type NAME` | Identifica builtin ou executavel encontrado por PATH |
-| `exit` | Encerra o shell e o kernel quando nao restam tarefas |
+| `exit` | Encerra o shell atual |
 
-Comandos externos são procurados da esquerda para a direita em `PATH`, cujo valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch`, `rm`, `vi`, `globalconf` e `distroinstall` em `/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers limitados.
+Comandos externos são procurados da esquerda para a direita em `PATH`, cujo
+valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch`,
+`rm`, `vi`, `globalconf`, `distroinstall`, `dmesg`, `uname` e `shutdown` em
+`/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers
+limitados.
+
+`shutdown` envia um pedido IPC ao processo `/sbin/init` (PID 1). O init
+continua supervisionando enquanto o shell executa e encaminha o pedido ao
+kernel, que sincroniza o cache do disco ATA antes de solicitar o desligamento.
+O pedido ainda não encerra serviços nem envia sinais aos demais processos.
+O desligamento usa as tabelas ACPI fornecidas pelo firmware para localizar os
+registradores de energia e o estado S5; se essas tabelas ou os registradores
+necessários não estiverem disponíveis, init informa o erro e o sistema continua
+ligado.
+
+`dmesg` mostra as mensagens mais recentes registradas pelo kernel, até 4 KiB;
+`dmesg -n 10` limita a saída às últimas dez linhas. Mensagens de UEFI, Limine
+e do bootstrap anteriores à entrada do kernel não fazem parte desse buffer.
+`uname` aceita `-s`, `-n`, `-r`, `-v`, `-m` e `-o`; `-a`/`--all` mostra todos
+os campos e as opções podem ser combinadas, por exemplo `uname -snr`.
 
 `ls` aceita `-a`/`--all` para incluir entradas ocultas, `-l`/`--long` para
 mostrar todos os metadados e as opções independentes `-s`/`--size`,

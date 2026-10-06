@@ -65,6 +65,10 @@ substituição para sequências inválidas e carrega a primeira fonte PSF1/PSF2 
 `ramfs/system/fonts`, usando a PSF1 8x16 empacotada no kernel como fallback.
 Como leituras do filesystem são encaminhadas ao DFS quando montado, fontes
 instaladas também podem ser encontradas nele.
+O build inclui a fonte fallback em `system/fonts/zap-vga16.psf` no USTAR,
+portanto ela também é semeada no DFS pelo instalador. `dnu/kernel_log.rs`
+mantém as últimas 4 KiB de logs do kernel; syscall 25 e o utilitário `dmesg`
+os expõem ao userspace.
 `dnu/drivers/keyboard.rs` faz polling do controlador PS/2 set-1 e converte
 teclas US ou ABNT2, incluindo acentos compostos e eventos de setas. A entrada
 serial também decodifica UTF-8. COM1 continua disponível para diagnóstico e

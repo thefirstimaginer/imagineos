@@ -6,6 +6,7 @@ const PAGE_SIZE: u64 = 4096;
 const ENTRY_PRESENT: u64 = 1;
 const ENTRY_WRITABLE: u64 = 1 << 1;
 const ENTRY_USER: u64 = 1 << 2;
+const ENTRY_HUGE: u64 = 1 << 7;
 const ADDRESS_MASK: u64 = 0x000f_ffff_ffff_f000;
 const USER_MIN: u64 = 0x400000;
 const USER_MAX: u64 = 0x0000_8000_0000_0000;
@@ -107,6 +108,69 @@ pub fn switch(space: AddressSpace) {
     unsafe {
         asm!("mov cr3, {}", in(reg) space.root_physical, options(nostack, preserves_flags));
     }
+}
+
+pub fn map_hhdm_range(hhdm_offset: u64, physical_address: u64, length: usize) -> bool {
+    let Some(end) = physical_address.checked_add(length as u64) else {
+        return false;
+    };
+    if length == 0 {
+        return true;
+    }
+
+    let mut physical = physical_address & !(PAGE_SIZE - 1);
+    let end = end.saturating_add(PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+    while physical < end {
+        let Some(virtual_address) = hhdm_offset.checked_add(physical) else {
+            return false;
+        };
+        if !map_hhdm_page(virtual_address, physical) {
+            return false;
+        }
+        physical = physical.saturating_add(PAGE_SIZE);
+    }
+    true
+}
+
+fn map_hhdm_page(virtual_address: u64, physical_address: u64) -> bool {
+    let indices = [
+        ((virtual_address >> 39) & 0x1ff) as usize,
+        ((virtual_address >> 30) & 0x1ff) as usize,
+        ((virtual_address >> 21) & 0x1ff) as usize,
+        ((virtual_address >> 12) & 0x1ff) as usize,
+    ];
+    let mut table_physical = read_cr3() & ADDRESS_MASK;
+    for (level, index) in indices.iter().take(3).enumerate() {
+        let Some(table) = table_pointer(table_physical) else {
+            return false;
+        };
+        let entry = unsafe { &mut *table.add(*index) };
+        if *entry & ENTRY_PRESENT == 0 {
+            let Some(frame) = memory::allocate_frame() else {
+                return false;
+            };
+            unsafe {
+                ptr::write_bytes(frame.virtual_address, 0, PAGE_SIZE as usize);
+            }
+            *entry = frame.physical_address | ENTRY_PRESENT | ENTRY_WRITABLE;
+        } else if level > 0 && *entry & ENTRY_HUGE != 0 {
+            return true;
+        }
+        table_physical = *entry & ADDRESS_MASK;
+    }
+
+    let Some(table) = table_pointer(table_physical) else {
+        return false;
+    };
+    let entry = unsafe { &mut *table.add(indices[3]) };
+    if *entry & ENTRY_PRESENT != 0 {
+        return *entry & ADDRESS_MASK == physical_address;
+    }
+    *entry = physical_address | ENTRY_PRESENT | ENTRY_WRITABLE;
+    unsafe {
+        asm!("invlpg [{}]", in(reg) virtual_address, options(nostack, preserves_flags));
+    }
+    true
 }
 
 fn read_cr3() -> u64 {

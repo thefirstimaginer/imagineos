@@ -51,6 +51,10 @@ chamadas recebem novos números.
 | 22 | `disk_sectors` | `RDI=índice do disco` | setores endereçáveis; `-ENODEV` se não existir |
 | 23 | `install_disk` | `RDI=índice do disco` | `0` após instalação inicializável; operação destrutiva |
 | 24 | `stat` | `RDI=caminho`, `RSI=tamanho`, `RDX=destino UserStat` | `0` |
+| 25 | `dmesg` | `RDI=destino`, `RSI=capacidade` | bytes da parte mais recente do log circular do kernel |
+| 26 | `shutdown_request` | nenhum | `0`; posta um pedido para o init |
+| 27 | `shutdown_poll` | nenhum | PID 1: `1` se havia pedido, `0` caso contrário; outros recebem `-EPERM` |
+| 28 | `power_off` | nenhum | PID 1 sincroniza o disco e solicita desligamento; outros recebem `-EPERM` |
 
 `install_disk` aceita apenas o processo `/bin/distroinstall` incluído na mídia
 live; o RAMFS instalado omite o utilitário e seus payloads. Discos são
@@ -80,7 +84,7 @@ FD, permissões ou compartilhamento atômico de offsets entre processos.
 
 Erros usados atualmente incluem `EPERM=1`, `ENODEV=19`, `EINVAL=22`, `EFAULT=14`, `ENOENT=2`,
 `E2BIG=7`, `ENOEXEC=8`, `EAGAIN=11`, `ENOSPC=28`, `ENOSYS=38`,
-`ENOTDIR=20`, `EISDIR=21`, `EEXIST=17`, `EMFILE=24`, `EBADF=9`,
+`ENOTDIR=20`, `EISDIR=21`, `EEXIST=17`, `EMFILE=24`, `EBADF=9`, `EIO=5`,
 `ENOTEMPTY=39` e `EOVERFLOW=75`. A crate preserva errno
 desconhecidos em `Error::code()`.
 `exec` retorna `ENOEXEC` quando o ELF não pode ser carregado; `EOVERFLOW`
@@ -88,6 +92,17 @@ indica que a leitura ou listagem não coube no buffer informado.
 
 `UserStat` é uma estrutura `#[repr(C)]` com `size: u64`, `mode`, `uid`, `gid`
 e `kind` como `u32`. `kind=1` identifica diretório e `kind=0`, arquivo.
+`dmesg` copia no máximo 4 KiB do buffer circular do kernel, em ordem
+cronológica; se o buffer do userspace for menor, recebe apenas a parte final.
+O buffer mantém os últimos 4 KiB de mensagens enviadas pelo logger do kernel.
+As syscalls 26–28 implementam um mailbox IPC limitado a pedidos de
+desligamento: solicitações repetidas antes da leitura são agrupadas. Não é um
+sistema de mensagens genérico. O kernel permite que qualquer processo peça o
+desligamento, mas somente PID 1 pode consumir o pedido ou iniciar o poweroff.
+Antes do poweroff, o kernel executa `flush` no disco ATA detectado. A rotina
+usa o RSDP do Limine para encontrar o FADT, os registradores PM1 e o estado S5
+`_S5_` na DSDT; formatos AML ou registradores que não forem reconhecidos fazem
+a chamada falhar em vez de presumir uma porta específica de QEMU.
 
 ## Crate Rust de userspace
 

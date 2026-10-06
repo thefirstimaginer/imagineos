@@ -29,6 +29,10 @@ rustup run stable rustc --edition 2021 --test dnu/tests/dfs.rs -o /tmp/imagineos
 /tmp/imagineos-dfs-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/installer.rs -o /tmp/imagineos-installer-tests
 /tmp/imagineos-installer-tests
+rustup run stable rustc --edition 2021 --test dnu/tests/kernel_log.rs -o /tmp/imagineos-kernel-log-tests
+/tmp/imagineos-kernel-log-tests
+rustup run stable rustc --edition 2021 --test dnu/tests/shutdown.rs -o /tmp/imagineos-shutdown-tests
+/tmp/imagineos-shutdown-tests
 rustup run stable rustc --edition 2021 --test dnu/dzimage.rs -o /tmp/imagineos-dzimage-tests
 /tmp/imagineos-dzimage-tests
 rustup run stable rustc --edition 2021 --test tools/dzpack.rs -o /tmp/imagineos-dzpack-tests
@@ -39,8 +43,9 @@ tar -tf .build/ramfs.tar
 
 O tar deve conter `sbin/init`, `sbin/getty`, `bin/shell`, `bin/ls`, `bin/cat`,
 `bin/grep`, `bin/globalconf`, `bin/distroinstall`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
-`bin/hello`, `bin/fdtest`, `home/.global/global.conf` e
-`system/fonts/zap-light16.psf`, além dos payloads em `system/install/`.
+`bin/hello`, `bin/fdtest`, `bin/dmesg`, `bin/uname`,
+`home/.global/global.conf` e `system/fonts/zap-vga16.psf`, além dos payloads
+em `system/install/`.
 O RAMFS live fornece `system/install/bootstrap.elf` e `system/install/dzImage`;
 o arquivo instalado não contém os payloads do instalador.
 
@@ -49,7 +54,7 @@ Para reativar os logs de cada etapa de carregamento: `make KERNEL_FEATURES=kerne
 
 ## Boot manual
 
-Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty/shell. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `fdtest`, `cat /home/readme.txt`,
+Use QEMU com firmware OVMF (UEFI), conecte COM1 ao terminal e inicialize a ISO. Confirme que o kernel carrega `/sbin/init` como PID 1 e que init inicia getty/shell. Teste `globalconf show`, `globalconf get keyboard`, `globalconf set keyboard us`, `globalconf set keyboard abnt2`, `globalconf get charset`, `vi /home/.global/global.conf` (sair com `:q!`), `pwd`, `cd /bin`, `ls`, `ls /sbin`, `cd /home`, `export X=astrid`, `echo "$X"`, `type ls`, `hello`, `fdtest`, `dmesg -n 10`, `uname -a`, `cat /home/readme.txt`,
 `grep ImagineOS /home/readme.txt` e `read NAME`. `fdtest` verifica stdio,
 abertura, leitura, escrita, append, fechamento e erro de descritor fechado.
 Com o layout ABNT2, teste `ç`, `á`, `ã`, `ê` e as setas no editor; no prompt,
@@ -65,6 +70,10 @@ execute `distroinstall`, confirme digitando exatamente `APAGAR /dev/hda` e
 `make run-disk DISK_IMAGE=.build/installer-target.img`. O utilitário apaga o
 disco alvo; use apenas a imagem virtual de teste. A instalação deve chegar ao
 shell sem a ISO e o RAMFS instalado não deve conter `/bin/distroinstall`.
+
+Em QEMU/OVMF, teste `shutdown` por último; o comando deve fazer PID 1 consumir
+o pedido, registrar a sincronização do disco e desligar a VM via ACPI S5.
+Para validar o flush ATA, anexe uma imagem de disco à VM durante esse teste.
 
 Sem QEMU/OVMF ou sem as ferramentas para gerar a ISO, a compilação e os testes locais não comprovam que o sistema inicializa corretamente.
 

@@ -11,7 +11,7 @@ DZ_IMAGE := .build/dzImage
 ISO_DIR := .build/iso
 RAMFS_IMAGE := .build/ramfs.tar
 RAMFS_INSTALLED_IMAGE := .build/ramfs-installed.tar
-USER_UTILITIES := cat distroinstall fdtest globalconf grep ls mkdir rm touch vi hello
+USER_UTILITIES := cat dmesg distroinstall fdtest globalconf grep ls mkdir rm shutdown touch uname vi hello
 RAMFS_DIRS := bin dev sbin home system/fonts system/install tmp usr
 USER_API_MANIFEST := userland/api/Cargo.toml
 USER_API_TARGET_DIR := .build/user/api-target
@@ -64,10 +64,13 @@ dzimage: $(DZ_IMAGE)
 $(DZ_IMAGE): $(KERNEL) .build/dzpack
 	.build/dzpack $(KERNEL) $@
 
-$(RAMFS_IMAGE): kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) $(RAMFS_FILES) toolchain/limine-binary/BOOTX64.EFI limine.conf tools/startup.nsh
+$(RAMFS_IMAGE): kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) $(RAMFS_FILES) tools/fonts/zap-vga16.psf toolchain/limine-binary/BOOTX64.EFI limine.conf tools/startup.nsh
 	rm -rf .build/ramfs
 	mkdir -p $(addprefix .build/ramfs/,$(RAMFS_DIRS))
 	cp -a ramfs/. .build/ramfs/
+	if [ ! -e .build/ramfs/system/fonts/zap-vga16.psf ]; then \
+		cp tools/fonts/zap-vga16.psf .build/ramfs/system/fonts/zap-vga16.psf; \
+	fi
 	cp .build/user/sbin/init .build/ramfs/sbin/init
 	cp .build/user/sbin/getty .build/ramfs/sbin/getty
 	cp .build/user/bin/shell .build/ramfs/bin/shell
@@ -111,7 +114,8 @@ user-programs: $(USER_PROGRAMS)
 
 $(USER_API_RLIB): $(USER_API_MANIFEST) userland/api/src/lib.rs \
 	userland/api/src/args.rs userland/api/src/console.rs userland/api/src/fs.rs \
-	userland/api/src/legacy.rs userland/api/src/process.rs userland/api/src/syscall.rs \
+	userland/api/src/kernel_log.rs userland/api/src/legacy.rs \
+	userland/api/src/process.rs userland/api/src/shutdown.rs userland/api/src/syscall.rs \
 	shared/abi/Cargo.toml shared/abi/src/lib.rs
 	rustup run stable cargo build --manifest-path $(USER_API_MANIFEST) \
 		--target $(TARGET) --release --target-dir $(USER_API_TARGET_DIR)

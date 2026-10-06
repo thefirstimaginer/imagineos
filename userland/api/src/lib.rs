@@ -5,8 +5,10 @@ pub use imagineos_abi as abi;
 pub mod args;
 pub mod console;
 pub mod fs;
+pub mod kernel_log;
 pub mod legacy;
 pub mod process;
+pub mod shutdown;
 pub mod syscall;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

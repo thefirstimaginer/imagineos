@@ -10,13 +10,37 @@ extern "C" fn _start(
     _envc: usize,
     _envp: *const *const u8,
 ) -> ! {
-    if imagineos::console::write_all(b"Astrid init: PID 1 running in ring 3\n").is_err() {
+    if imagineos::console::write_all(b"Astrid init: PID 1 supervising the system\n").is_err() {
         imagineos::process::exit(1);
     }
     if imagineos::process::exec("/sbin/getty", &["/sbin/getty"], &[]).is_err() {
         imagineos::process::exit(1);
     }
-    imagineos::process::exit(0)
+    loop {
+        match imagineos::shutdown::take_request() {
+            Ok(true) => {
+                if imagineos::console::write_all(
+                    b"init: shutdown requested; syncing storage and powering off\n",
+                )
+                .is_err()
+                {
+                    imagineos::process::exit(1);
+                }
+                if imagineos::shutdown::power_off().is_err() {
+                    let _ = imagineos::console::write_all(
+                        b"init: shutdown failed; system remains running\n",
+                    );
+                }
+            }
+            Ok(false) => {}
+            Err(_) => {
+                let _ = imagineos::console::write_all(b"init: shutdown IPC failed\n");
+            }
+        }
+        if imagineos::process::yield_now().is_err() {
+            imagineos::process::exit(1);
+        }
+    }
 }
 
 #[panic_handler]

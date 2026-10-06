@@ -10,7 +10,8 @@ use crate::syscall::TrapFrame;
 pub use imagineos_abi::UserArg;
 
 const MAX_PROCESSES: usize = 4;
-const KERNEL_STACK_SIZE: usize = 16 * 1024;
+// The synchronous DFS installer nests large journal transaction buffers.
+const KERNEL_STACK_SIZE: usize = 64 * 1024;
 const USER_STACK_SIZE: u64 = 8 * 4096;
 pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_0000;
 const PAGE_SIZE: u64 = 4096;

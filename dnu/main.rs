@@ -29,12 +29,16 @@ mod heap;
 mod idt;
 #[path = "fs/installer.rs"]
 mod installer;
+#[path = "kernel_log.rs"]
+mod kernel_log;
 #[path = "drivers/keyboard.rs"]
 mod keyboard;
 #[path = "mm/memory.rs"]
 mod memory;
 #[path = "arch/x86_64/paging.rs"]
 mod paging;
+#[path = "power.rs"]
+mod power;
 #[path = "exec/process.rs"]
 mod process;
 #[path = "fs/ramfs.rs"]
@@ -92,6 +96,7 @@ pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     console_write(";\nreserved boot frame at physical 0x");
     console_hex(boot_frame.physical_address);
     console_write("\n");
+    power::init(boot_info.rsdp_address, boot_info.hhdm_offset);
 
     let disk_ready = match ata::init() {
         Ok(sectors) => {
@@ -179,6 +184,7 @@ pub(crate) fn console_write(text: &str) {
         if LOG_LINE_START.swap(false, Ordering::Relaxed) {
             let mut timestamp = [0; 32];
             let timestamp = time::format_elapsed(&mut timestamp);
+            kernel_log::append(timestamp);
             serial_write(timestamp);
             framebuffer::write_utf8(timestamp);
         }
@@ -187,6 +193,7 @@ pub(crate) fn console_write(text: &str) {
             .position(|byte| *byte == b'\n')
             .map_or(remaining.len(), |newline| newline + 1);
         let line = &remaining[..length];
+        kernel_log::append(line);
         serial_write(line);
         framebuffer::write_utf8(line);
         if line.last() == Some(&b'\n') {

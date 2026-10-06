@@ -6,6 +6,8 @@
 - GDT de kernel, TSS com stack propria e IDT fatal para excecoes de CPU.
 - Frame allocator monotonicamente crescente sobre regioes `USABLE` via HHDM.
 - Logs do kernel com tempo decorrido em colchetes; console COM1 e framebuffer RGB32.
+- Buffer circular de 4 KiB para mensagens do kernel, syscall `dmesg` e utilitário
+  `dmesg -n LINES`; logs de UEFI, Limine e bootstrap ainda ficam fora dele.
 - Fonte padrão PSF1 8x16 `tools/fonts/zap-vga16.psf`; fontes PSF1/PSF2 do
   `ramfs/system/fonts` substituem o fallback; caracteres ausentes usam `?`.
 - Kernel panic explícita se `/sbin/init` não existir no RAMFS montado.
@@ -22,7 +24,7 @@
 - Heap global bump de 1 MiB e page tables user derivadas das mappings Limine.
 - Parser ELF64 x86_64, loader de `PT_LOAD`, zero de BSS e stacks user.
 - GDT ring 3, gate `int 0x80`, syscalls de I/O, yield, exit, PID e clear.
-- ABI de syscalls v1 documentada e compartilhada entre kernel e crate `imagineos`; syscall 16 consulta a versão.
+- ABI de syscalls v2 documentada e compartilhada entre kernel e crate `imagineos`; syscall 16 consulta a versão.
 - Wrappers Rust `no_std` para console, RAMFS, processos e argumentos; init, getty, shell e utilitários usam a crate em vez de assembly duplicado.
 - Tabelas limitadas por processo com stdio (FD 0-2), open/read/write/close para RAMFS e herança por cópia ao iniciar ELFs.
 - `fdtest` validado no QEMU: stdio, open/read/write/append/close funcionam com as tabelas de descritores fora da estrutura de processo.
@@ -37,6 +39,11 @@
 - RAMFS USTAR montado por path; `/sbin/init` inicia como PID 1, `/sbin/getty` inicia `/bin/shell`, e comandos externos são resolvidos em `/bin`.
 - Built-ins `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type` e `exit`; parser com aspas, escapes e expansão simples de variáveis.
 - Programas ELF externos em `/bin`, com `argv`/`envp`, busca por `PATH` e syscalls do RAMFS; init/getty e utilitários são fontes de userspace em `userland/`.
+- Utilitários `dmesg` e `uname`; `uname` implementa seletores de nome, host,
+  release, versão, arquitetura, sistema operacional e `-a`.
+- Utilitário `shutdown` com mailbox IPC de pedido para PID 1; init continua
+  supervisionando, o kernel sincroniza o ATA e solicita ACPI S5 usando
+  registradores PM1 e AML `_S5_` descobertos via RSDP/FADT/DSDT.
 - `globalconf` lê/atualiza `/home/.global/global.conf`; o kernel aplica layout US/ABNT2 durante a sessão e UTF-8 é o charset aceito.
 - `vi` modal com navegação, edição UTF-8 e gravação de arquivos de até 4 KiB.
 

@@ -8,9 +8,10 @@ use imagineos_abi::UserStat;
 use imagineos_abi::SYS_STAT;
 use imagineos_abi::{
     OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION, SYS_CLEAR,
-    SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_INSTALL_DISK,
-    SYS_ISDIR, SYS_ISFILE, SYS_MKDIR, SYS_OPEN, SYS_READ, SYS_READDIR, SYS_READ_FD, SYS_READ_FILE,
-    SYS_REMOVE, SYS_TOUCH, SYS_WRITE, SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
+    SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_DMESG, SYS_EXEC, SYS_EXIT, SYS_GETPID,
+    SYS_INSTALL_DISK, SYS_ISDIR, SYS_ISFILE, SYS_MKDIR, SYS_OPEN, SYS_POWER_OFF, SYS_READ,
+    SYS_READDIR, SYS_READ_FD, SYS_READ_FILE, SYS_REMOVE, SYS_SHUTDOWN_POLL, SYS_SHUTDOWN_REQUEST,
+    SYS_TOUCH, SYS_WRITE, SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
 };
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
@@ -63,6 +64,51 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
         }
         SYS_ABI_VERSION => {
             frame_ref.rax = imagineos_abi::ABI_VERSION;
+            frame
+        }
+        SYS_SHUTDOWN_REQUEST => {
+            crate::power::request_shutdown();
+            frame_ref.rax = 0;
+            frame
+        }
+        SYS_SHUTDOWN_POLL => {
+            frame_ref.rax = if process::current_pid() != 1 {
+                (-1i64) as u64
+            } else {
+                u64::from(crate::power::take_shutdown_request())
+            };
+            frame
+        }
+        SYS_POWER_OFF => {
+            if process::current_pid() != 1 {
+                frame_ref.rax = (-1i64) as u64;
+                frame
+            } else {
+                match crate::power::power_off() {
+                    Ok(()) => unreachable!(),
+                    Err(_) => {
+                        crate::console_write(
+                            "ERROR: storage sync or ACPI poweroff failed; shutdown aborted\n",
+                        );
+                        frame_ref.rax = (-5i64) as u64;
+                        frame
+                    }
+                }
+            }
+        }
+        SYS_DMESG => {
+            let capacity = frame_ref.rsi as usize;
+            if capacity > imagineos_abi::MAX_READ_BUFFER {
+                frame_ref.rax = (-22i64) as u64;
+                return frame;
+            }
+            let mut buffer = [0u8; imagineos_abi::MAX_READ_BUFFER];
+            let length = crate::kernel_log::read(&mut buffer[..capacity]);
+            frame_ref.rax = if process::copy_to_current_user(frame_ref.rdi, &buffer[..length]) {
+                length as u64
+            } else {
+                (-14i64) as u64
+            };
             frame
         }
         SYS_DISK_COUNT => {

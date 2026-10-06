@@ -25,6 +25,7 @@ pub struct BootInfo {
     pub memory_map: *const MemoryMapResponse,
     pub framebuffer: *const FramebufferResponse,
     pub modules: *const ModuleResponse,
+    pub rsdp_address: u64,
     pub hhdm_offset: u64,
     pub tsc_start: u64,
     pub tsc_frequency: u64,

@@ -6,7 +6,9 @@ use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr;
 use limine::memory_map::{Entry, EntryType};
-use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
+use limine::request::{
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, RsdpRequest,
+};
 use limine::response::{FramebufferResponse, MemoryMapResponse, ModuleResponse};
 use limine::BaseRevision;
 
@@ -46,6 +48,9 @@ static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 #[used]
 #[link_section = ".requests"]
 static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
+#[used]
+#[link_section = ".requests"]
+static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 
 static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/fonts/zap-vga16.psf");
 struct BootInfoStorage(core::cell::UnsafeCell<MaybeUninit<BootInfo>>);
@@ -174,6 +179,8 @@ pub extern "C" fn _start() -> ! {
     };
     let unpacked_pointer = physical_pointer(unpacked_range.start, hhdm.offset());
     let unpacked = unsafe { core::slice::from_raw_parts_mut(unpacked_pointer, output_size) };
+    serial_write(b"\r\n");
+    framebuffer::write_char('\n');
     if dzimage::unpack(image, unpacked, show_progress).is_err() {
         fail("\r\nfailed to unpack or validate dzImage");
     }
@@ -233,6 +240,9 @@ pub extern "C" fn _start() -> ! {
                 response as *const FramebufferResponse
             }),
         modules: module_response as *const ModuleResponse,
+        rsdp_address: RSDP_REQUEST
+            .get_response()
+            .map_or(0, |response| response.address() as u64),
         hhdm_offset: hhdm.offset(),
         tsc_start,
         tsc_frequency,
@@ -570,13 +580,22 @@ fn serial_init() {
 }
 
 fn serial_write(bytes: &[u8]) {
+    let mut previous_was_cr = false;
     for &byte in bytes {
-        unsafe {
-            while in_port(0x3fd) & 0x20 == 0 {
-                asm!("pause", options(nomem, nostack, preserves_flags));
-            }
-            out(0x3f8, byte);
+        if byte == b'\n' && !previous_was_cr {
+            serial_write_byte(b'\r');
         }
+        serial_write_byte(byte);
+        previous_was_cr = byte == b'\r';
+    }
+}
+
+fn serial_write_byte(byte: u8) {
+    unsafe {
+        while in_port(0x3fd) & 0x20 == 0 {
+            asm!("pause", options(nomem, nostack, preserves_flags));
+        }
+        out(0x3f8, byte);
     }
 }
 

@@ -31,7 +31,9 @@ transfere as respostas Limine ao kernel. O USTAR `ramfs.tar` é produzido a
 partir de `ramfs/`; os programas Rust de `userland/` são incluídos sem
 extensão: `/sbin/init`, `/sbin/getty` e comandos em `/bin`. A fonte PSF
 8x16 `tools/fonts/zap-vga16.psf` é incorporada ao kernel e ao bootstrap como
-fallback para uma fonte inválida ou ausente no RAMFS.
+fallback para uma fonte inválida ou ausente no RAMFS. Ela também é copiada
+para `system/fonts/zap-vga16.psf` dentro do USTAR, de modo que o instalador
+inclui a fonte na raiz DFS persistente.
 
 ## Executar com QEMU
 
