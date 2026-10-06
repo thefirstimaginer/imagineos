@@ -18,7 +18,14 @@ O shell e um ELF x86_64 em ring 3. A entrada vem dos syscalls `read` via COM1 ou
 | `type NAME` | Identifica builtin ou executavel encontrado por PATH |
 | `exit` | Encerra o shell e o kernel quando nao restam tarefas |
 
-Comandos externos são procurados da esquerda para a direita em `PATH`, cujo valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch`, `rm`, `vi` e `globalconf` em `/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers limitados.
+Comandos externos são procurados da esquerda para a direita em `PATH`, cujo valor inicial é `/bin`. O RAMFS fornece `ls`, `cat`, `grep`, `mkdir`, `touch`, `rm`, `vi`, `globalconf` e `distroinstall` em `/bin`; `grep` faz busca literal e os utilitários de leitura usam buffers limitados.
+
+`ls /dev` lista os dispositivos de bloco detectados. No momento, o único
+dispositivo suportado é `/dev/hda` (ATA primary-master). `distroinstall`
+instala o ImagineOS nesse disco após duas confirmações digitadas; a operação
+apaga a tabela de partições e todos os dados existentes. Teste com a imagem
+virtual criada por `make run-installer`, nunca com um disco que contenha dados
+a preservar.
 
 `globalconf` mostra e altera configurações globais:
 

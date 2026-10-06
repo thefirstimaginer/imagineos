@@ -15,6 +15,10 @@
 - Wrappers Rust `no_std` para console, RAMFS, processos e argumentos; init, getty, shell e utilitários usam a crate em vez de assembly duplicado.
 - Tabelas limitadas por processo com stdio (FD 0-2), open/read/write/close para RAMFS e herança por cópia ao iniciar ELFs.
 - `fdtest` validado no QEMU: stdio, open/read/write/append/close funcionam com as tabelas de descritores fora da estrutura de processo.
+- Interface síncrona de setores de 512 bytes, driver ATA PIO do primary-master (LBA28) e parser da GPT primária com validação CRC32.
+- Imagem GPT inicializável testada em QEMU/OVMF: o boot pelo disco confirmou ATA primary-master, 2.097.152 setores, localização da partição DFS via GPT e início do shell.
+- Dispositivo ATA anunciado como `/dev/hda`, syscall de enumeração e `/bin/distroinstall` na mídia live; duas confirmações antes de criar GPT/ESP FAT16 e reservar o DFS.
+- Instalação de ponta a ponta validada no QEMU: o utilitário gravou o disco virtual, a GPT passou `sgdisk -v`, o RAMFS instalado correspondeu ao payload live e o disco iniciou até o shell sem a ISO.
 - Scheduler cooperativo e programas separados para init/getty/shell.
 - RAMFS USTAR montado por path; `/sbin/init` inicia como PID 1, `/sbin/getty` inicia `/bin/shell`, e comandos externos são resolvidos em `/bin`.
 - Built-ins `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type` e `exit`; parser com aspas, escapes e expansão simples de variáveis.
@@ -29,7 +33,8 @@
 - Os escritores COM1 agora convertem LF isolado em CRLF, mantendo mensagens uma por linha.
 - O PIC legado continua mascarado e IF desabilitado em ring 3 ate existir timer/APIC.
 - Checkpoints `process:`/`elf:` ficam desabilitados no build normal; `make KERNEL_FEATURES=kernel-debug iso` os reativa para diagnostico.
-- O scheduler nao e preemptivo; sem reclaim de frames, W^X, heap user, drivers de disco/rede, filesystem persistente ou suporte completo a layouts de teclado.
+- O scheduler nao e preemptivo; sem reclaim de frames, W^X, heap user, drivers de rede ou suporte completo a layouts de teclado. O driver de disco cobre apenas IDE primário PIO/LBA28; a escrita foi validada pelo caminho do instalador, mas não há testes de energia/interrupção ou recuperação de falhas.
+- Não há implementação do DFS/VFS nem persistência: a partição DFS criada pelo instalador permanece vazia, e o sistema continua montando o RAMFS inicial como raiz.
 - Shell ainda não tem pipelines, redirecionamento, aliases, funções ou `if/for/while`. Não há escrita persistente; `mkdir`, `touch`, `rm`, `vi` e `globalconf` alteram um overlay em RAM e as alterações se perdem no reboot. O único charset suportado é UTF-8 e o mapa ABNT2 cobre apenas as teclas implementadas pelo driver.
 
 O check Rust e os testes locais ELF/USTAR passam, mas isso nao substitui o teste de boot real.

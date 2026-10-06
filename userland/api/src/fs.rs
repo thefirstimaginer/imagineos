@@ -152,6 +152,26 @@ pub fn stderr() -> usize {
     crate::abi::FD_STDERR as usize
 }
 
+pub fn disk_count() -> Result<usize> {
+    let count = checked(syscall::invoke(crate::abi::SYS_DISK_COUNT, [0; 6]))?;
+    usize::try_from(count).map_err(|_| Error::INVALID_ARGUMENT)
+}
+
+pub fn disk_sector_count(index: usize) -> Result<u64> {
+    checked(syscall::invoke(
+        crate::abi::SYS_DISK_SECTORS,
+        [index as u64, 0, 0, 0, 0, 0],
+    ))
+}
+
+pub fn install_to_disk(index: usize) -> Result<()> {
+    checked(syscall::invoke(
+        crate::abi::SYS_INSTALL_DISK,
+        [index as u64, 0, 0, 0, 0, 0],
+    ))
+    .map(|_| ())
+}
+
 pub fn is_dir(path: &str) -> Result<bool> {
     let path = path_bytes(path, crate::abi::MAX_PATH_QUERY)?;
     Ok(checked(syscall::invoke(

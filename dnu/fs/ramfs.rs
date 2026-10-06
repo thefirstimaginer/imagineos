@@ -1,4 +1,5 @@
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 const BLOCK_SIZE: usize = 512;
 pub const MAX_WRITE_FILE_SIZE: usize = 4096;
@@ -298,6 +299,15 @@ impl<'a> Archive<'a> {
 struct SharedRamFs(UnsafeCell<RamFs>);
 unsafe impl Sync for SharedRamFs {}
 static MOUNTED_RAMFS: SharedRamFs = SharedRamFs(UnsafeCell::new(RamFs::new()));
+static BLOCK_DISK_PRESENT: AtomicBool = AtomicBool::new(false);
+
+pub fn set_block_disk_present(present: bool) {
+    BLOCK_DISK_PRESENT.store(present, Ordering::Relaxed);
+}
+
+fn block_disk_present() -> bool {
+    BLOCK_DISK_PRESENT.load(Ordering::Relaxed)
+}
 
 pub fn mount(bytes: &'static [u8]) {
     let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
@@ -331,6 +341,9 @@ pub fn is_directory(path: &str) -> bool {
     let Some(path) = canonical_path(path) else {
         return false;
     };
+    if path == "dev" {
+        return true;
+    }
     match find_overlay_node(fs, path).map(|node| node.kind) {
         Some(NodeKind::Directory | NodeKind::OpaqueDirectory) => return true,
         Some(NodeKind::File | NodeKind::Whiteout) => return false,
@@ -355,6 +368,9 @@ pub fn is_file(path: &str) -> bool {
     let Some(path) = canonical_path(path) else {
         return false;
     };
+    if path == "dev/hda" {
+        return block_disk_present();
+    }
     if is_hidden(fs, path) {
         return false;
     }
@@ -373,6 +389,14 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
     let path = canonical_path(path)?;
     if !is_directory(path) {
         return None;
+    }
+    if path == "dev" {
+        if block_disk_present() {
+            let mut written = 0;
+            append_name(output, &mut written, b"hda")?;
+            return Some(written);
+        }
+        return Some(0);
     }
     let opaque =
         find_overlay_node(fs, path).is_some_and(|node| node.kind == NodeKind::OpaqueDirectory);
@@ -411,6 +435,9 @@ pub fn list_directory(path: &str, output: &mut [u8]) -> Option<usize> {
 
 pub fn create_file(path: &str) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path == "dev" || path == "dev/hda" {
+        return Err(FsError::InvalidPath);
+    }
     if path.is_empty() {
         return Err(FsError::IsDirectory);
     }
@@ -429,6 +456,9 @@ pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
         return Err(FsError::NoSpace);
     }
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path == "dev" || path == "dev/hda" {
+        return Err(FsError::InvalidPath);
+    }
     if path.is_empty() {
         return Err(FsError::IsDirectory);
     }
@@ -560,7 +590,7 @@ fn create_directory_one(path: &str) -> Result<(), FsError> {
 
 pub fn remove(path: &str, recursive: bool) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
-    if path.is_empty() {
+    if path.is_empty() || path == "dev" || path == "dev/hda" {
         return Err(FsError::InvalidPath);
     }
     if !is_file(path) && !is_directory(path) {
@@ -796,6 +826,13 @@ mod tests {
     fn writable_overlay_creates_lists_and_removes_nodes() {
         let empty_archive: &'static [u8] = Box::leak(vec![0u8; 1024].into_boxed_slice());
         super::mount(empty_archive);
+        super::set_block_disk_present(true);
+        let mut devices = [0u8; 16];
+        let device_length = super::list_directory("/dev", &mut devices).unwrap();
+        assert_eq!(&devices[..device_length], b"hda\n");
+        assert!(super::is_file("/dev/hda"));
+        super::set_block_disk_present(false);
+        assert!(!super::is_file("/dev/hda"));
         assert_eq!(
             super::create_directory_with_parents("/var/log/app", true),
             Ok(())

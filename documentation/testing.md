@@ -23,14 +23,18 @@ rustup run stable rustc --edition 2021 --test dnu/console/utf8.rs -o /tmp/dreamc
 /tmp/dreamcore-utf8-tests
 rustup run stable rustc --edition 2021 --test dnu/tests/keyboard.rs -o /tmp/dreamcore-keyboard-tests
 /tmp/dreamcore-keyboard-tests
+rustup run stable rustc --edition 2021 --test dnu/tests/storage.rs -o /tmp/imagineos-storage-tests
+/tmp/imagineos-storage-tests
+rustup run stable rustc --edition 2021 --test dnu/tests/installer.rs -o /tmp/imagineos-installer-tests
+/tmp/imagineos-installer-tests
 make .build/ramfs.tar
 tar -tf .build/ramfs.tar
 ```
 
 O tar deve conter `sbin/init`, `sbin/getty`, `bin/shell`, `bin/ls`, `bin/cat`,
-`bin/grep`, `bin/globalconf`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
+`bin/grep`, `bin/globalconf`, `bin/distroinstall`, `bin/vi`, `bin/mkdir`, `bin/rm`, `bin/touch`,
 `bin/hello`, `bin/fdtest`, `home/.global/global.conf` e
-`system/fonts/zap-light16.psf`.
+`system/fonts/zap-light16.psf`, além dos payloads em `system/install/`.
 
 Para criar a ISO, instale `xorriso`, `dosfstools` e `mtools`, depois rode `make iso`.
 Para reativar os logs de cada etapa de carregamento: `make KERNEL_FEATURES=kernel-debug iso`.
@@ -43,4 +47,18 @@ abertura, leitura, escrita, append, fechamento e erro de descritor fechado.
 Com o layout ABNT2, teste `ç`, `á`, `ã`, `ê` e as setas no editor; no prompt,
 Backspace deve remover o glifo inteiro.
 
+`ls /dev` deve listar `/dev/hda` quando o disco IDE primary-master estiver
+presente. Para validar a instalação, inicialize com `make run-installer`,
+execute `distroinstall`, confirme digitando exatamente `APAGAR /dev/hda` e
+`INSTALAR`, e reinicie com
+`make run-disk DISK_IMAGE=.build/installer-target.img`. O utilitário apaga o
+disco alvo; use apenas a imagem virtual de teste. A instalação deve chegar ao
+shell sem a ISO e o RAMFS instalado não deve conter `/bin/distroinstall`.
+
 Sem QEMU/OVMF ou sem as ferramentas para gerar a ISO, a compilação e os testes locais não comprovam que o sistema inicializa corretamente.
+
+Para validar o boot por uma imagem de disco GPT em vez da ISO, use
+`make disk-image` e `make run-disk`. Isso requer `qemu-img`, `sgdisk`,
+`mkfs.vfat`, `mtools`, QEMU e OVMF. O teste cobre descoberta do disco ATA e da
+partição GPT; não valida montagem nem persistência DFS, que ainda não foram
+implementadas.

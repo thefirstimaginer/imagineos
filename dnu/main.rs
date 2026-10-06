@@ -6,6 +6,10 @@ use core::panic::PanicInfo;
 use limine::request::{FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest};
 use limine::BaseRevision;
 
+#[path = "drivers/ata.rs"]
+pub mod ata;
+#[path = "drivers/block.rs"]
+pub mod block;
 #[path = "config.rs"]
 mod config;
 #[path = "exec/elf.rs"]
@@ -14,10 +18,14 @@ mod elf;
 mod framebuffer;
 #[path = "arch/x86_64/gdt.rs"]
 mod gdt;
+#[path = "fs/gpt.rs"]
+pub mod gpt;
 #[path = "mm/heap.rs"]
 mod heap;
 #[path = "arch/x86_64/idt.rs"]
 mod idt;
+#[path = "fs/installer.rs"]
+mod installer;
 #[path = "drivers/keyboard.rs"]
 mod keyboard;
 #[path = "mm/memory.rs"]
@@ -100,6 +108,38 @@ pub extern "C" fn _start() -> ! {
     console_hex(boot_frame.physical_address);
     console_write("\n");
 
+    let disk_ready = match ata::init() {
+        Ok(sectors) => {
+            console_write("ATA primary master ready; sectors: ");
+            console_number(sectors);
+            console_write("\n");
+            match gpt::Gpt::read_primary(&ata::PrimaryMaster) {
+                Ok(table) => {
+                    match table.find_partition(&ata::PrimaryMaster, &gpt::DFS_PARTITION_TYPE_GUID) {
+                        Ok(partition) => {
+                            console_write("GPT DFS partition found at LBA ");
+                            console_number(partition.first_lba);
+                            console_write("\n");
+                        }
+                        Err(gpt::GptError::PartitionNotFound) => {
+                            console_write("GPT detected; no DFS partition found\n");
+                        }
+                        Err(_) => console_write("GPT DFS partition lookup failed\n"),
+                    }
+                }
+                Err(gpt::GptError::InvalidSignature) => {
+                    console_write("ATA disk has no primary GPT\n");
+                }
+                Err(_) => console_write("ATA disk GPT is invalid or unreadable\n"),
+            }
+            true
+        }
+        Err(_) => {
+            console_write("No usable ATA primary-master disk; continuing without storage\n");
+            false
+        }
+    };
+
     let ramfs_image: Option<&'static [u8]> = MODULE_REQUEST
         .get_response()
         .and_then(|response| {
@@ -117,6 +157,7 @@ pub extern "C" fn _start() -> ! {
         halt();
     };
     ramfs::mount(ramfs_image);
+    ramfs::set_block_disk_present(disk_ready);
     if let Some(settings) = ramfs::read(config::GLOBAL_CONFIG_PATH) {
         if config::load(settings).is_err() {
             console_write("Global configuration invalid; using defaults\n");

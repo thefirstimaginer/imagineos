@@ -102,6 +102,7 @@ static KERNEL_STACKS: SharedStacks = SharedStacks(UnsafeCell::new(KernelStacks(
 struct Process {
     pid: usize,
     active: bool,
+    allows_disk_install: bool,
     frame: *mut TrapFrame,
     address_space: Option<AddressSpace>,
 }
@@ -110,6 +111,7 @@ impl Process {
     const EMPTY: Self = Self {
         pid: 0,
         active: false,
+        allows_disk_install: false,
         frame: ptr::null_mut(),
         address_space: None,
     };
@@ -161,7 +163,7 @@ pub fn init(programs: &[(&[u8], usize)]) -> Result<(), LoadError> {
         }
         let slot = scheduler.count;
         let arguments: [&[u8]; 1] = [b"/sbin/init"];
-        let process = load_elf(image, pid, slot, &arguments, &[])?;
+        let process = load_elf(image, pid, slot, &arguments, &[], false)?;
         scheduler.processes[scheduler.count] = process;
         scheduler.count += 1;
     }
@@ -177,6 +179,7 @@ fn load_elf(
     slot: usize,
     arguments: &[&[u8]],
     environment: &[&[u8]],
+    allows_disk_install: bool,
 ) -> Result<Process, LoadError> {
     debug_log("elf: validating header\n");
     let elf = Elf64::parse(image).map_err(LoadError::InvalidElf)?;
@@ -261,6 +264,7 @@ fn load_elf(
     Ok(Process {
         pid,
         active: true,
+        allows_disk_install,
         frame,
         address_space: Some(address_space),
     })
@@ -473,7 +477,14 @@ pub fn spawn_current(
         (slot, pid, scheduler.current)
     };
 
-    let process = match load_elf(image, pid, slot, arguments, environment) {
+    let process = match load_elf(
+        image,
+        pid,
+        slot,
+        arguments,
+        environment,
+        path == "/bin/distroinstall",
+    ) {
         Ok(process) => process,
         Err(_) => {
             unsafe {
@@ -495,6 +506,11 @@ pub fn spawn_current(
         (*frame).rax = pid as u64;
     }
     schedule(frame, false)
+}
+
+pub fn can_install_to_disk() -> bool {
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    scheduler.processes[scheduler.current].allows_disk_install
 }
 
 pub fn descriptor(fd: usize) -> Option<Descriptor> {

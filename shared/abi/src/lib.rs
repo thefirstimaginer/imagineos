@@ -22,6 +22,9 @@ pub const SYS_OPEN: u64 = 17;
 pub const SYS_READ_FD: u64 = 18;
 pub const SYS_WRITE_FD: u64 = 19;
 pub const SYS_CLOSE: u64 = 20;
+pub const SYS_DISK_COUNT: u64 = 21;
+pub const SYS_DISK_SECTORS: u64 = 22;
+pub const SYS_INSTALL_DISK: u64 = 23;
 
 pub const FD_STDIN: u64 = 0;
 pub const FD_STDOUT: u64 = 1;

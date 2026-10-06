@@ -7,6 +7,7 @@
 - `xorriso`, `dosfstools` (`mkfs.vfat`) e `mtools` (`mmd`, `mcopy`) para gerar ISO;
 - `toolchain/limine-binary/BOOTX64.EFI`;
 - QEMU x86_64 e OVMF para testar o boot UEFI.
+- `qemu-img`, `sgdisk`, `mkfs.vfat` e `mtools` para criar a imagem de disco GPT.
 
 ## Compilar a ISO
 
@@ -36,3 +37,29 @@ Configure `OVMF_CODE` se o firmware não estiver no caminho padrão, por exemplo
 `make run OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd`. A imagem atual não inclui
 boot BIOS. O ESP contém o kernel e `ramfs.tar`; os programas de userspace
 existem somente dentro do RAMFS.
+
+## Criar e iniciar uma imagem de disco GPT
+
+`make disk-image` cria `.build/imagineos-disk.img` sem sobrescrever uma imagem
+existente. A ferramenta `tools/install-disk.sh` grava uma tabela GPT, uma ESP
+FAT16 de 128 MiB com Limine, kernel e `ramfs.tar`, além de uma partição GPT
+reservada ao DFS no espaço restante. O alvo não altera discos físicos.
+
+```sh
+make disk-image
+make run-disk
+```
+
+`make run-disk` inicia a imagem em QEMU/OVMF com chipset PC/IDE, sem anexar a
+ISO. O kernel deve detectar o disco ATA primary-master e localizar a partição DFS pela GPT.
+Atualmente essa partição é apenas reservada: o sistema ainda inicia sua raiz
+do `ramfs.tar` e não grava arquivos persistentes no DFS. Para recriar a imagem,
+remova somente `.build/imagineos-disk.img` e rode `make disk-image` novamente.
+
+Para testar o instalador que roda no userspace, use `make run-installer`. Ele
+inicia a ISO e anexa `.build/installer-target.img`, uma imagem de 1 GiB criada
+apenas se ainda não existir. Execute `distroinstall` no shell e confirme o
+alvo com as duas frases solicitadas; todos os dados da imagem alvo serão
+apagados. Depois, `make run-disk DISK_IMAGE=.build/installer-target.img` testa
+o boot pela instalação. Não use essa operação em um disco físico com dados a
+preservar.

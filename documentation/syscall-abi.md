@@ -47,6 +47,15 @@ chamadas recebem novos números.
 | 18 | `read_fd` | `RDI=fd`, `RSI=destino`, `RDX=capacidade` | bytes lidos; `0` no EOF |
 | 19 | `write_fd` | `RDI=fd`, `RSI=bytes`, `RDX=tamanho` | bytes escritos |
 | 20 | `close` | `RDI=fd` | `0` |
+| 21 | `disk_count` | nenhum | quantidade de discos de bloco detectados |
+| 22 | `disk_sectors` | `RDI=índice do disco` | setores endereçáveis; `-ENODEV` se não existir |
+| 23 | `install_disk` | `RDI=índice do disco` | `0` após instalação inicializável; operação destrutiva |
+
+`install_disk` aceita apenas o processo `/bin/distroinstall` incluído na mídia
+live; o RAMFS instalado omite o utilitário e seus payloads. Discos são
+anunciados para descoberta, não como FDs de bloco graváveis. A confirmação
+dupla é feita pelo utilitário e não substitui permissões/capabilities gerais
+de sistema, que ainda não existem.
 
 `UserArg` é uma estrutura `#[repr(C)]` composta por dois `u64`: endereço e
 comprimento. `exec` aceita até 12 argumentos e 12 entradas de ambiente, cada
@@ -68,7 +77,7 @@ truncate e append exigem escrita e não podem ser combinados. O kernel ainda
 não oferece diretórios como streams, seek, pipes, sockets, dispositivos por
 FD, permissões ou compartilhamento atômico de offsets entre processos.
 
-Erros usados atualmente incluem `EINVAL=22`, `EFAULT=14`, `ENOENT=2`,
+Erros usados atualmente incluem `EPERM=1`, `ENODEV=19`, `EINVAL=22`, `EFAULT=14`, `ENOENT=2`,
 `E2BIG=7`, `ENOEXEC=8`, `EAGAIN=11`, `ENOSPC=28`, `ENOSYS=38`,
 `ENOTDIR=20`, `EISDIR=21`, `EEXIST=17`, `EMFILE=24`, `EBADF=9`,
 `ENOTEMPTY=39` e `EOVERFLOW=75`. A crate preserva errno

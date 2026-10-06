@@ -6,9 +6,9 @@ use crate::process::UserArg;
 use crate::{framebuffer, process};
 use imagineos_abi::{
     OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION, SYS_CLEAR,
-    SYS_CLOSE, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_ISDIR, SYS_ISFILE, SYS_MKDIR, SYS_OPEN,
-    SYS_READ, SYS_READDIR, SYS_READ_FD, SYS_READ_FILE, SYS_REMOVE, SYS_TOUCH, SYS_WRITE,
-    SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
+    SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_EXEC, SYS_EXIT, SYS_GETPID, SYS_INSTALL_DISK,
+    SYS_ISDIR, SYS_ISFILE, SYS_MKDIR, SYS_OPEN, SYS_READ, SYS_READDIR, SYS_READ_FD, SYS_READ_FILE,
+    SYS_REMOVE, SYS_TOUCH, SYS_WRITE, SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
 };
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
@@ -61,6 +61,35 @@ extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFram
         }
         SYS_ABI_VERSION => {
             frame_ref.rax = imagineos_abi::ABI_VERSION;
+            frame
+        }
+        SYS_DISK_COUNT => {
+            frame_ref.rax = u64::from(crate::ata::is_ready());
+            frame
+        }
+        SYS_DISK_SECTORS => {
+            frame_ref.rax = if frame_ref.rdi == 0 && crate::ata::is_ready() {
+                crate::ata::sector_count()
+            } else {
+                (-19i64) as u64
+            };
+            frame
+        }
+        SYS_INSTALL_DISK => {
+            frame_ref.rax = if !process::can_install_to_disk() {
+                (-1i64) as u64
+            } else if frame_ref.rdi != 0 {
+                (-19i64) as u64
+            } else {
+                match crate::installer::install_primary_master() {
+                    Ok(()) => 0,
+                    Err(crate::installer::InstallError::NoDisk) => (-19i64) as u64,
+                    Err(crate::installer::InstallError::DiskTooSmall) => (-28i64) as u64,
+                    Err(crate::installer::InstallError::MissingPayload) => (-2i64) as u64,
+                    Err(crate::installer::InstallError::PayloadTooLarge) => (-28i64) as u64,
+                    Err(crate::installer::InstallError::Block(_)) => (-5i64) as u64,
+                }
+            };
             frame
         }
         SYS_WRITE => {
