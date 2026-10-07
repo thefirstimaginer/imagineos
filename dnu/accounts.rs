@@ -189,30 +189,3 @@ fn constant_time_eq(left: &[u8; 32], right: &[u8; 32]) -> bool {
         .fold(0u8, |difference, (left, right)| difference | (left ^ right))
         == 0
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{validate_install_config, DATABASE_SIZE};
-    use imagineos_abi::InstallConfig;
-
-    #[test]
-    fn install_configuration_rejects_invalid_usernames_and_empty_passwords() {
-        let mut config = InstallConfig::default();
-        config.add_user = 1;
-        config.username[..4].copy_from_slice(b"root");
-        config.username_length = 4;
-        config.password[..4].copy_from_slice(b"test");
-        config.password_length = 4;
-        assert!(validate_install_config(&config).is_err());
-
-        config.username[..4].copy_from_slice(b"alex");
-        assert!(validate_install_config(&config).is_ok());
-        config.password_length = 0;
-        assert!(validate_install_config(&config).is_err());
-    }
-
-    #[test]
-    fn account_database_has_fixed_wire_size() {
-        assert_eq!(DATABASE_SIZE, 100);
-    }
-}

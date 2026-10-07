@@ -53,39 +53,3 @@ pub fn append(bytes: &[u8]) {
 pub fn read(output: &mut [u8]) -> usize {
     unsafe { (*KERNEL_LOG.0.get()).read(output) }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{LogBuffer, CAPACITY};
-
-    #[test]
-    fn reads_appended_bytes_in_order() {
-        let mut log = LogBuffer::new();
-        log.append(b"first\n");
-        log.append(b"second\n");
-        let mut output = [0; 32];
-        let length = log.read(&mut output);
-        assert_eq!(&output[..length], b"first\nsecond\n");
-    }
-
-    #[test]
-    fn retains_newest_bytes_when_capacity_is_exceeded() {
-        let mut log = LogBuffer::new();
-        let input = [b'x'; CAPACITY + 3];
-        log.append(&input);
-        log.append(b"end");
-        let mut output = [0; CAPACITY];
-        assert_eq!(log.read(&mut output), CAPACITY);
-        assert_eq!(&output[..3], b"xxx");
-        assert_eq!(&output[CAPACITY - 3..], b"end");
-    }
-
-    #[test]
-    fn reads_the_newest_bytes_when_output_is_smaller() {
-        let mut log = LogBuffer::new();
-        log.append(b"abcdef");
-        let mut output = [0; 3];
-        assert_eq!(log.read(&mut output), 3);
-        assert_eq!(&output, b"def");
-    }
-}

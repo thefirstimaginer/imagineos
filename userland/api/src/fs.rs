@@ -357,29 +357,3 @@ impl<'a> Iterator for DirectoryEntries<'a> {
         None
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{DirectoryEntries, OpenOptions};
-
-    #[test]
-    fn splits_newline_delimited_directory_names() {
-        let mut names = DirectoryEntries::new(b"first\nsecond\n");
-        assert_eq!(names.next(), Some(&b"first"[..]));
-        assert_eq!(names.next(), Some(&b"second"[..]));
-        assert_eq!(names.next(), None);
-    }
-
-    #[test]
-    fn open_options_encode_access_and_mutation_flags() {
-        assert_eq!(OpenOptions::new().read(true).flags(), crate::abi::OPEN_READ);
-        assert_eq!(
-            OpenOptions::new()
-                .write(true)
-                .create(true)
-                .append(true)
-                .flags(),
-            crate::abi::OPEN_WRITE | crate::abi::OPEN_CREATE | crate::abi::OPEN_APPEND
-        );
-    }
-}

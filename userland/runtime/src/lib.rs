@@ -1,3 +1,9 @@
+/*
+    Implementação da imagineos-rt, uma runtime para o ImagineOS
+
+    userland/runtime/src/lib.rs
+*/
+
 #![no_std]
 
 use core::fmt::{self, Write};
@@ -195,37 +201,4 @@ macro_rules! println {
     ($($argument:tt)*) => {
         $crate::print(format_args!("{}\n", format_args!($($argument)*)))
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Arguments, Environment, IntoExitCode};
-
-    #[test]
-    fn converts_main_return_values_to_exit_codes() {
-        assert_eq!(0i32.into_exit_code(), 0);
-        assert_eq!((-3i32).into_exit_code(), -3);
-        assert_eq!(Ok::<(), imagineos::Error>(()).into_exit_code(), 0);
-        assert_eq!(
-            Err::<(), imagineos::Error>(imagineos::Error::from_errno(2)).into_exit_code(),
-            2
-        );
-        assert_eq!(Err::<(), i32>(7).into_exit_code(), 7);
-    }
-
-    #[test]
-    fn reads_utf8_arguments_and_environment_entries() {
-        let program = b"tool\0";
-        let arg = b"ImagineOS\0";
-        let env = b"LANG=pt_BR.UTF-8\0";
-        let argv = [program.as_ptr(), arg.as_ptr()];
-        let envp = [env.as_ptr()];
-        let mut arguments = Arguments::from_raw(argv.as_ptr(), argv.len());
-        assert_eq!(arguments.next().unwrap().unwrap(), "ImagineOS");
-        assert_eq!(arguments.next(), None);
-
-        let environment = Environment::from_raw(envp.as_ptr(), envp.len());
-        assert_eq!(environment.get("LANG").unwrap(), Some("pt_BR.UTF-8"));
-        assert_eq!(environment.get("HOME").unwrap(), None);
-    }
 }

@@ -138,6 +138,9 @@ impl PageTablePool {
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    // This compile using the dzImage bootstrap, which is a custom bootloader that unpacks and loads the ImagineOS kernel 
+    // from a compressed dzImage file. It initializes the serial port, framebuffer, and other necessary components before 
+    // loading the kernel into memory and transferring control to it.
     let (tsc_start, tsc_frequency) = time::init();
     serial_init();
     framebuffer::init(

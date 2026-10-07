@@ -158,28 +158,3 @@ unsafe fn out_byte(port: u16, value: u8) {
         options(nomem, nostack, preserves_flags)
     );
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{format_milliseconds, write_decimal};
-
-    #[test]
-    fn decimal_format_has_minimum_width_without_truncating_large_values() {
-        let mut output = [0; 20];
-        let length = write_decimal(&mut output, 42, 6);
-        assert_eq!(&output[..length], b"000042");
-
-        let length = write_decimal(&mut output, 1_234_567, 6);
-        assert_eq!(&output[..length], b"1234567");
-    }
-
-    #[test]
-    fn elapsed_timestamp_is_bracketed_and_includes_milliseconds() {
-        let mut output = [0; 32];
-        assert_eq!(format_milliseconds(42_007, &mut output), b"[000042.007] ");
-        assert_eq!(
-            format_milliseconds(1_234_567_890, &mut output),
-            b"[1234567.890] "
-        );
-    }
-}

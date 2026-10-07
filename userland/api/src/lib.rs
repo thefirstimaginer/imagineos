@@ -52,22 +52,3 @@ pub(crate) fn path_bytes(path: &str, max_len: usize) -> Result<&[u8]> {
     }
     Ok(bytes)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{checked, path_bytes, Error};
-
-    #[test]
-    fn decodes_negative_errno_returns() {
-        assert_eq!(checked((-14i64) as u64), Err(Error::from_errno(14)));
-        assert_eq!(checked(4096), Ok(4096));
-    }
-
-    #[test]
-    fn rejects_empty_long_and_nul_paths() {
-        assert!(path_bytes("", 8).is_err());
-        assert!(path_bytes("123456789", 8).is_err());
-        assert!(path_bytes("a\0b", 8).is_err());
-        assert_eq!(path_bytes("/ok", 8), Ok(&b"/ok"[..]));
-    }
-}

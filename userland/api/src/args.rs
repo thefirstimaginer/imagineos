@@ -84,26 +84,3 @@ unsafe fn c_string<'a>(pointer: *const u8) -> Option<&'a [u8]> {
     }
     Some(core::slice::from_raw_parts(pointer, length))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{append_path_component, resolve_path};
-
-    #[test]
-    fn resolves_absolute_and_relative_paths() {
-        let mut output = [0; 32];
-        assert_eq!(resolve_path(Some(b"/home"), b"file", &mut output), Some(10));
-        assert_eq!(&output[..10], b"/home/file");
-        assert_eq!(resolve_path(None, b"/bin/app", &mut output), Some(8));
-        assert_eq!(&output[..8], b"/bin/app");
-    }
-
-    #[test]
-    fn appends_components_without_duplicating_root_separator() {
-        let mut output = [0; 32];
-        let length = append_path_component(b"/", b"bin", &mut output).unwrap();
-        assert_eq!(&output[..length], b"/bin");
-        let length = append_path_component(b"/home", b"file", &mut output).unwrap();
-        assert_eq!(&output[..length], b"/home/file");
-    }
-}

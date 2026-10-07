@@ -29,17 +29,20 @@ enum NodeKind {
 }
 
 #[derive(Clone, Copy)]
+// Struct representing a node in the overlay filesystem
 struct OverlayNode {
     path: [u8; 256],
     path_length: usize,
     kind: NodeKind,
     data: [u8; MAX_WRITE_FILE_SIZE],
     data_length: usize,
+    data_start: usize,
     mode: u16,
     uid: u32,
     gid: u32,
 }
 
+// Implement the OverlayNode struct with a constant EMPTY value and a method to get the path as a string
 impl OverlayNode {
     const EMPTY: Self = Self {
         path: [0; 256],
@@ -47,6 +50,7 @@ impl OverlayNode {
         kind: NodeKind::Empty,
         data: [0; MAX_WRITE_FILE_SIZE],
         data_length: 0,
+        data_start: 0,
         mode: 0,
         uid: 0,
         gid: 0,
@@ -58,6 +62,7 @@ impl OverlayNode {
 }
 
 const MAX_OVERLAY_NODES: usize = 128;
+const OVERLAY_DATA_CAPACITY: usize = MAX_OVERLAY_NODES * MAX_WRITE_FILE_SIZE;
 
 struct RamFs {
     archive: Option<Archive<'static>>,
@@ -657,10 +662,6 @@ pub fn create_file_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
     insert_overlay_as(path, NodeKind::File, 0o644, uid, gid)
 }
 
-pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), FsError> {
-    write_file_as(path, bytes, 0, 0)
-}
-
 pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(), FsError> {
     if crate::dfs::is_mounted() {
         return crate::dfs::write_file_as(path, bytes, 0o644, uid, gid).map_err(map_dfs_error);
@@ -756,6 +757,7 @@ pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsErro
     Ok(input.len())
 }
 
+// Function to write a file with the given contents, creating it if it doesn't exist
 pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() {
