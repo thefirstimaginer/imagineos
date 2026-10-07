@@ -3,8 +3,23 @@ name = "dreamcore"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["shared/abi", "userland/api", "userland/runtime"]
+resolver = "2"
+
 [dependencies]
 limine = "0.5.0"
+imagineos-abi = { path = "shared/abi" }
+
+[[bin]]
+name = "dreamcore"
+path = "dnu/main.rs"
+
+[[bin]]
+name = "bootstrap"
+path = "dnu/bootstrap.rs"
+test = false
+bench = false
 
 [[bin]]
 name = "dreamcore"
@@ -13,6 +28,7 @@ test = false
 
 [features]
 kernel-debug = []
+bootstrap = []
 
 [profile.dev]
 panic = "abort"

@@ -6,4 +6,5 @@
 4. Criar heap Rust com `alloc` e sincronizacao.
 5. Implementar loader ELF x86_64, transicao ring 3, syscalls e scheduler.
 6. Transformar init/getty/shell em programas independentes sobre um ABI documentado.
-7. Adicionar timer/APIC, filas de teclado, layout UTF-8 configuravel e armazenamento.
+7. Expandir armazenamento além do IDE PIO/LBA28, incluindo descoberta de controladores, testes de escrita e validação da GPT secundária.
+8. Definir e implementar o DFS: superbloco, alocação, diretórios, mount e integração com VFS/file descriptors persistentes.

@@ -3,14 +3,11 @@ targets/
 /.build
 third_party
 /target/
-/userspace/target/
+/userland/target/
 /distro
 *.bin
 *.iso
 *.o
 /ramfs
-!/ramfs/
-ramfs/*
-!/ramfs/home/
-ramfs/home/*
-!/ramfs/home/*.c
+/tools/*
+!/tools/dfs-image.rs
