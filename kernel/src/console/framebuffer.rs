@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::cell::UnsafeCell;
 use core::ptr;
 use limine::framebuffer::Framebuffer;

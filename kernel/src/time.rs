@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,7 +25,7 @@ pub fn init_with(start: u64, frequency: u64) {
     TSC_FREQUENCY.store(frequency, Ordering::Relaxed);
 }
 
-#[cfg(any(not(feature = "bootstrap"), test))]
+#[cfg(any(feature = "bootstrap", not(feature = "bootstrap")))]
 pub fn format_elapsed(output: &mut [u8; 32]) -> &[u8] {
     let frequency = TSC_FREQUENCY.load(Ordering::Relaxed);
     if frequency == 0 {
@@ -36,7 +37,7 @@ pub fn format_elapsed(output: &mut [u8; 32]) -> &[u8] {
     format_milliseconds(milliseconds, output)
 }
 
-#[cfg(any(not(feature = "bootstrap"), test))]
+#[cfg(any(feature = "bootstrap", not(feature = "bootstrap")))]
 fn format_milliseconds(milliseconds: u64, output: &mut [u8; 32]) -> &[u8] {
     let seconds = milliseconds / 1000;
     let mut cursor = 0;
@@ -116,7 +117,7 @@ fn read_tsc() -> u64 {
     ((high as u64) << 32) | low as u64
 }
 
-#[cfg(any(not(feature = "bootstrap"), test))]
+#[cfg(any(feature = "bootstrap", not(feature = "bootstrap")))]
 fn write_decimal(output: &mut [u8], mut value: u64, minimum_digits: usize) -> usize {
     let mut digits = [0u8; 20];
     let mut start = digits.len();

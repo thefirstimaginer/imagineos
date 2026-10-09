@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 

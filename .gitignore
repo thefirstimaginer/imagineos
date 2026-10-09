@@ -1,4 +1,5 @@
 targets/
+target/
 /.build
 third_party
 !/third_party/
@@ -7,6 +8,5 @@ third_party/*
 !/third_party/limine/**
 /target/
 /userland/target/
-/distro
 /ramfs
 toolchain/

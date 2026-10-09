@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::block::{BlockDevice, BlockError, SECTOR_SIZE};
 use core::cell::UnsafeCell;
 
