@@ -1,4 +1,4 @@
-#[path = "../dnu/dzimage.rs"]
+#[path = "../bootstrap/dzimage.rs"]
 #[allow(dead_code)]
 mod dzimage;
 

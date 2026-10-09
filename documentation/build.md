@@ -5,7 +5,7 @@
 - Rust stable e `rustup target add x86_64-unknown-none`;
 - GNU Make e `rustup` no `PATH`;
 - `xorriso`, `dosfstools` (`mkfs.vfat`) e `mtools` (`mmd`, `mcopy`) para gerar ISO;
-- `toolchain/limine-binary/BOOTX64.EFI`;
+- `third_party/limine/BOOTX64.EFI`;
 - QEMU x86_64 e OVMF para testar o boot UEFI.
 - `qemu-img`, `sgdisk`, `mkfs.vfat` e `mtools` para criar a imagem de disco GPT.
 
@@ -22,15 +22,16 @@ make bootstrap dzimage
 make iso
 ```
 
-A ISO UEFI será gerada em `distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
+A ISO UEFI será gerada em `.build/distro/dreamcore-AAAA-MM-DD-HH-MM-astrid.iso`.
 `make bootstrap` cria o ELF inicial do Limine e `make dzimage` comprime o ELF
 do kernel em `.build/dzImage` usando o empacotador LZ4 próprio. O módulo traz
 magic, tamanho descomprimido e CRC32. Durante o boot, o bootstrap atualiza a
 porcentagem de descompressão na mesma linha, carrega os segmentos e então
 transfere as respostas Limine ao kernel. O USTAR `ramfs.tar` é produzido a
-partir de `ramfs/`; os programas Rust de `userland/` são incluídos sem
+partir de `ramfs/`; os programas Rust de `userland/apps/` e
+`userland/utilities/` são incluídos sem
 extensão: `/sbin/init`, `/sbin/getty` e comandos em `/bin`. A fonte PSF
-8x16 `tools/fonts/zap-vga16.psf` é incorporada ao kernel e ao bootstrap como
+8x16 `tools/assets/zap-vga16.psf` é incorporada ao kernel e ao bootstrap como
 fallback para uma fonte inválida ou ausente no RAMFS. Ela também é copiada
 para `system/fonts/zap-vga16.psf` dentro do USTAR, de modo que o instalador
 inclui a fonte na raiz DFS persistente.
@@ -40,7 +41,7 @@ compila pelo TCC upstream no host e linka como ELF estatico para o Dreamcore.
 `USER_C_APPS="vim outro" make .build/ramfs.tar` empacota os ELFs em `/bin`; o
 padrao inclui `vim`, cujo fonte `ramfs/home/vim.c` tambem fica no tar. A
 libc fornece o entrypoint `_start` por `crt0.c`. A interface inicial em
-`userspace/libc/` inclui `read`, `write`, `_exit`, `printf`, `puts`, entrada e
+`userland/libc/` inclui `read`, `write`, `_exit`, `printf`, `puts`, entrada e
 saida de caracteres, operacoes basicas de `<string.h>` e `<stdlib.h>`, e as
 extensoes Dreamcore para ler/gravar arquivos inteiros. O formatador cobre
 `%s`, `%c`, inteiros decimais/hexadecimais e `%%`; o allocator e um bump arena

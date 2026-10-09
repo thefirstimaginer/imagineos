@@ -13,12 +13,12 @@ imagineos-abi = { path = "shared/abi" }
 
 [[bin]]
 name = "dreamcore"
-path = "dnu/main.rs"
+path = "kernel/src/main.rs"
 test = false
 
 [[bin]]
 name = "bootstrap"
-path = "dnu/bootstrap.rs"
+path = "bootstrap/bootstrap.rs"
 test = false
 bench = false
 

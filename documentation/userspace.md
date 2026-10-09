@@ -38,7 +38,7 @@ resultado de `user_main` em status de saída e instala um panic handler. A macro
 preserva erros de escrita em vez de ignorá-los. `userland/utilities/common.rs`
 permanece como fachada de compatibilidade para utilitários antigos.
 
-Adicione `hello` à variável `USER_UTILITIES` no `GNUmakefile`, por exemplo:
+Adicione `hello` à variável `USER_UTILITIES` no `Makefile`, por exemplo:
 
 ```make
 USER_UTILITIES := cat grep hello ls mkdir rm touch
@@ -247,5 +247,5 @@ Para definir valores padrão que persistam entre builds, edite o arquivo fonte
 em `ramfs/home/.global/global.conf` antes de compilar. O framebuffer usa o mapa
 Unicode da fonte PSF carregada; se um caractere não existir, tenta desenhar o
 glifo `?`. A fonte de fallback do kernel é
-`tools/fonts/zap-vga16.psf`; fontes residentes no disco só poderão ser usadas
+`tools/assets/zap-vga16.psf`; fontes residentes no disco só poderão ser usadas
 quando houver suporte a um filesystem persistente.

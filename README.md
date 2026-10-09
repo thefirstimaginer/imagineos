@@ -4,7 +4,7 @@ ImagineOS is an experimental educational x86_64 operating system, codenamed **As
 
 ## Build
 
-Requirements: Rust stable with the `x86_64-unknown-none` target, GNU Make, Limine's x86_64 UEFI executable at `toolchain/limine-binary/BOOTX64.EFI`, `xorriso`, `dosfstools`, `mtools`, and QEMU with OVMF for boot testing.
+Requirements: Rust stable with the `x86_64-unknown-none` target, GNU Make, Limine's x86_64 UEFI executable at `third_party/limine/BOOTX64.EFI`, `xorriso`, `dosfstools`, `mtools`, and QEMU with OVMF for boot testing.
 
 ```sh
 rustup target add x86_64-unknown-none
@@ -15,14 +15,14 @@ make iso
 
 Create the `ramfs/` directory at the repository root before building the image;
 it is the source tree used to assemble the filesystem archive. The UEFI-only
-image is written to `distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`.
+image is written to `.build/distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`.
 
 ## Boot State
 
 The kernel consumes Limine's HHDM, memory map, framebuffer, and RAMFS module. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, mounts the USTAR archive, and loads `/sbin/init` as PID 1. Init starts `/sbin/getty`, which starts `/bin/shell`; the shell resolves external commands under `/bin`.
 
-Kernel sources live in `dnu/`; userspace programs (including init and getty)
-live in `userland/`. USTAR provides the initial RAM filesystem and fallback;
+Kernel sources live in `kernel/src/`, the Limine loader in `bootstrap/`, and
+userspace applications in `userland/apps/`. USTAR provides the initial RAM filesystem and fallback;
 when a valid DFS partition is present, its persistent tree is used as the
 active root. There is not yet a generic `switch_root` implementation.
 

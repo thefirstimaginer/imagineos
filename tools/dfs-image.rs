@@ -5,11 +5,11 @@ use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::ExitCode;
 
-#[path = "../dnu/drivers/block.rs"]
+#[path = "../kernel/src/drivers/block.rs"]
 mod block;
-#[path = "../dnu/fs/dfs.rs"]
+#[path = "../kernel/src/fs/dfs.rs"]
 mod dfs;
-#[path = "../dnu/fs/gpt.rs"]
+#[path = "../kernel/src/fs/gpt.rs"]
 mod gpt;
 
 mod ata {

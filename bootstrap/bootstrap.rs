@@ -16,9 +16,9 @@ use limine::BaseRevision;
 mod boot_info;
 #[path = "dzimage.rs"]
 mod dzimage;
-#[path = "console/framebuffer.rs"]
+#[path = "../kernel/src/console/framebuffer.rs"]
 mod framebuffer;
-#[path = "time.rs"]
+#[path = "../kernel/src/time.rs"]
 mod time;
 
 use boot_info::{BootInfo, PhysicalRange, MAX_RESERVED_RANGES};
@@ -52,7 +52,7 @@ static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 #[link_section = ".requests"]
 static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 
-static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/fonts/zap-vga16.psf");
+static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/assets/zap-vga16.psf");
 struct BootInfoStorage(core::cell::UnsafeCell<MaybeUninit<BootInfo>>);
 unsafe impl Sync for BootInfoStorage {}
 static BOOT_INFO: BootInfoStorage =

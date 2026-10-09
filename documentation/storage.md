@@ -2,13 +2,13 @@
 
 ## Camadas disponíveis
 
-- `dnu/drivers/block.rs` define operações síncronas para setores de 512 bytes.
-- `dnu/drivers/ata.rs` implementa PIO para o primary-master IDE, limitado a
+- `kernel/src/drivers/block.rs` define operações síncronas para setores de 512 bytes.
+- `kernel/src/drivers/ata.rs` implementa PIO para o primary-master IDE, limitado a
   LBA28 (até 128 GiB). Ainda não há PCI, AHCI, NVMe ou VirtIO.
-- `dnu/fs/gpt.rs` lê a GPT primária, valida CRC32 do cabeçalho e da tabela e
+- `kernel/src/fs/gpt.rs` lê a GPT primária, valida CRC32 do cabeçalho e da tabela e
   localiza partições pelo GUID. O ImagineOS não interpreta MBR como tabela de
   partições nem usa a GPT secundária.
-- `dnu/fs/dfs.rs` implementa o Dreamcore File System (DFS), incluindo formato,
+- `kernel/src/fs/dfs.rs` implementa o Dreamcore File System (DFS), incluindo formato,
   leitura/escrita, metadados, journal e recuperação.
 
 O GUID de tipo reservado para a partição DFS é

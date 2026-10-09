@@ -10,7 +10,7 @@ mod accounts;
 pub mod ata;
 #[path = "drivers/block.rs"]
 pub mod block;
-#[path = "boot_info.rs"]
+#[path = "../../bootstrap/boot_info.rs"]
 mod boot_info;
 #[path = "config.rs"]
 mod config;
@@ -55,7 +55,7 @@ mod time;
 mod utf8;
 
 static LOG_LINE_START: AtomicBool = AtomicBool::new(true);
-static EMBEDDED_FONT: &[u8] = include_bytes!("../tools/fonts/zap-vga16.psf");
+static EMBEDDED_FONT: &[u8] = include_bytes!("../../tools/assets/zap-vga16.psf");
 
 #[no_mangle]
 pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {

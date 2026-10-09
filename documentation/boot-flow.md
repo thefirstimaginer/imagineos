@@ -15,7 +15,7 @@ UEFI
   -> /bin/shell
 ```
 
-1. O firmware UEFI inicia o Limine. A configuração [`limine.conf`](../limine.conf)
+1. O firmware UEFI inicia o Limine. A configuração [`limine.conf`](../boot/limine.conf)
    aponta para `bootstrap.elf` e carrega `dzImage` e `ramfs.tar` como módulos.
 2. O bootstrap pede ao Limine o mapa de memória, HHDM, framebuffer e módulos.
    Ele verifica o cabeçalho dzImage, descomprime o ELF do kernel com LZ4,
@@ -27,7 +27,7 @@ UEFI
    não pode reutilizar as páginas que guardam essas tabelas. Passa ao kernel o
    mapa, framebuffer, módulos e as regiões físicas reservadas.
 4. O kernel inicializa as estruturas de CPU e memória, prepara o console com
-   `tools/fonts/zap-vga16.psf` como fallback, usa o RSDP do Limine para
+   `tools/assets/zap-vga16.psf` como fallback, usa o RSDP do Limine para
    descobrir os registradores ACPI e o estado S5, e monta o USTAR fornecido pelo Limine como
    initramfs. A leitura das tabelas ACPI mapeia no HHDM as páginas de firmware
    que ainda não estavam mapeadas.
@@ -38,9 +38,9 @@ UEFI
    válido, ele também fornece a raiz ativa. Não há ainda a operação genérica
    `switch_root`/`pivot_root` de um VFS completo. Fontes PSF em
    `system/fonts/` podem vir da árvore persistente ou do USTAR; sem fonte
-   válida, permanece a fonte 8x16 `tools/fonts/zap-vga16.psf`.
+   válida, permanece a fonte 8x16 `tools/assets/zap-vga16.psf`.
 6. O kernel procura `/sbin/init` na raiz ativa e inicia esse ELF em ring 3
-   com PID 1. `init` e `getty` são compilados dos fontes em `userland/`; o nome
+   com PID 1. `init` e `getty` são compilados dos fontes em `userland/apps/`; o nome
    final dos arquivos no USTAR não tem sufixo `.elf`, embora seus conteúdos
    sejam executáveis ELF.
    Se `/sbin/init` não existir, o kernel para com uma mensagem `KERNEL PANIC`.
@@ -81,18 +81,21 @@ inicial, não um gerenciador de serviços completo.
 
 ## Organização do repositório
 
-- `dnu/`: fontes do kernel e seus subsistemas; o ponto de entrada é
-  `dnu/main.rs`.
-- `userland/`: fontes Rust dos programas executados em ring 3, incluindo
-  `init.rs`, `getty.rs`, `shell.rs` e `utilities/`.
+- `kernel/src/`: fontes do kernel e seus subsistemas; o ponto de entrada é
+  `kernel/src/main.rs`.
+- `bootstrap/`: binário loader, estruturas de boot e empacotamento dzImage.
+- `userland/apps/`: fontes de init, getty e shell; utilitários ficam em
+  `userland/utilities/` e a API/runtime/libc também ficam em `userland/`.
+- `third_party/limine/`: arquivos do Limine necessários para gerar a ISO.
+- `tools/assets/`: recursos compartilhados, como a fonte PSF.
 - `ramfs/`: arquivos de dados de origem, como fontes e diretórios iniciais.
   Durante o staging o build acrescenta os programas compilados em `/sbin` e
   `/bin`.
-- `distro/`: imagens ISO geradas.
+- `.build/distro/`: imagens ISO geradas.
 - `documentation/`: arquitetura, build, fluxo de boot e guias de contribuição.
 
 Os manifests e as regras de build ficam na raiz: `Cargo.toml` define os bins
-`dreamcore` e `bootstrap`, e `GNUmakefile` compila o kernel, cria `dzImage`,
+`dreamcore` e `bootstrap`, e `Makefile` compila o kernel, cria `dzImage`,
 compila o bootstrap e empacota os programas de `userland/` no USTAR.
 
 ## Recursos ainda não implementados

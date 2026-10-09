@@ -9,7 +9,7 @@
 - Logs do kernel com tempo decorrido em colchetes; console COM1 e framebuffer RGB32.
 - Buffer circular de 4 KiB para mensagens do kernel, syscall `dmesg` e utilitário
   `dmesg -n LINES`; logs de UEFI, Limine e bootstrap ainda ficam fora dele.
-- Fonte padrão PSF1 8x16 `tools/fonts/zap-vga16.psf`; fontes PSF1/PSF2 do
+- Fonte padrão PSF1 8x16 `tools/assets/zap-vga16.psf`; fontes PSF1/PSF2 do
   `ramfs/system/fonts` substituem o fallback; caracteres ausentes usam `?`.
 - Kernel panic explícita se `/sbin/init` não existir no RAMFS montado.
 - Prefixos de tempo, fonte PSF de fallback e panic por `init` ausente
