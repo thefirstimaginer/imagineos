@@ -14,7 +14,7 @@ KERNEL_FEATURES ?=
 
 # Ferramentas e Executáveis
 QEMU           := qemu-system-x86_64
-OVMF_CODE      ?= /usr/share/OVMF/OVMF_CODE.fd
+OVMF_CODE      := OVMF.fd
 CARGO          := rustup run stable cargo
 RUSTC          := rustup run stable rustc
 

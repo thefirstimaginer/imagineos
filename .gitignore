@@ -2,10 +2,8 @@ targets/
 target/
 /.build
 third_party
-!/third_party/
+/third_party/
 third_party/*
-!/third_party/limine/
-!/third_party/limine/**
 /target/
 /userland/target/
 /ramfs
