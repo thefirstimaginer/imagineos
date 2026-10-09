@@ -1,13 +1,8 @@
 targets/
-/.vscode
 /.build
 third_party
 /target/
 /userland/target/
 /distro
-*.bin
-*.iso
-*.o
 /ramfs
-/tools/*
-!/tools/dfs-image.rs
+toolchain/

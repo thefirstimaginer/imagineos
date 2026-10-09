@@ -1,7 +1,9 @@
 SHELL := /bin/sh
 
-KERNEL_NAME := dreamcore
+K_NAME := dreamcore
+K_VERSION := 0.1.0
 CODENAME := astrid
+DISTRIBUTION := imagineos
 
 TARGET := x86_64-unknown-none
 KERNEL_FEATURES ?=
@@ -25,7 +27,7 @@ USER_PROGRAMS := .build/user/sbin/init .build/user/sbin/getty \
 	.build/user/bin/shell \
 	$(addprefix .build/user/utilities/,$(USER_UTILITIES))
 RAMFS_FILES := $(shell find ramfs -type f | sort)
-ISO_IMAGE := distro/$(KERNEL_NAME)-$(shell date +%Y-%m-%d-%H-%M)-$(CODENAME).iso
+ISO_IMAGE := distro/$(K_NAME)-$(shell date +%Y-%m-%d-%H-%M)-$(CODENAME).iso
 DISK_IMAGE := .build/imagineos-disk.img
 INSTALL_TARGET_IMAGE := .build/installer-target.img
 QEMU := qemu-system-x86_64
