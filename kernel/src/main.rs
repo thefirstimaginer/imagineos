@@ -21,6 +21,8 @@ mod dfs;
 mod elf;
 #[path = "console/framebuffer.rs"]
 mod framebuffer;
+#[path = "arch/x86_64/fpu.rs"]
+mod fpu;
 #[path = "arch/x86_64/gdt.rs"]
 mod gdt;
 #[path = "fs/gpt.rs"]
@@ -62,6 +64,7 @@ pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     unsafe {
         asm!("cli", options(nomem, nostack, preserves_flags));
     }
+    fpu::init();
 
     serial_init();
     if boot_info.is_null() {

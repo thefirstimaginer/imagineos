@@ -52,8 +52,13 @@ pub struct TrapFrame {
 
 #[no_mangle]
 extern "C" fn dreamcore_syscall_dispatch(frame: *mut TrapFrame) -> *mut TrapFrame {
+    // Preserva os registradores FPU/SSE do processo que fez a syscall: o kernel
+    // Rust pode usar XMM entre aqui e o retorno para o espaço de usuário.
+    process::save_current_fpu();
     let next = syscall_dispatch_inner(frame);
-    process::deliver_pending_signal(next)
+    let next = process::deliver_pending_signal(next);
+    process::restore_fpu_for(next);
+    next
 }
 
 fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {

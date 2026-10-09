@@ -63,10 +63,17 @@ USER_API_TARGET_DIR     := $(BUILD_DIR)/user/api-target
 USER_API_RLIB           := $(USER_API_TARGET_DIR)/$(TARGET)/release/libimagineos.rlib
 USER_API_DEPS           := $(USER_API_TARGET_DIR)/$(TARGET)/release/deps
 
-USER_RUNTIME_MANIFEST   := userland/runtime/Cargo.toml
+USER_RUNTIME_MANIFEST   := userland/runtimes/rust/Cargo.toml
 USER_RUNTIME_TARGET_DIR := $(BUILD_DIR)/user/runtime-target
 USER_RUNTIME_RLIB       := $(USER_RUNTIME_TARGET_DIR)/$(TARGET)/release/libimagineos_rt.rlib
 USER_RUNTIME_DEPS       := $(USER_RUNTIME_TARGET_DIR)/$(TARGET)/release/deps
+
+# Runtime de programas em C, implementada em Rust (userland/runtimes/c).
+# Produz um único objeto com _start, c_runtime_init, setjmp/longjmp e o
+# restaurador de sinais, substituindo os antigos crt0.S/crt0.c/signal.S/setjmp.S.
+USER_CRT_MANIFEST       := userland/runtimes/c/Cargo.toml
+USER_CRT_TARGET_DIR     := $(BUILD_DIR)/user/crt-target
+USER_CRT_RLIB           := $(BUILD_DIR)/user/libimagineos_crt.a
 
 USER_PROGRAMS           := $(BUILD_DIR)/user/sbin/init \
                            $(BUILD_DIR)/user/sbin/getty \
@@ -76,14 +83,13 @@ USER_PROGRAMS           := $(BUILD_DIR)/user/sbin/init \
 USER_CFLAGS             := -ffreestanding -fno-stack-protector -fno-pic -fno-pie \
                            -fno-builtin -mno-red-zone -nostdinc -Iuserland/libc/include \
                            -isystem $(shell $(CC) -print-file-name=include)
-USER_CRT_OBJECTS        := $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/user/runtime.o \
+USER_CRT_OBJECTS        := $(BUILD_DIR)/user/crt.o \
                            $(BUILD_DIR)/user/unistd.o \
                            $(BUILD_DIR)/user/path.o $(BUILD_DIR)/user/string.o $(BUILD_DIR)/user/stdio.o \
                            $(BUILD_DIR)/user/stdlib.o $(BUILD_DIR)/user/time.o \
                            $(BUILD_DIR)/user/math.o $(BUILD_DIR)/user/mman.o \
-                           $(BUILD_DIR)/user/signals.o $(BUILD_DIR)/user/setjmp.o \
-                           $(BUILD_DIR)/user/signal.o
-USER_LIBC_OBJECTS       := $(filter-out $(BUILD_DIR)/user/crt0.o,$(USER_CRT_OBJECTS))
+                           $(BUILD_DIR)/user/signals.o
+USER_LIBC_OBJECTS       := $(filter-out $(BUILD_DIR)/user/crt.o,$(USER_CRT_OBJECTS))
 TCC_NATIVE_SOURCES      := tcc.c libtcc.c tccpp.c tccgen.c tccdbg.c \
                            tccelf.c tccasm.c tccrun.c x86_64-gen.c x86_64-link.c \
                            i386-asm.c
@@ -92,7 +98,7 @@ TCC_NATIVE_CFLAGS       := $(USER_CFLAGS) -I$(TCC_SOURCE) -I$(TCC_SOURCE)/includ
                            -DTCC_TARGET_X86_64 -DCONFIG_TCC_STATIC -DCONFIG_TCC_SEMLOCK=0 \
                            -DONE_SOURCE=0 \
                            -DCONFIG_TCC_SYSINCLUDEPATHS=\"/usr/include\" \
-                           -DCONFIG_TCC_LIBPATHS=\"/usr/lib\" \
+                           -DCONFIG_TCC_LIBPATHS=\"/usr/lib:/usr/lib/tcc\" \
                            -DCONFIG_TCC_CRTPREFIX=\"/usr/lib\"
 
 # ==============================================================================
@@ -154,8 +160,9 @@ ramfs:
 
 # Prepara e empacota o tar do RAMFS no .build
 $(RAMFS_IMAGE): ramfs kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) \
-                $(BUILD_DIR)/user/libdreamcore.a $(BUILD_DIR)/user/crt_empty.o \
-                $(TCC_SOURCE)/libtcc1.a \
+                $(BUILD_DIR)/user/libdreamcore.a $(BUILD_DIR)/user/crt.o \
+                $(BUILD_DIR)/user/crt_empty.o \
+                $(TCC_SOURCE)/libtcc1.a $(TCC_SOURCE)/runmain.o \
                 $(LIMINE_DIR)/BOOTX64.EFI boot/limine.conf boot/startup.nsh
 	rm -rf $(BUILD_DIR)/ramfs
 	mkdir -p $(BUILD_DIR)/ramfs
@@ -167,13 +174,14 @@ $(RAMFS_IMAGE): ramfs kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) \
 	cp $(BUILD_DIR)/user/libdreamcore.a $(BUILD_DIR)/ramfs/usr/lib/libc.a
 	$(AR) rcs $(BUILD_DIR)/user/libm.a $(BUILD_DIR)/user/math.o
 	cp $(BUILD_DIR)/user/libm.a $(BUILD_DIR)/ramfs/usr/lib/libm.a
-	cp $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/ramfs/usr/lib/crt0.o
-	cp $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/ramfs/usr/lib/crt1.o
+	cp $(BUILD_DIR)/user/crt.o $(BUILD_DIR)/ramfs/usr/lib/crt0.o
+	cp $(BUILD_DIR)/user/crt.o $(BUILD_DIR)/ramfs/usr/lib/crt1.o
 	cp $(BUILD_DIR)/user/crt_empty.o $(BUILD_DIR)/ramfs/usr/lib/crti.o
 	cp $(BUILD_DIR)/user/crt_empty.o $(BUILD_DIR)/ramfs/usr/lib/crtn.o
 	cp userland/linker.ld $(BUILD_DIR)/ramfs/usr/lib/imagineos.ld
 	cp $(TCC_SOURCE)/libtcc1.a $(BUILD_DIR)/ramfs/usr/lib/tcc/libtcc1.a
-	
+	cp $(TCC_SOURCE)/runmain.o $(BUILD_DIR)/ramfs/usr/lib/tcc/runmain.o
+
 	# Binários userland
 	cp $(BUILD_DIR)/user/sbin/init $(BUILD_DIR)/ramfs/sbin/init
 	cp $(BUILD_DIR)/user/sbin/getty $(BUILD_DIR)/ramfs/sbin/getty
@@ -213,7 +221,7 @@ $(USER_API_RLIB): $(USER_API_MANIFEST) $(wildcard userland/api/src/*.rs) shared/
 	$(CARGO) build --manifest-path $(USER_API_MANIFEST) \
 		--target $(TARGET) --release --target-dir $(USER_API_TARGET_DIR)
 
-$(USER_RUNTIME_RLIB): $(USER_RUNTIME_MANIFEST) userland/runtime/src/lib.rs $(USER_API_RLIB)
+$(USER_RUNTIME_RLIB): $(USER_RUNTIME_MANIFEST) userland/runtimes/rust/src/lib.rs $(USER_API_RLIB)
 	$(CARGO) build --manifest-path $(USER_RUNTIME_MANIFEST) \
 		--target $(TARGET) --release --target-dir $(USER_RUNTIME_TARGET_DIR)
 
@@ -251,23 +259,23 @@ $(BUILD_DIR)/user/%.o: userland/libc/%.c $(wildcard userland/libc/include/*.h us
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/user/crt0.o: userland/libc/crt0.S
-	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
+# Runtime de C (em Rust): extrai o objeto da crate (ignora compiler_builtins,
+# já fornecidos pelo linker) para uso como crt0.o/crt1.o e na linkagem.
+$(BUILD_DIR)/user/crt.o: $(USER_CRT_RLIB)
+	@mkdir -p $(dir $@) $(BUILD_DIR)/user/crt-extract
+	cd $(BUILD_DIR)/user/crt-extract && $(AR) x $(abspath $(USER_CRT_RLIB)) && \
+		mv imagineos_crt-*.imagineos_crt.*.rcgu.o $(abspath $(BUILD_DIR)/user/crt.o) && \
+		rm -f *.o
 
-$(BUILD_DIR)/user/runtime.o: userland/libc/crt0.c
+# Staticlib da runtime C, construída a partir de userland/runtimes/c.
+$(USER_CRT_RLIB): $(USER_CRT_MANIFEST) $(wildcard userland/runtimes/c/src/*.rs) $(USER_API_RLIB)
 	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
+	$(CARGO) build --manifest-path $(USER_CRT_MANIFEST) \
+		--target $(TARGET) --release --target-dir $(USER_CRT_TARGET_DIR)
+	cp $(USER_CRT_TARGET_DIR)/$(TARGET)/release/libimagineos_crt.a $@
 
+# Objeto vazio com a nota `.note.GNU-stack`, usado como crti.o/crtn.o pelo TinyCC.
 $(BUILD_DIR)/user/crt_empty.o: userland/libc/crt_empty.S
-	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/user/setjmp.o: userland/libc/setjmp.S
-	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/user/signal.o: userland/libc/signal.S
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 
@@ -314,6 +322,9 @@ $(TCC_HOST): $(TCC_CONFIG_STAMP) $(TCC_PATCH_STAMP) $(TCC_SOURCE)/Makefile $(TCC
 	cp $(TCC_SOURCE)/tcc $@
 
 $(TCC_SOURCE)/libtcc1.a: $(TCC_HOST)
+	@test -f $@
+
+$(TCC_SOURCE)/runmain.o: $(TCC_HOST)
 	@test -f $@
 
 $(BUILD_DIR)/user/tcc/%.o: $(TCC_SOURCE)/%.c $(TCC_HOST) $(TCC_PATCH_STAMP) \

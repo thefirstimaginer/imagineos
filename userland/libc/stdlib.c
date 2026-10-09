@@ -100,6 +100,10 @@ _Noreturn void abort(void)
     _exit(134);
 }
 
+// Weak para permitir que o `runmain.o` do TinyCC (modo `tcc -run`)
+// forneça a sua própria `exit`, que retorna ao compilador em vez de
+// terminar o processo. Sem `runmain.o`, esta definição é usada normalmente.
+__attribute__((weak))
 _Noreturn void exit(int status)
 {
     _exit(status);

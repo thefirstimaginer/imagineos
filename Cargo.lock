@@ -21,6 +21,13 @@ name = "imagineos-abi"
 version = "0.1.0"
 
 [[package]]
+name = "imagineos-crt"
+version = "0.1.0"
+dependencies = [
+ "imagineos-userland",
+]
+
+[[package]]
 name = "imagineos-rt"
 version = "0.1.0"
 dependencies = [

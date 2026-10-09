@@ -4,6 +4,7 @@ use core::mem::size_of;
 use core::ptr;
 
 use crate::elf::{Elf64, Error as ElfError};
+use crate::fpu;
 use crate::gdt;
 use crate::paging::{self, AddressSpace, MapError};
 use crate::syscall::TrapFrame;
@@ -101,6 +102,27 @@ static KERNEL_STACKS: SharedStacks = SharedStacks(UnsafeCell::new(KernelStacks(
     [[0; KERNEL_STACK_SIZE]; MAX_PROCESSES],
 )));
 
+/// Área de estado FPU/SSE (`fxsave`/`fxrstor`) alinhada a 16 bytes.
+/// Necessária para que cada processo tenha seus próprios registradores XMM
+/// e `mxcsr` preservados nas trocas de contexto.
+#[repr(C, align(16))]
+#[derive(Clone, Copy)]
+struct FpuState([u8; fpu::FXSAVE_SIZE]);
+
+impl FpuState {
+    const EMPTY: Self = Self([0; fpu::FXSAVE_SIZE]);
+
+    const _ALIGN_CHECK: () = assert!(core::mem::align_of::<Self>() >= fpu::FXSAVE_ALIGN);
+
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.0.as_mut_ptr()
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.0.as_ptr()
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Process {
     pid: usize,
@@ -120,6 +142,7 @@ struct Process {
     signal_actions: [u64; 32],
     signal_restorer: u64,
     signal_frame: Option<TrapFrame>,
+    fpu_state: FpuState,
 }
 
 impl Process {
@@ -148,6 +171,7 @@ impl Process {
         signal_actions: [imagineos_abi::SIGNAL_DEFAULT; 32],
         signal_restorer: 0,
         signal_frame: None,
+        fpu_state: FpuState::EMPTY,
     };
 }
 
@@ -299,6 +323,11 @@ fn load_elf(
     let mut process_name = [0; imagineos_abi::PROCESS_NAME_SIZE];
     let copied_name_length = name.len().min(process_name.len());
     process_name[..copied_name_length].copy_from_slice(&name.as_bytes()[..copied_name_length]);
+    let mut fpu_state = FpuState::EMPTY;
+    let _ = FpuState::_ALIGN_CHECK;
+    unsafe {
+        fpu::reset(fpu_state.as_mut_ptr());
+    }
     Ok(Process {
         pid,
         active: true,
@@ -321,6 +350,7 @@ fn load_elf(
         signal_actions: [imagineos_abi::SIGNAL_DEFAULT; 32],
         signal_restorer: 0,
         signal_frame: None,
+        fpu_state,
     })
 }
 
@@ -460,6 +490,34 @@ pub fn start() -> ! {
 pub fn current_pid() -> usize {
     let scheduler = unsafe { &*SCHEDULER.0.get() };
     scheduler.processes[scheduler.current].pid
+}
+
+/// Salva o estado FPU/SSE do processo atualmente em execução.
+///
+/// Deve ser chamada ao entrar no kernel (syscall/exceção), antes que código
+/// Rust do kernel possa usar registradores XMM.
+pub fn save_current_fpu() {
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    unsafe {
+        fpu::save(scheduler.processes[scheduler.current].fpu_state.as_mut_ptr());
+    }
+}
+
+/// Restaura o estado FPU/SSE do processo que vai retomar a execução.
+///
+/// Deve ser chamada imediatamente antes de retornar para o espaço de usuário,
+/// usando o ponteiro de `TrapFrame` que será retomado.
+pub fn restore_fpu_for(frame: *mut TrapFrame) {
+    if frame.is_null() {
+        return;
+    }
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let slot = scheduler.current;
+    if scheduler.processes[slot].frame == frame {
+        unsafe {
+            fpu::restore(scheduler.processes[slot].fpu_state.as_ptr());
+        }
+    }
 }
 
 pub fn current_credentials() -> (u32, u32, bool) {
@@ -640,6 +698,11 @@ fn schedule(frame: *mut TrapFrame, exiting: bool) -> *mut TrapFrame {
     let scheduler = unsafe { &mut *SCHEDULER.0.get() };
     let current = scheduler.current;
     scheduler.processes[current].frame = frame;
+    // Preserva os registradores FPU/SSE do processo que está saindo da CPU,
+    // antes de qualquer coisa que possa tocar em XMM (o próprio kernel Rust).
+    unsafe {
+        fpu::save(scheduler.processes[current].fpu_state.as_mut_ptr());
+    }
     if exiting {
         scheduler.processes[current].active = false;
     }
@@ -655,6 +718,10 @@ fn schedule(frame: *mut TrapFrame, exiting: bool) -> *mut TrapFrame {
             };
             gdt::set_kernel_stack(kernel_stack_top);
             paging::switch(address_space);
+            // Restaura o estado FPU/SSE do processo que vai entrar na CPU.
+            unsafe {
+                fpu::restore(scheduler.processes[candidate].fpu_state.as_ptr());
+            }
             return next.frame;
         }
     }

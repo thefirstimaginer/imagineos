@@ -192,6 +192,12 @@ extern "C" fn dreamcore_exception_handler(
         serial_hex(crate::process::current_pid() as u64);
         serial_write(b" vector=0x");
         serial_hex(vector);
+        serial_write(b" error=0x");
+        serial_hex(error);
+        serial_write(b" rip=0x");
+        serial_hex(rip);
+        serial_write(b" cr2=0x");
+        serial_hex(cr2);
         serial_write(b"\r\n");
         let next = crate::process::terminate_faulting_process();
         unsafe {

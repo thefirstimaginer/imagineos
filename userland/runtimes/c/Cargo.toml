@@ -1,11 +1,12 @@
 [package]
-name = "imagineos-rt"
+name = "imagineos-crt"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "imagineos_rt"
+name = "imagineos_crt"
 path = "src/lib.rs"
+crate-type = ["staticlib"]
 
 [dependencies]
 imagineos-userland = { path = "../../api" }

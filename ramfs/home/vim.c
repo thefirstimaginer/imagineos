@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #define BUFFER_CAPACITY 4096
 #define PATH_CAPACITY 256
