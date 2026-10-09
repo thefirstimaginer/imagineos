@@ -1,50 +1,84 @@
 # Imagine Operating System
 
-ImagineOS is an experimental educational x86_64 operating system, codenamed **Astrid**. The kernel is freestanding Rust and uses the Limine boot protocol. This is an early bring-up, not yet a general-purpose OS.
+O ImagineOS é um sistema operacional x86_64 experimental e educacional, de codinome **Astrid**. O kernel é Rust freestanding e usa o protocolo de boot do Limine. Este é um estágio inicial de bring-up, ainda não é um sistema operacional de uso geral.
 
-## Build
+## Compilação
 
-Requirements: Rust stable with the `x86_64-unknown-none` target, GNU Make, Limine's x86_64 UEFI executable at `third_party/limine/BOOTX64.EFI`, `xorriso`, `dosfstools`, `mtools`, and QEMU with OVMF for boot testing.
+Requisitos: Rust stable com o alvo `x86_64-unknown-none`, GNU Make, o executável UEFI x86_64 do Limine em `third_party/limine/BOOTX64.EFI`, `xorriso`, `dosfstools`, `mtools` e QEMU com OVMF.
+
+O QEMU com OVMF é necessário tanto para a suíte de testes (`make test`) quanto
+para testar o boot manualmente pela ISO. `xorriso`, `dosfstools` e `mtools`
+só são necessários para gerar a ISO inicializável; a suíte de testes não
+precisa deles. Nenhuma ferramenta além das citadas é necessária para rodar os
+testes.
 
 ```sh
 rustup target add x86_64-unknown-none
-mkdir -p ramfs
+make ramfs
 make kernel
 make iso
 ```
 
-Create the `ramfs/` directory at the repository root before building the image;
-it is the source tree used to assemble the filesystem archive. The UEFI-only
-image is written to `.build/distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`.
+O diretório `ramfs/` na raiz do repositório é a árvore de origem usada para
+montar o arquivo do sistema de arquivos, portanto ele precisa existir antes de
+rodar `make iso` (o trecho de comandos acima já o cria). A imagem somente UEFI
+é gravada em `.build/distro/dreamcore-YYYY-MM-DD-HH-MM-astrid.iso`.
 
-## Boot State
+## Estado do Boot
 
-The kernel consumes Limine's HHDM, memory map, framebuffer, and RAMFS module. It installs a GDT/TSS and fatal exception IDT, initializes a 4 KiB frame allocator and a 1 MiB bump heap, mounts the USTAR archive, and loads `/sbin/init` as PID 1. Init starts `/sbin/getty`, which starts `/bin/shell`; the shell resolves external commands under `/bin`.
+O kernel consome o HHDM, o mapa de memória, o framebuffer e o módulo RAMFS do Limine. Ele instala a GDT/TSS e uma IDT de exceções fatais, inicializa um alocador de frames de 4 KiB e um heap bump de 1 MiB, monta o arquivo USTAR e carrega `/sbin/init` como PID 1. O init inicia o `/sbin/getty`, que inicia o `/bin/shell`; o shell resolve comandos externos em `/bin`.
 
-Kernel sources live in `kernel/src/`, the Limine loader in `bootstrap/`, and
-userspace applications in `userland/apps/`. USTAR provides the initial RAM filesystem and fallback;
-when a valid DFS partition is present, its persistent tree is used as the
-active root. There is not yet a generic `switch_root` implementation.
+O código-fonte do kernel fica em `kernel/src/`, o carregador do Limine em
+`bootstrap/` e os aplicativos de userspace em `userland/apps/`. O USTAR provê o
+sistema de arquivos inicial em RAM e o fallback; quando existe uma partição DFS
+válida, sua árvore persistente é usada como raiz ativa. Ainda não há uma
+implementação genérica de `switch_root`.
 
-Getty authenticates `root`/`root` or the optional account created by
-`distroinstall`. The installer can set the hostname and grant that account
-administrative access. Kernel-enforced owner/group/other file permissions,
-`su`, and `sudo` are available. The default root password remains `root`;
-change it only after a secure persistent password-management mechanism exists.
+O Getty autentica `root`/`root` ou a conta opcional criada pelo
+`distroinstall`. O instalador pode definir o hostname e conceder acesso
+administrativo a essa conta. Permissões de arquivo dono/grupo/outros impostas
+pelo kernel, `su` e `sudo` estão disponíveis. A senha padrão do root continua
+sendo `root`; troque-a apenas quando existir um mecanismo seguro e persistente
+de gerenciamento de senhas.
 
-The shell provides `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`, `clear`, `pid`, `type`, and `exit`. External commands are searched through `PATH` and launched from `/bin`; utilities include `ls`, `cat`, fixed-string `grep`, `mkdir`, `touch`, `rm`, `vi`, and `globalconf`. `argv` and exported environment entries are passed to child ELFs. PSF/PSF2 fonts are searched in `ramfs/system/fonts`; built-in ASCII/Portuguese glyphs are used when a loaded font lacks a character. The prompt cursor blinks while input is polled.
+> **Aviso:** Não exponha uma imagem compilada na rede ou a usuários não
+> confiáveis enquanto a credencial `root` padrão estiver ativa. Qualquer pessoa
+> que consiga alcançar o sistema pode entrar como `root` com a senha
+> amplamente conhecida, e a credencial ainda não pode ser alterada de forma
+> persistente. Mantenha essas imagens em máquinas isoladas e offline até que um
+> mecanismo persistente de gerenciamento de senhas substitua o padrão embutido
+> no caminho de autenticação do getty (o handler de login do getty em
+> `kernel/src/`, que hoje compara a senha digitada com o par `root`/`root`
+> embutido no código).
 
-This is a small shell, not a full POSIX language implementation: pipelines, redirection, aliases, functions, and control-flow syntax are not supported. Rust `std` is unnecessary: the kernel remains `no_std` and exposes OS operations through its own syscalls. The USTAR base stays immutable; `mkdir`, `touch`, and `rm` update a bounded in-memory overlay and changes disappear at reboot. Scheduling is cooperative round-robin; timer preemption, heap reclamation, and full W^X permissions are also pending.
+O shell é propositalmente pequeno. Suas capacidades são:
 
-Rust user programs can use the reusable `no_std` crate in `userland/api/`.
-Syscall numbers and shared data structures live in `shared/abi/`; ABI v2 and
-its error and argument conventions are documented in
-[documentation/syscall-abi.md](documentation/syscall-abi.md). This userspace
-API is ImagineOS-specific and does not provide Rust `std` or POSIX compatibility.
+- **Comandos internos:** `cd`, `pwd`, `echo`, `export`, `unset`, `set`, `read`,
+  `clear`, `pid`, `type` e `exit`.
+- **Utilitários externos:** os comandos são resolvidos via `PATH` e iniciados a
+  partir de `/bin`; os utilitários incluídos são `ls`, `cat`, `grep` (busca por
+  string exata), `mkdir`, `touch`, `rm`, `vi` e `globalconf`. O `argv` e as
+  variáveis de ambiente exportadas são repassados aos ELFs filhos.
+- **Fontes:** fontes PSF/PSF2 são procuradas em `ramfs/system/fonts`; glifos
+  ASCII/portugueses embutidos são usados quando uma fonte carregada não tem
+  determinado caractere. O cursor do prompt pisca enquanto a entrada é
+  consultada.
+- **Não suportado:** pipelines, redirecionamento, aliases, funções e sintaxe de
+  controle de fluxo — este não é um shell completo no padrão POSIX.
 
-More details: [documentation/README.md](documentation/README.md), including the
-[boot flow](documentation/boot-flow.md) and
-[userspace program development guide](documentation/userspace.md).
+O `std` do Rust é desnecessário: o kernel permanece `no_std` e expõe operações de sistema por meio de suas próprias syscalls. A base USTAR é imutável; `mkdir`, `touch` e `rm` atualizam uma camada em memória de tamanho limitado, e as mudanças desaparecem ao reiniciar. O escalonamento é cooperativo round-robin; preempção por timer, recuperação de heap e permissões completas de W^X também estão pendentes.
+
+Programas Rust de usuário podem usar o crate `no_std` reutilizável em
+`userland/api/`. Os números de syscall e as estruturas de dados compartilhadas
+ficam em `shared/abi/`; a ABI v2 e suas convenções de erro e argumentos estão
+documentadas em
+[documentation/syscall-abi.md](documentation/syscall-abi.md). Essa API de
+userspace é específica do ImagineOS e não oferece `std` do Rust nem
+compatibilidade POSIX.
+
+Mais detalhes: [documentation/README.md](documentation/README.md), incluindo o
+[fluxo de boot](documentation/boot-flow.md) e o
+[guia de desenvolvimento de programas de userspace](documentation/userspace.md).
 
 ## Copyright
 
