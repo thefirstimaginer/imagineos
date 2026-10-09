@@ -25,6 +25,18 @@ pub fn init_with(start: u64, frequency: u64) {
     TSC_FREQUENCY.store(frequency, Ordering::Relaxed);
 }
 
+pub fn elapsed_microseconds() -> Option<u64> {
+    let frequency = TSC_FREQUENCY.load(Ordering::Relaxed);
+    if frequency == 0 {
+        return None;
+    }
+    let cycles = read_tsc().saturating_sub(START_TSC.load(Ordering::Relaxed));
+    Some(
+        cycles / frequency * 1_000_000
+            + cycles % frequency * 1_000_000 / frequency,
+    )
+}
+
 #[cfg(any(feature = "bootstrap", not(feature = "bootstrap")))]
 pub fn format_elapsed(output: &mut [u8; 32]) -> &[u8] {
     let frequency = TSC_FREQUENCY.load(Ordering::Relaxed);

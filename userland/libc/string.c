@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdlib.h>
 
 void *memcpy(void *destination, const void *source, size_t count)
 {
@@ -91,6 +92,19 @@ char *strchr(const char *text, int character)
         text++;
     }
     return character == 0 ? (char *)text : 0;
+}
+
+char *strstr(const char *text, const char *pattern)
+{
+    if (!*pattern) return (char *)text;
+    size_t pattern_length = strlen(pattern);
+    while (*text) {
+        if (*text == *pattern && strncmp(text, pattern, pattern_length) == 0) {
+            return (char *)text;
+        }
+        text++;
+    }
+    return 0;
 }
 
 char *strrchr(const char *text, int character)
@@ -191,8 +205,32 @@ char *strtok(char *text, const char *delimiters)
 
 char *strerror(int number)
 {
-    (void)number;
-    return "unknown error";
+    switch (number) {
+    case 0: return "success";
+    case 1: return "operation not permitted";
+    case 2: return "no such file or directory";
+    case 4: return "interrupted system call";
+    case 5: return "input/output error";
+    case 8: return "exec format error";
+    case 9: return "bad file descriptor";
+    case 11: return "resource temporarily unavailable";
+    case 12: return "out of memory";
+    case 13: return "permission denied";
+    case 14: return "bad address";
+    case 17: return "file exists";
+    case 20: return "not a directory";
+    case 21: return "is a directory";
+    case 22: return "invalid argument";
+    case 24: return "too many open files";
+    case 28: return "no space left on device";
+    case 29: return "illegal seek";
+    case 34: return "result out of range";
+    case 36: return "filename too long";
+    case 38: return "function not implemented";
+    case 39: return "directory not empty";
+    case 75: return "value too large";
+    default: return "unknown error";
+    }
 }
 
 char *basename(char *path)

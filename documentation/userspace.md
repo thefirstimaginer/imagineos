@@ -76,6 +76,40 @@ diretórios de `PATH`, cujo valor inicial é `/bin`. Os pré-requisitos de
 ferramentas e firmware estão em [Build e execução](build.md); testes manuais
 estão em [Testes](testing.md).
 
+## Runtime C e TinyCC
+
+O userspace também inclui um runtime freestanding em C: `crt0.S` encaminha os
+argumentos e o ambiente do processo a `main`, e a mini-libc fornece memória,
+strings, stdio, arquivos, tempo e wrappers para a ABI do kernel. `hello_c` é
+compilado como exemplo e tanto ele quanto `tcc` são incluídos em `/bin`.
+
+O código-fonte do TinyCC é uma dependência externa ignorada pelo repositório.
+Para obtê-lo na revisão fixada pelo Makefile e compilar o port nativo:
+
+```sh
+make tcc-source
+make .build/user/utilities/hello_c .build/user/utilities/tcc
+make .build/ramfs.tar
+```
+
+O RAMFS instala o compilador em `/bin/tcc`, os headers em `/usr/include`, a
+mini-libc em `/usr/lib/libc.a`, os arquivos CRT em `/usr/lib` e o `libtcc1.a`
+em `/usr/lib/tcc`. O TinyCC gera ELFs x86_64 estáticos para o loader do
+ImagineOS. Para compilar e executar um programa C:
+
+```sh
+tcc hello.c -o hello
+./hello
+```
+
+`tcc -run hello.c` compila e executa a função `main` no mesmo processo. Esse
+modo usa heap executável e não oferece isolamento de permissões por página;
+`mprotect`/`munmap` ainda são compatibilidade limitada da mini-libc. O kernel
+também não oferece relógio de parede, e a hora reportada pelo runtime é o tempo
+desde o boot. O port é single-threaded e não inclui o bounds checker nem
+backtraces do TinyCC; invocação de ferramentas externas como `execvp` não está
+implementada.
+
 ## Entrada, argumentos e syscalls
 
 - O kernel inicia o programa em `_start` passando quatro parâmetros: contagem
@@ -113,7 +147,7 @@ estão em [Testes](testing.md).
   `touch`, `remove` e `exit`.
 - As chamadas de sistema usam `int 0x80`: número em `RAX`; argumentos em
   `RDI`, `RSI`, `RDX`, `R10`, `R8` e `R9`, nessa ordem. Esse contrato é a ABI
-  v2 do ImagineOS; números e semânticas não devem ser reutilizados ou alterados.
+  v3 do ImagineOS; números e semânticas não devem ser reutilizados ou alterados.
   O kernel e as aplicações compartilham as definições em
   [`shared/abi`](../shared/abi/src/lib.rs). A syscall `16` consulta a versão
   para que programas possam detectar incompatibilidade.

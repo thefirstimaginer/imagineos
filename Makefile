@@ -43,7 +43,9 @@ TCC_HOST       := $(BUILD_DIR)/toolchain/tcc
 # Fontes de Terceiros e Recursos Gerais
 LIMINE_DIR     := third_party/limine
 TCC_SOURCE     := third_party/tinycc
-TCC_CFLAGS     := -mno-sse -B$(TCC_SOURCE) -Iuserland/libc/include
+TCC_CONFIG_STAMP := $(BUILD_DIR)/toolchain/tinycc-config.stamp
+TCC_PATCH_STAMP := $(BUILD_DIR)/toolchain/tinycc-imagineos-patched.stamp
+TCC_SOURCE_REV := 43c7708b85681a2fd4451c8a541af4494a8919b2
 FONT_ASSET     := tools/assets/zap-vga16.psf
 
 # ==============================================================================
@@ -53,6 +55,7 @@ FONT_ASSET     := tools/assets/zap-vga16.psf
 RAMFS_ROOT     := ramfs
 RAMFS_DIRS     := bin dev sbin home system/fonts system/install tmp usr
 USER_UTILITIES := cat dmesg distroinstall fdtest globalconf grep kill ls mkdir ps rm shutdown su sudo touch uname vi hello
+USER_C_UTILITIES         := hello_c tcc
 
 # Manifestos e Libs do Userland
 USER_API_MANIFEST       := userland/api/Cargo.toml
@@ -68,7 +71,29 @@ USER_RUNTIME_DEPS       := $(USER_RUNTIME_TARGET_DIR)/$(TARGET)/release/deps
 USER_PROGRAMS           := $(BUILD_DIR)/user/sbin/init \
                            $(BUILD_DIR)/user/sbin/getty \
                            $(BUILD_DIR)/user/bin/shell \
-                           $(addprefix $(BUILD_DIR)/user/utilities/,$(USER_UTILITIES))
+                           $(addprefix $(BUILD_DIR)/user/utilities/,$(USER_UTILITIES) $(USER_C_UTILITIES))
+
+USER_CFLAGS             := -ffreestanding -fno-stack-protector -fno-pic -fno-pie \
+                           -fno-builtin -mno-red-zone -nostdinc -Iuserland/libc/include \
+                           -isystem $(shell $(CC) -print-file-name=include)
+USER_CRT_OBJECTS        := $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/user/runtime.o \
+                           $(BUILD_DIR)/user/unistd.o \
+                           $(BUILD_DIR)/user/path.o $(BUILD_DIR)/user/string.o $(BUILD_DIR)/user/stdio.o \
+                           $(BUILD_DIR)/user/stdlib.o $(BUILD_DIR)/user/time.o \
+                           $(BUILD_DIR)/user/math.o $(BUILD_DIR)/user/mman.o \
+                           $(BUILD_DIR)/user/signals.o $(BUILD_DIR)/user/setjmp.o \
+                           $(BUILD_DIR)/user/signal.o
+USER_LIBC_OBJECTS       := $(filter-out $(BUILD_DIR)/user/crt0.o,$(USER_CRT_OBJECTS))
+TCC_NATIVE_SOURCES      := tcc.c libtcc.c tccpp.c tccgen.c tccdbg.c \
+                           tccelf.c tccasm.c tccrun.c x86_64-gen.c x86_64-link.c \
+                           i386-asm.c
+TCC_NATIVE_OBJECTS      := $(patsubst %.c,$(BUILD_DIR)/user/tcc/%.o,$(TCC_NATIVE_SOURCES))
+TCC_NATIVE_CFLAGS       := $(USER_CFLAGS) -I$(TCC_SOURCE) -I$(TCC_SOURCE)/include \
+                           -DTCC_TARGET_X86_64 -DCONFIG_TCC_STATIC -DCONFIG_TCC_SEMLOCK=0 \
+                           -DONE_SOURCE=0 \
+                           -DCONFIG_TCC_SYSINCLUDEPATHS=\"/usr/include\" \
+                           -DCONFIG_TCC_LIBPATHS=\"/usr/lib\" \
+                           -DCONFIG_TCC_CRTPREFIX=\"/usr/lib\"
 
 # ==============================================================================
 # REGRAS PHONY
@@ -129,17 +154,34 @@ ramfs:
 
 # Prepara e empacota o tar do RAMFS no .build
 $(RAMFS_IMAGE): ramfs kernel $(BOOTSTRAP) $(DZ_IMAGE) $(USER_PROGRAMS) \
+                $(BUILD_DIR)/user/libdreamcore.a $(BUILD_DIR)/user/crt_empty.o \
+                $(TCC_SOURCE)/libtcc1.a \
                 $(LIMINE_DIR)/BOOTX64.EFI boot/limine.conf boot/startup.nsh
 	rm -rf $(BUILD_DIR)/ramfs
 	mkdir -p $(BUILD_DIR)/ramfs
 	cp -a $(RAMFS_ROOT)/. $(BUILD_DIR)/ramfs/
 	cp $(FONT_ASSET) $(BUILD_DIR)/ramfs/system/fonts/zap-vga16.psf
+	mkdir -p $(BUILD_DIR)/ramfs/usr/include $(BUILD_DIR)/ramfs/usr/lib/tcc
+	cp -a userland/libc/include/. $(BUILD_DIR)/ramfs/usr/include/
+	cp $(BUILD_DIR)/user/libdreamcore.a $(BUILD_DIR)/ramfs/usr/lib/libdreamcore.a
+	cp $(BUILD_DIR)/user/libdreamcore.a $(BUILD_DIR)/ramfs/usr/lib/libc.a
+	$(AR) rcs $(BUILD_DIR)/user/libm.a $(BUILD_DIR)/user/math.o
+	cp $(BUILD_DIR)/user/libm.a $(BUILD_DIR)/ramfs/usr/lib/libm.a
+	cp $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/ramfs/usr/lib/crt0.o
+	cp $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/ramfs/usr/lib/crt1.o
+	cp $(BUILD_DIR)/user/crt_empty.o $(BUILD_DIR)/ramfs/usr/lib/crti.o
+	cp $(BUILD_DIR)/user/crt_empty.o $(BUILD_DIR)/ramfs/usr/lib/crtn.o
+	cp userland/linker.ld $(BUILD_DIR)/ramfs/usr/lib/imagineos.ld
+	cp $(TCC_SOURCE)/libtcc1.a $(BUILD_DIR)/ramfs/usr/lib/tcc/libtcc1.a
 	
 	# Binários userland
 	cp $(BUILD_DIR)/user/sbin/init $(BUILD_DIR)/ramfs/sbin/init
 	cp $(BUILD_DIR)/user/sbin/getty $(BUILD_DIR)/ramfs/sbin/getty
 	cp $(BUILD_DIR)/user/bin/shell $(BUILD_DIR)/ramfs/bin/shell
 	for utility in $(USER_UTILITIES); do \
+		cp $(BUILD_DIR)/user/utilities/$$utility $(BUILD_DIR)/ramfs/bin/$$utility; \
+	done
+	for utility in $(USER_C_UTILITIES); do \
 		cp $(BUILD_DIR)/user/utilities/$$utility $(BUILD_DIR)/ramfs/bin/$$utility; \
 	done
 
@@ -205,34 +247,93 @@ $(BUILD_DIR)/user/utilities/%: userland/utilities/%.rs userland/utilities/common
 # USERLAND (SUITE C / TCC / LIBC)
 # ==============================================================================
 
-$(TCC_HOST): $(TCC_SOURCE)/Makefile $(TCC_SOURCE)/tcc.c
+$(BUILD_DIR)/user/%.o: userland/libc/%.c $(wildcard userland/libc/include/*.h userland/libc/include/sys/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/user/crt0.o: userland/libc/crt0.S
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/user/runtime.o: userland/libc/crt0.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/user/crt_empty.o: userland/libc/crt_empty.S
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/user/setjmp.o: userland/libc/setjmp.S
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/user/signal.o: userland/libc/signal.S
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/user/libdreamcore.a: $(USER_LIBC_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(AR) rcs $@ $^
+
+$(BUILD_DIR)/user/utilities/hello_c: userland/utilities/hello_c.c userland/linker.ld \
+                                     $(USER_CRT_OBJECTS)
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -nostdlib -static -no-pie \
+		-Wl,-T,userland/linker.ld -Wl,--build-id=none \
+		$< $(USER_CRT_OBJECTS) -o $@
+
+$(TCC_SOURCE)/configure:
+	@echo "TinyCC source is missing. Run 'make tcc-source' to fetch the pinned upstream revision."
+	@false
+
+.PHONY: tcc-source
+tcc-source:
+	@if [ ! -x "$(TCC_SOURCE)/configure" ]; then \
+		git clone https://github.com/TinyCC/tinycc.git "$(TCC_SOURCE)" && \
+		git -C "$(TCC_SOURCE)" checkout --detach "$(TCC_SOURCE_REV)"; \
+	fi
+
+$(TCC_CONFIG_STAMP): $(TCC_SOURCE)/configure Makefile
 	@mkdir -p $(BUILD_DIR)/toolchain
-	cd $(TCC_SOURCE) && ./configure --prefix="$(abspath $(BUILD_DIR)/toolchain/install)"
+	cd $(TCC_SOURCE) && ./configure --prefix=/usr --tccdir=/usr/lib/tcc \
+		--sysincludepaths=/usr/include:/usr/include/x86_64-linux-gnu:$(shell $(CC) -print-file-name=include) \
+		--libpaths=/usr/lib:/usr/lib/x86_64-linux-gnu \
+		--crtprefix=/usr/lib/x86_64-linux-gnu:/usr/lib \
+		--config-bcheck=no --config-backtrace=no
+	touch $@
+
+$(TCC_PATCH_STAMP): userland/patches/tinycc-imagineos.patch $(TCC_SOURCE)/tccrun.c $(TCC_CONFIG_STAMP)
+	@if ! grep -Fq 'TCCSYM(gettimeofday)' $(TCC_SOURCE)/tccrun.c; then \
+		patch --forward -p1 -d $(TCC_SOURCE) < $<; \
+	fi
+	touch $@
+
+$(TCC_HOST): $(TCC_CONFIG_STAMP) $(TCC_PATCH_STAMP) $(TCC_SOURCE)/Makefile $(TCC_SOURCE)/tcc.c
+	@mkdir -p $(BUILD_DIR)/toolchain
 	$(MAKE) -C $(TCC_SOURCE)
 	cp $(TCC_SOURCE)/tcc $@
 
 $(TCC_SOURCE)/libtcc1.a: $(TCC_HOST)
 	@test -f $@
 
-$(BUILD_DIR)/user/%.o: userland/libc/%.c $(TCC_HOST)
-	@mkdir -p $(BUILD_DIR)/user
-	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o $@
+$(BUILD_DIR)/user/tcc/%.o: $(TCC_SOURCE)/%.c $(TCC_HOST) $(TCC_PATCH_STAMP) \
+                            $(wildcard userland/libc/include/*.h userland/libc/include/sys/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(TCC_NATIVE_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/user/crt0.o: userland/libc/crt0.c userland/libc/include/dreamcore.h $(TCC_HOST)
-	@mkdir -p $(BUILD_DIR)/user
-	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o $@
+$(BUILD_DIR)/user/utilities/tcc: $(TCC_NATIVE_OBJECTS) $(USER_CRT_OBJECTS) userland/linker.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -nostdlib -static -no-pie \
+		-Wl,-T,userland/linker.ld -Wl,--build-id=none \
+		$(TCC_NATIVE_OBJECTS) $(USER_CRT_OBJECTS) -o $@
 
 $(BUILD_DIR)/user/c/%.elf: ramfs/home/%.c userland/libc/include/dreamcore.h \
-                            $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/user/unistd.o \
-                            $(BUILD_DIR)/user/string.o $(BUILD_DIR)/user/stdio.o \
-                            $(BUILD_DIR)/user/stdlib.o $(TCC_HOST) $(TCC_SOURCE)/libtcc1.a \
+                            $(USER_CRT_OBJECTS) \
                             userland/linker.ld
 	@mkdir -p $(BUILD_DIR)/user/c
-	$(TCC_HOST) $(TCC_CFLAGS) -c $< -o $(BUILD_DIR)/user/c/$*.o
-	$(CC) -nostdlib -static -no-pie -Wl,-Tuserland/linker.ld -Wl,--build-id=none \
-		$(BUILD_DIR)/user/c/$*.o $(BUILD_DIR)/user/crt0.o $(BUILD_DIR)/user/unistd.o \
-		$(BUILD_DIR)/user/string.o $(BUILD_DIR)/user/stdio.o $(BUILD_DIR)/user/stdlib.o \
-		$(TCC_SOURCE)/libtcc1.a -o $@
+	$(CC) $(USER_CFLAGS) -c $< -o $(BUILD_DIR)/user/c/$*.o
+	$(CC) $(USER_CFLAGS) -nostdlib -static -no-pie -Wl,-Tuserland/linker.ld \
+		-Wl,--build-id=none $(BUILD_DIR)/user/c/$*.o $(USER_CRT_OBJECTS) -o $@
 
 # ==============================================================================
 # GERAÇÃO DA ISO E QEMU

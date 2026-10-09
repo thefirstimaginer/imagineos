@@ -9,6 +9,7 @@
 #define O_EXCL 0x80
 #define O_TRUNC 0x200
 #define O_APPEND 0x400
+#define O_BINARY 0
 
 int open(const char *path, int flags, ...);
 

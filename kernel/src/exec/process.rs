@@ -15,6 +15,8 @@ const KERNEL_STACK_SIZE: usize = 64 * 1024;
 const USER_STACK_SIZE: u64 = 8 * 4096;
 pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_0000;
 const PAGE_SIZE: u64 = 4096;
+const USER_HEAP_START: u64 = 0x0000_0001_0000_0000;
+const USER_HEAP_LIMIT: u64 = 64 * 1024 * 1024;
 pub const MAX_EXEC_ARGS: usize = imagineos_abi::MAX_EXEC_ARGS;
 pub const MAX_EXEC_ENV: usize = imagineos_abi::MAX_EXEC_ENV;
 pub const MAX_OPEN_FDS: usize = imagineos_abi::MAX_OPEN_FDS;
@@ -112,6 +114,7 @@ struct Process {
     username_length: usize,
     frame: *mut TrapFrame,
     address_space: Option<AddressSpace>,
+    heap_end: u64,
     name: [u8; imagineos_abi::PROCESS_NAME_SIZE],
     pending_signals: u64,
     signal_actions: [u64; 32],
@@ -139,6 +142,7 @@ impl Process {
         username_length: 4,
         frame: ptr::null_mut(),
         address_space: None,
+        heap_end: USER_HEAP_START,
         name: [0; imagineos_abi::PROCESS_NAME_SIZE],
         pending_signals: 0,
         signal_actions: [imagineos_abi::SIGNAL_DEFAULT; 32],
@@ -311,6 +315,7 @@ fn load_elf(
         username_length: 4,
         frame,
         address_space: Some(address_space),
+        heap_end: USER_HEAP_START,
         name: process_name,
         pending_signals: 0,
         signal_actions: [imagineos_abi::SIGNAL_DEFAULT; 32],
@@ -1015,6 +1020,35 @@ pub fn copy_to_current_user(address: u64, input: &[u8]) -> bool {
         }
         true
     })
+}
+
+pub fn grow_heap(increment: i64) -> Result<u64, i64> {
+    if increment < 0 {
+        return Err(-22);
+    }
+    let scheduler = unsafe { &mut *SCHEDULER.0.get() };
+    let process = &mut scheduler.processes[scheduler.current];
+    let previous = process.heap_end;
+    let new_end = previous
+        .checked_add(increment as u64)
+        .filter(|end| *end - USER_HEAP_START <= USER_HEAP_LIMIT)
+        .ok_or(-12)?;
+    let first_page = previous
+        .checked_add(PAGE_SIZE - 1)
+        .ok_or(-12)?
+        & !(PAGE_SIZE - 1);
+    let page_end = new_end.checked_add(PAGE_SIZE - 1).ok_or(-12)? & !(PAGE_SIZE - 1);
+    let address_space = process.address_space.ok_or(-12)?;
+    let mut page = first_page;
+    while page < page_end {
+        match address_space.map_user_page(page) {
+            Ok(_) | Err(MapError::AlreadyMapped) => {}
+            Err(_) => return Err(-12),
+        }
+        page = page.checked_add(PAGE_SIZE).ok_or(-12)?;
+    }
+    process.heap_end = new_end;
+    Ok(previous)
 }
 
 fn debug_log(message: &str) {

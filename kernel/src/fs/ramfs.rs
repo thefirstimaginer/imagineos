@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 const BLOCK_SIZE: usize = 512;
 pub const MAX_WRITE_FILE_SIZE: usize = 4096;
+const MAX_OVERLAY_FILE_SIZE: usize = 4 * 1024 * 1024;
 
 pub struct Archive<'a> {
     bytes: &'a [u8],
@@ -35,9 +36,9 @@ struct OverlayNode {
     path: [u8; 256],
     path_length: usize,
     kind: NodeKind,
-    data: [u8; MAX_WRITE_FILE_SIZE],
     data_length: usize,
     data_start: usize,
+    data_capacity: usize,
     mode: u16,
     uid: u32,
     gid: u32,
@@ -49,9 +50,9 @@ impl OverlayNode {
         path: [0; 256],
         path_length: 0,
         kind: NodeKind::Empty,
-        data: [0; MAX_WRITE_FILE_SIZE],
         data_length: 0,
         data_start: 0,
+        data_capacity: 0,
         mode: 0,
         uid: 0,
         gid: 0,
@@ -63,7 +64,7 @@ impl OverlayNode {
 }
 
 const MAX_OVERLAY_NODES: usize = 128;
-const OVERLAY_DATA_CAPACITY: usize = MAX_OVERLAY_NODES * MAX_WRITE_FILE_SIZE;
+const OVERLAY_DATA_CAPACITY: usize = 8 * 1024 * 1024;
 
 struct RamFs {
     archive: Option<Archive<'static>>,
@@ -387,7 +388,7 @@ pub fn read(path: &str) -> Option<&'static [u8]> {
     match find_overlay_node(fs, path).map(|node| node.kind) {
         Some(NodeKind::File) => {
             let node = find_overlay_node(fs, path)?;
-            Some(&node.data[..node.data_length])
+            Some(&fs.file_data[node.data_start..node.data_start + node.data_length])
         }
         Some(NodeKind::Directory | NodeKind::OpaqueDirectory | NodeKind::Whiteout) => None,
         Some(NodeKind::Empty) | None => fs.archive.as_ref()?.find(path),
@@ -641,9 +642,18 @@ pub fn create_file(path: &str) -> Result<(), FsError> {
 }
 
 pub fn create_file_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
+    create_file_with_mode_as(path, 0o644, uid, gid)
+}
+
+pub fn create_file_with_mode_as(
+    path: &str,
+    mode: u16,
+    uid: u32,
+    gid: u32,
+) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if crate::dfs::is_mounted() {
-        return crate::dfs::write_at_as(path, 0, &[], true, 0o644, uid, gid)
+        return crate::dfs::write_at_as(path, 0, &[], true, mode & 0o777, uid, gid)
             .map(|_| ())
             .map_err(map_dfs_error);
     }
@@ -660,7 +670,7 @@ pub fn create_file_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
         return Err(FsError::IsDirectory);
     }
     ensure_parent_directory(path)?;
-    insert_overlay_as(path, NodeKind::File, 0o644, uid, gid)
+    insert_overlay_as(path, NodeKind::File, mode & 0o777, uid, gid)
 }
 
 pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(), FsError> {
@@ -687,6 +697,35 @@ pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(),
     let (mode, owner_uid, owner_gid) = old_metadata.map_or((0o644, uid, gid), |metadata| {
         (metadata.mode, metadata.uid, metadata.gid)
     });
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    let existing_slot = fs
+        .overlay
+        .iter()
+        .position(|node| node.kind == NodeKind::File && node.path() == path);
+    let old_capacity = existing_slot.map_or(0, |slot| fs.overlay[slot].data_capacity);
+    let reusable = existing_slot.is_some() && bytes.len() <= old_capacity;
+    let data_capacity = if reusable {
+        old_capacity
+    } else if bytes.is_empty() {
+        0
+    } else {
+        old_capacity.saturating_mul(2).max(bytes.len()).max(4096)
+    };
+    if data_capacity > OVERLAY_DATA_CAPACITY - fs.file_data_used {
+        return Err(FsError::NoSpace);
+    }
+    let data_start = if reusable {
+        fs.overlay[existing_slot.expect("reusable overlay node")].data_start
+    } else {
+        let start = fs.file_data_used;
+        let end = start + data_capacity;
+        fs.file_data[start..start + bytes.len()].copy_from_slice(bytes);
+        fs.file_data_used = end;
+        start
+    };
+    if reusable {
+        fs.file_data[data_start..data_start + bytes.len()].copy_from_slice(bytes);
+    }
     insert_overlay_as(path, NodeKind::File, mode, owner_uid, owner_gid)?;
     let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
     let node = fs
@@ -694,9 +733,9 @@ pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(),
         .iter_mut()
         .find(|node| node.kind == NodeKind::File && node.path() == path)
         .ok_or(FsError::NoSpace)?;
-    node.data[..bytes.len()].copy_from_slice(bytes);
-    node.data[bytes.len()..].fill(0);
+    node.data_start = data_start;
     node.data_length = bytes.len();
+    node.data_capacity = data_capacity;
     Ok(())
 }
 
@@ -733,33 +772,89 @@ pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsErro
         return crate::dfs::write_at(path, offset, input, offset == 0).map_err(map_dfs_error);
     }
     let end = offset.checked_add(input.len()).ok_or(FsError::NoSpace)?;
-    if end > MAX_WRITE_FILE_SIZE {
+    if end > MAX_OVERLAY_FILE_SIZE {
         return Err(FsError::NoSpace);
     }
-    let mut contents = [0u8; MAX_WRITE_FILE_SIZE];
-    let length = match read(path) {
-        Some(existing) => {
-            if offset > existing.len() {
-                return Err(FsError::InvalidPath);
-            }
-            contents[..existing.len()].copy_from_slice(existing);
-            existing.len()
-        }
-        None => {
-            if offset != 0 {
-                return Err(FsError::NotFound);
-            }
-            0
-        }
+    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
+    if path.is_empty() || is_directory(path) {
+        return Err(FsError::IsDirectory);
+    }
+    let original = read(path).ok_or(FsError::NotFound)?;
+    if offset > original.len() {
+        return Err(FsError::InvalidPath);
+    }
+    let original_length = original.len();
+    let new_length = original_length.max(end);
+    if new_length > MAX_OVERLAY_FILE_SIZE {
+        return Err(FsError::NoSpace);
+    }
+    ensure_parent_directory(path)?;
+    let metadata = metadata(path);
+    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
+    let existing_slot = fs
+        .overlay
+        .iter()
+        .position(|node| node.kind == NodeKind::File && node.path() == path);
+    let old_capacity = existing_slot.map_or(0, |slot| fs.overlay[slot].data_capacity);
+    let reusable = existing_slot.is_some() && new_length <= old_capacity;
+    let data_capacity = if reusable {
+        old_capacity
+    } else if new_length == 0 {
+        0
+    } else {
+        old_capacity
+            .saturating_mul(2)
+            .max(new_length)
+            .max(4096)
+            .min(MAX_OVERLAY_FILE_SIZE)
     };
-    contents[offset..end].copy_from_slice(input);
-    let new_length = length.max(end);
-    write_file(path, &contents[..new_length])?;
+    if data_capacity < new_length
+        || data_capacity > OVERLAY_DATA_CAPACITY - fs.file_data_used
+    {
+        return Err(FsError::NoSpace);
+    }
+    let data_start = if reusable {
+        fs.overlay[existing_slot.expect("reusable overlay node")].data_start
+    } else {
+        let start = fs.file_data_used;
+        let end = start + data_capacity;
+        fs.file_data[start..start + original_length].copy_from_slice(original);
+        fs.file_data_used = end;
+        start
+    };
+    fs.file_data[data_start + offset..data_start + end].copy_from_slice(input);
+    let slot = existing_slot
+        .or_else(|| {
+            fs.overlay
+                .iter()
+                .position(|node| node.kind != NodeKind::Empty && node.path() == path)
+        })
+        .or_else(|| {
+            fs.overlay
+                .iter()
+                .position(|node| node.kind == NodeKind::Empty)
+        })
+        .ok_or(FsError::NoSpace)?;
+    let mut node = fs.overlay[slot];
+    node.path.fill(0);
+    node.path[..path.len()].copy_from_slice(path.as_bytes());
+    node.path_length = path.len();
+    node.kind = NodeKind::File;
+    node.data_start = data_start;
+    node.data_length = new_length;
+    node.data_capacity = data_capacity;
+    node.mode = metadata.map_or(0o644, |metadata| metadata.mode);
+    node.uid = metadata.map_or(0, |metadata| metadata.uid);
+    node.gid = metadata.map_or(0, |metadata| metadata.gid);
+    fs.overlay[slot] = node;
     Ok(input.len())
 }
 
 // Function to write a file with the given contents, creating it if it doesn't exist
 pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
+    if contents.len() > MAX_OVERLAY_FILE_SIZE {
+        return Err(FsError::NoSpace);
+    }
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() {
         return Err(FsError::IsDirectory);
@@ -778,8 +873,22 @@ pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
         .overlay
         .iter()
         .position(|node| node.kind == NodeKind::File && node.path() == path);
-    let reusable = existing_slot.is_some_and(|slot| contents.len() <= fs.overlay[slot].data_length);
-    if !reusable && contents.len() > OVERLAY_DATA_CAPACITY - fs.file_data_used {
+    let old_capacity = existing_slot.map_or(0, |slot| fs.overlay[slot].data_capacity);
+    let reusable = existing_slot.is_some() && contents.len() <= old_capacity;
+    let data_capacity = if reusable {
+        old_capacity
+    } else if contents.is_empty() {
+        0
+    } else {
+        old_capacity
+            .saturating_mul(2)
+            .max(contents.len())
+            .max(4096)
+            .min(MAX_OVERLAY_FILE_SIZE)
+    };
+    if data_capacity < contents.len()
+        || data_capacity > OVERLAY_DATA_CAPACITY - fs.file_data_used
+    {
         return Err(FsError::NoSpace);
     }
     let slot = existing_slot
@@ -799,8 +908,8 @@ pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
         fs.overlay[slot].data_start
     } else {
         let start = fs.file_data_used;
-        let end = start + contents.len();
-        fs.file_data[start..end].copy_from_slice(contents);
+        let end = start + data_capacity;
+        fs.file_data[start..start + contents.len()].copy_from_slice(contents);
         fs.file_data_used = end;
         start
     };
@@ -813,6 +922,7 @@ pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
     node.kind = NodeKind::File;
     node.data_start = data_start;
     node.data_length = contents.len();
+    node.data_capacity = data_capacity;
     fs.overlay[slot] = node;
     Ok(())
 }
@@ -1050,10 +1160,11 @@ fn insert_overlay_as(
     node.path[..path.len()].copy_from_slice(path.as_bytes());
     node.path_length = path.len();
     node.kind = kind;
+    node.data_start = 0;
+    node.data_capacity = 0;
     node.mode = mode;
     node.uid = uid;
     node.gid = gid;
-    node.data.fill(0);
     node.data_length = 0;
     Ok(())
 }

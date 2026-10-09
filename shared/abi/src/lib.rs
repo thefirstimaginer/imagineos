@@ -1,6 +1,6 @@
 #![no_std]
 
-pub const ABI_VERSION: u64 = 2;
+pub const ABI_VERSION: u64 = 3;
 
 pub const SYS_WRITE: u64 = 1;
 pub const SYS_READ: u64 = 2;
@@ -37,6 +37,10 @@ pub const SYS_PROCESS_LIST: u64 = 32;
 pub const SYS_AUTHENTICATE: u64 = 33;
 pub const SYS_GETIDENTITY: u64 = 34;
 pub const SYS_INSTALL_DISK_CONFIG: u64 = 35;
+pub const SYS_SBRK: u64 = 36;
+pub const SYS_LSEEK: u64 = 37;
+pub const SYS_FSTAT: u64 = 38;
+pub const SYS_GETTIMEOFDAY: u64 = 39;
 
 pub const SIGNAL_HUP: u64 = 1;
 pub const SIGNAL_INT: u64 = 2;
@@ -66,6 +70,7 @@ pub const OPEN_WRITE: u64 = 1 << 1;
 pub const OPEN_CREATE: u64 = 1 << 2;
 pub const OPEN_TRUNCATE: u64 = 1 << 3;
 pub const OPEN_APPEND: u64 = 1 << 4;
+pub const OPEN_EXCLUSIVE: u64 = 1 << 5;
 
 pub const MAX_EXEC_ARGS: usize = 12;
 pub const MAX_EXEC_ENV: usize = 12;

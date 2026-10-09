@@ -7,12 +7,13 @@ use crate::{framebuffer, process};
 use imagineos_abi::UserStat;
 use imagineos_abi::SYS_STAT;
 use imagineos_abi::{
-    OPEN_APPEND, OPEN_CREATE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE, SYS_ABI_VERSION,
+    OPEN_APPEND, OPEN_CREATE, OPEN_EXCLUSIVE, OPEN_READ, OPEN_TRUNCATE, OPEN_WRITE,
+    SYS_ABI_VERSION,
     SYS_AUTHENTICATE, SYS_CLEAR, SYS_CLOSE, SYS_DISK_COUNT, SYS_DISK_SECTORS, SYS_DMESG, SYS_EXEC,
     SYS_EXIT, SYS_GETIDENTITY, SYS_GETPID, SYS_INSTALL_DISK, SYS_INSTALL_DISK_CONFIG, SYS_ISDIR,
     SYS_ISFILE, SYS_MKDIR, SYS_OPEN, SYS_POWER_OFF, SYS_READ, SYS_READDIR, SYS_READ_FD,
     SYS_READ_FILE, SYS_REMOVE, SYS_SHUTDOWN_POLL, SYS_SHUTDOWN_REQUEST, SYS_TOUCH, SYS_WRITE,
-    SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
+    SYS_FSTAT, SYS_GETTIMEOFDAY, SYS_SBRK, SYS_LSEEK, SYS_WRITE_FD, SYS_WRITE_FILE, SYS_YIELD,
 };
 
 struct SharedKeyboard(UnsafeCell<Keyboard>);
@@ -113,6 +114,14 @@ fn syscall_dispatch_inner(frame: *mut TrapFrame) -> *mut TrapFrame {
             frame_ref.rax = imagineos_abi::ABI_VERSION;
             frame
         }
+        SYS_SBRK => {
+            frame_ref.rax = process::grow_heap(frame_ref.rdi as i64)
+                .map_or_else(|error| error as u64, |address| address);
+            frame
+        }
+        SYS_LSEEK => seek_fd(frame_ref),
+        SYS_FSTAT => fstat_fd(frame_ref),
+        SYS_GETTIMEOFDAY => gettimeofday(frame_ref),
         SYS_SHUTDOWN_REQUEST => {
             frame_ref.rax = if process::current_credentials().0 == 0 {
                 crate::power::request_shutdown();
@@ -682,11 +691,13 @@ fn open_file(frame: &mut TrapFrame) -> *mut TrapFrame {
         }
     };
     let flags = frame.rdx;
-    let known_flags = OPEN_READ | OPEN_WRITE | OPEN_CREATE | OPEN_TRUNCATE | OPEN_APPEND;
+    let known_flags =
+        OPEN_READ | OPEN_WRITE | OPEN_CREATE | OPEN_TRUNCATE | OPEN_APPEND | OPEN_EXCLUSIVE;
     if flags & !known_flags != 0
         || flags & (OPEN_READ | OPEN_WRITE) == 0
         || flags & (OPEN_TRUNCATE | OPEN_APPEND) != 0 && flags & OPEN_WRITE == 0
         || flags & OPEN_TRUNCATE != 0 && flags & OPEN_APPEND != 0
+        || flags & OPEN_EXCLUSIVE != 0 && flags & OPEN_CREATE == 0
     {
         frame.rax = (-22i64) as u64;
         return frame;
@@ -697,6 +708,10 @@ fn open_file(frame: &mut TrapFrame) -> *mut TrapFrame {
         return frame;
     }
     let exists = crate::ramfs::is_file(path);
+    if exists && flags & OPEN_CREATE != 0 && flags & OPEN_EXCLUSIVE != 0 {
+        frame.rax = (-17i64) as u64;
+        return frame;
+    }
     if exists
         && ((flags & OPEN_READ != 0 && !access_allowed(path, 4))
             || (flags & OPEN_WRITE != 0 && !access_allowed(path, 2)))
@@ -714,7 +729,9 @@ fn open_file(frame: &mut TrapFrame) -> *mut TrapFrame {
             return frame;
         }
         let (uid, gid, _) = process::current_credentials();
-        if let Err(error) = crate::ramfs::create_file_as(path, uid, gid) {
+        if let Err(error) =
+            crate::ramfs::create_file_with_mode_as(path, (frame.r10 as u16) & 0o777, uid, gid)
+        {
             frame.rax = fs_error_code(error) as u64;
             return frame;
         }
@@ -921,6 +938,120 @@ fn read_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
     } else {
         frame.rax = length as u64;
     }
+    frame
+}
+
+fn seek_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
+    let Ok(fd) = usize::try_from(frame.rdi) else {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    };
+    let Some(mut descriptor) = process::descriptor(fd) else {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    };
+    if descriptor.kind != process::DescriptorKind::File {
+        frame.rax = (-29i64) as u64;
+        return frame;
+    }
+    let base = match frame.rdx {
+        0 => 0i128,
+        1 => descriptor.offset as i128,
+        2 => {
+            let path = core::str::from_utf8(&descriptor.path[..descriptor.path_length])
+                .expect("descriptor path is validated on open");
+            match crate::ramfs::file_len(path) {
+                Ok(length) => length as i128,
+                Err(error) => {
+                    frame.rax = fs_error_code(error) as u64;
+                    return frame;
+                }
+            }
+        }
+        _ => {
+            frame.rax = (-22i64) as u64;
+            return frame;
+        }
+    };
+    let offset = base + (frame.rsi as i64) as i128;
+    let Ok(offset) = usize::try_from(offset) else {
+        frame.rax = (-22i64) as u64;
+        return frame;
+    };
+    descriptor.offset = offset;
+    if process::update_descriptor(fd, descriptor) {
+        frame.rax = offset as u64;
+    } else {
+        frame.rax = (-9i64) as u64;
+    }
+    frame
+}
+
+fn fstat_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
+    let Ok(fd) = usize::try_from(frame.rdi) else {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    };
+    let Some(descriptor) = process::descriptor(fd) else {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    };
+    if descriptor.kind != process::DescriptorKind::File {
+        frame.rax = (-9i64) as u64;
+        return frame;
+    }
+    let path = core::str::from_utf8(&descriptor.path[..descriptor.path_length])
+        .expect("descriptor path is validated on open");
+    let Some(metadata) = crate::ramfs::metadata(path) else {
+        frame.rax = (-2i64) as u64;
+        return frame;
+    };
+    let result = UserStat {
+        size: metadata.size,
+        mode: metadata.mode as u32,
+        uid: metadata.uid,
+        gid: metadata.gid,
+        kind: u32::from(metadata.is_directory),
+    };
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            (&result as *const UserStat).cast::<u8>(),
+            core::mem::size_of::<UserStat>(),
+        )
+    };
+    frame.rax = if process::copy_to_current_user(frame.rsi, bytes) {
+        0
+    } else {
+        (-14i64) as u64
+    };
+    frame
+}
+
+fn gettimeofday(frame: &mut TrapFrame) -> *mut TrapFrame {
+    #[repr(C)]
+    struct UserTimeval {
+        seconds: i64,
+        microseconds: i64,
+    }
+    let Some(microseconds) = crate::time::elapsed_microseconds() else {
+        frame.rax = (-5i64) as u64;
+        return frame;
+    };
+    let value = UserTimeval {
+        seconds: (microseconds / 1_000_000) as i64,
+        microseconds: (microseconds % 1_000_000) as i64,
+    };
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            (&value as *const UserTimeval).cast::<u8>(),
+            core::mem::size_of::<UserTimeval>(),
+        )
+    };
+    frame.rax = if process::copy_to_current_user(frame.rdi, bytes) {
+        0
+    } else {
+        (-14i64) as u64
+    };
     frame
 }
 
