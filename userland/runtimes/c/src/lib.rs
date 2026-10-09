@@ -38,7 +38,7 @@ fn panic(_info: &PanicInfo<'_>) -> ! {
 // binário compatível com linkers que exigem a seção de stack não-executável.
 global_asm!(
     r#"
-    .att_syntax prefix
+    options(att_syntax),
     .section .note.GNU-stack,"",@progbits
 
     .text
@@ -98,7 +98,7 @@ fn c_exit(status: i32) -> ! {
 // syscall retorne, pois o contexto já deve ter sido retomado.
 global_asm!(
     r#"
-    .att_syntax prefix
+    options(att_syntax),
     .text
     .global dc_signal_restorer
     .type dc_signal_restorer, @function
@@ -118,7 +118,7 @@ dc_signal_restorer:
 // garantindo que o valor de retorno nunca seja 0.
 global_asm!(
     r#"
-    .att_syntax prefix
+    options(att_syntax),
     .text
     .global setjmp
     .type setjmp, @function
