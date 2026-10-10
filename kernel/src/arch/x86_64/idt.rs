@@ -119,6 +119,44 @@ dreamcore_syscall_stub:
     pop rax
     iretq
 
+.global dreamcore_timer_interrupt
+dreamcore_timer_interrupt:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rdi, rsp
+    and rsp, -16
+    call dreamcore_timer_dispatch
+    mov rsp, rax
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    iretq
+
 .global dreamcore_resume_trap_frame
 dreamcore_resume_trap_frame:
     mov rsp, rdi
@@ -175,8 +213,18 @@ extern "C" {
     fn dreamcore_exception_30();
     fn dreamcore_exception_31();
     fn dreamcore_syscall_stub();
+    fn dreamcore_timer_interrupt();
     fn dreamcore_resume_trap_frame(frame: *mut crate::syscall::TrapFrame) -> !;
 }
+
+/// Entry point for the periodic PIT interrupt (IRQ0). It preserves the interrupted
+/// trap frame, hands control to the scheduler for possible preemption, then returns
+/// the frame to resume on top of the iretq instruction.
+#[no_mangle]
+extern "C" fn dreamcore_timer_dispatch(frame: *mut crate::syscall::TrapFrame) -> *mut crate::syscall::TrapFrame {
+    crate::arch::x86_64::timer::handle_interrupt(frame)
+}
+
 
 #[no_mangle]
 extern "C" fn dreamcore_exception_handler(
@@ -313,6 +361,8 @@ pub fn init() {
         let handler = handler as *const () as usize as u64;
         *entry = IdtEntry::interrupt_gate(handler, selector);
     }
+    let timer_handler = dreamcore_timer_interrupt as *const () as usize as u64;
+    idt[0x20] = IdtEntry::interrupt_gate(timer_handler, selector);
     let syscall_handler = dreamcore_syscall_stub as *const () as usize as u64;
     idt[0x80] = IdtEntry {
         attributes: 0xee,

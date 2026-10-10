@@ -2,6 +2,8 @@
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::vfs::FileSystem;
+
 const BLOCK_SIZE: usize = 512;
 pub const MAX_WRITE_FILE_SIZE: usize = 4096;
 const MAX_OVERLAY_FILE_SIZE: usize = 4 * 1024 * 1024;
@@ -377,11 +379,16 @@ pub fn mount(bytes: &'static [u8]) {
 }
 
 pub fn read(path: &str) -> Option<&'static [u8]> {
+    crate::vfs::Vfs::current().read_static(path)
+}
+
+/// Reads a whole file using only the USTAR archive plus the in-memory overlay.
+///
+/// This is the backend body used by [`crate::vfs`]; it never consults the DFS
+/// root, and every helper it calls is an `*_overlay` variant for that reason.
+pub fn read_from_overlay(path: &str) -> Option<&'static [u8]> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     let path = canonical_path(path)?;
-    if crate::dfs::is_mounted() {
-        return crate::dfs::read_static(path);
-    }
     if is_hidden(fs, path) {
         return None;
     }
@@ -437,7 +444,7 @@ pub fn file_size(path: &str) -> Option<usize> {
 
 pub fn find_font() -> Option<&'static [u8]> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
-    if crate::dfs::is_mounted() {
+    if crate::vfs::has_persistent_root() {
         let mut entries = [0u8; 4096];
         let length = crate::dfs::list_directory("system/fonts", false, &mut entries).ok()?;
         for name in entries[..length].split(|byte| *byte == b'\n') {
@@ -461,15 +468,17 @@ pub fn find_font() -> Option<&'static [u8]> {
 }
 
 pub fn is_directory(path: &str) -> bool {
+    crate::vfs::Vfs::current().is_directory(path)
+}
+
+/// Backend-specific `is_directory` over the USTAR archive and overlay only.
+pub fn is_directory_overlay(path: &str) -> bool {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     let Some(path) = canonical_path(path) else {
         return false;
     };
     if path == "dev" {
         return true;
-    }
-    if crate::dfs::is_mounted() {
-        return crate::dfs::stat(path).is_ok_and(|metadata| metadata.is_directory);
     }
     match find_overlay_node(fs, path).map(|node| node.kind) {
         Some(NodeKind::Directory | NodeKind::OpaqueDirectory) => return true,
@@ -491,15 +500,17 @@ pub fn is_directory(path: &str) -> bool {
 }
 
 pub fn is_file(path: &str) -> bool {
+    crate::vfs::Vfs::current().is_file(path)
+}
+
+/// Backend-specific `is_file` over the USTAR archive and overlay only.
+pub fn is_file_overlay(path: &str) -> bool {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     let Some(path) = canonical_path(path) else {
         return false;
     };
     if path == "dev/hda" {
         return block_disk_present();
-    }
-    if crate::dfs::is_mounted() {
-        return crate::dfs::stat(path).is_ok_and(|metadata| !metadata.is_directory);
     }
     if is_hidden(fs, path) {
         return false;
@@ -515,10 +526,12 @@ pub fn is_file(path: &str) -> bool {
 }
 
 pub fn metadata(path: &str) -> Option<crate::dfs::Metadata> {
+    crate::vfs::Vfs::current().metadata(path)
+}
+
+/// Backend-specific `metadata` over the USTAR archive and overlay only.
+pub fn metadata_overlay(path: &str) -> Option<crate::dfs::Metadata> {
     let path = canonical_path(path)?;
-    if crate::dfs::is_mounted() {
-        return crate::dfs::stat(path).ok();
-    }
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     if let Some(node) = find_overlay_node(fs, path) {
         return Some(crate::dfs::Metadata {
@@ -529,7 +542,7 @@ pub fn metadata(path: &str) -> Option<crate::dfs::Metadata> {
             is_directory: matches!(node.kind, NodeKind::Directory | NodeKind::OpaqueDirectory),
         });
     }
-    if is_directory(path) {
+    if is_directory_overlay(path) {
         if let Some(metadata) = fs
             .archive
             .as_ref()
@@ -554,7 +567,7 @@ pub fn metadata(path: &str) -> Option<crate::dfs::Metadata> {
             is_directory: false,
         });
     }
-    let size = file_len(path).ok()?;
+    let size = file_len_overlay(path).ok()?;
     if let Some(metadata) = fs
         .archive
         .as_ref()
@@ -580,9 +593,18 @@ pub fn list_directory_with_hidden(
     include_hidden: bool,
     output: &mut [u8],
 ) -> Option<usize> {
+    crate::vfs::Vfs::current().list_directory(path, include_hidden, output)
+}
+
+/// Backend-specific directory listing over the USTAR archive and overlay only.
+pub fn list_directory_overlay(
+    path: &str,
+    include_hidden: bool,
+    output: &mut [u8],
+) -> Option<usize> {
     let fs = unsafe { &*MOUNTED_RAMFS.0.get() };
     let path = canonical_path(path)?;
-    if !is_directory(path) {
+    if !is_directory_overlay(path) {
         return None;
     }
     if path == "dev" {
@@ -592,9 +614,6 @@ pub fn list_directory_with_hidden(
             return Some(written);
         }
         return Some(0);
-    }
-    if crate::dfs::is_mounted() {
-        return crate::dfs::list_directory(path, include_hidden, output).ok();
     }
     let opaque =
         find_overlay_node(fs, path).is_some_and(|node| node.kind == NodeKind::OpaqueDirectory);
@@ -651,22 +670,29 @@ pub fn create_file_with_mode_as(
     uid: u32,
     gid: u32,
 ) -> Result<(), FsError> {
+    crate::vfs::Vfs::current()
+        .create_file_with_mode_as(path, mode, uid, gid)
+        .map_err(map_vfs_error)
+}
+
+/// Backend-specific file creation over the USTAR archive and overlay only.
+pub fn create_file_with_mode_overlay(
+    path: &str,
+    mode: u16,
+    uid: u32,
+    gid: u32,
+) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
-    if crate::dfs::is_mounted() {
-        return crate::dfs::write_at_as(path, 0, &[], true, mode & 0o777, uid, gid)
-            .map(|_| ())
-            .map_err(map_dfs_error);
-    }
     if path == "dev" || path == "dev/hda" {
         return Err(FsError::InvalidPath);
     }
     if path.is_empty() {
         return Err(FsError::IsDirectory);
     }
-    if is_file(path) {
+    if is_file_overlay(path) {
         return Ok(());
     }
-    if is_directory(path) {
+    if is_directory_overlay(path) {
         return Err(FsError::IsDirectory);
     }
     ensure_parent_directory(path)?;
@@ -674,9 +700,13 @@ pub fn create_file_with_mode_as(
 }
 
 pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(), FsError> {
-    if crate::dfs::is_mounted() {
-        return crate::dfs::write_file_as(path, bytes, 0o644, uid, gid).map_err(map_dfs_error);
-    }
+    crate::vfs::Vfs::current()
+        .write_file_as(path, bytes, uid, gid)
+        .map_err(map_vfs_error)
+}
+
+/// Backend-specific whole-file write over the USTAR archive and overlay only.
+pub fn write_file_overlay(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(), FsError> {
     if bytes.len() > MAX_WRITE_FILE_SIZE {
         return Err(FsError::NoSpace);
     }
@@ -687,13 +717,13 @@ pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(),
     if path.is_empty() {
         return Err(FsError::IsDirectory);
     }
-    if is_directory(path) {
+    if is_directory_overlay(path) {
         return Err(FsError::IsDirectory);
     }
-    if !is_file(path) {
+    if !is_file_overlay(path) {
         ensure_parent_directory(path)?;
     }
-    let old_metadata = metadata(path);
+    let old_metadata = metadata_overlay(path);
     let (mode, owner_uid, owner_gid) = old_metadata.map_or((0o644, uid, gid), |metadata| {
         (metadata.mode, metadata.uid, metadata.gid)
     });
@@ -740,25 +770,31 @@ pub fn write_file_as(path: &str, bytes: &[u8], uid: u32, gid: u32) -> Result<(),
 }
 
 pub fn file_len(path: &str) -> Result<usize, FsError> {
-    if crate::dfs::is_mounted() {
-        return crate::dfs::file_len(path).map_err(map_dfs_error);
-    }
-    if is_directory(path) {
+    crate::vfs::Vfs::current().file_len(path).map_err(map_vfs_error)
+}
+
+/// Backend-specific length query over the USTAR archive and overlay only.
+pub fn file_len_overlay(path: &str) -> Result<usize, FsError> {
+    if is_directory_overlay(path) {
         return Err(FsError::IsDirectory);
     }
-    read(path)
+    read_from_overlay(path)
         .map(|contents| contents.len())
         .ok_or(FsError::NotFound)
 }
 
 pub fn read_at(path: &str, offset: usize, output: &mut [u8]) -> Result<usize, FsError> {
-    if crate::dfs::is_mounted() {
-        return crate::dfs::read_at(path, offset, output).map_err(map_dfs_error);
-    }
-    if is_directory(path) {
+    crate::vfs::Vfs::current()
+        .read_at(path, offset, output)
+        .map_err(map_vfs_error)
+}
+
+/// Backend-specific ranged read over the USTAR archive and overlay only.
+pub fn read_at_overlay(path: &str, offset: usize, output: &mut [u8]) -> Result<usize, FsError> {
+    if is_directory_overlay(path) {
         return Err(FsError::IsDirectory);
     }
-    let contents = read(path).ok_or(FsError::NotFound)?;
+    let contents = read_from_overlay(path).ok_or(FsError::NotFound)?;
     if offset >= contents.len() {
         return Ok(0);
     }
@@ -768,18 +804,22 @@ pub fn read_at(path: &str, offset: usize, output: &mut [u8]) -> Result<usize, Fs
 }
 
 pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsError> {
-    if crate::dfs::is_mounted() {
-        return crate::dfs::write_at(path, offset, input, offset == 0).map_err(map_dfs_error);
-    }
+    crate::vfs::Vfs::current()
+        .write_at(path, offset, input)
+        .map_err(map_vfs_error)
+}
+
+/// Backend-specific ranged write over the USTAR archive and overlay only.
+pub fn write_at_overlay(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsError> {
     let end = offset.checked_add(input.len()).ok_or(FsError::NoSpace)?;
     if end > MAX_OVERLAY_FILE_SIZE {
         return Err(FsError::NoSpace);
     }
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
-    if path.is_empty() || is_directory(path) {
+    if path.is_empty() || is_directory_overlay(path) {
         return Err(FsError::IsDirectory);
     }
-    let original = read(path).ok_or(FsError::NotFound)?;
+    let original = read_from_overlay(path).ok_or(FsError::NotFound)?;
     if offset > original.len() {
         return Err(FsError::InvalidPath);
     }
@@ -789,7 +829,7 @@ pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsErro
         return Err(FsError::NoSpace);
     }
     ensure_parent_directory(path)?;
-    let metadata = metadata(path);
+    let metadata = metadata_overlay(path);
     let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
     let existing_slot = fs
         .overlay
@@ -850,81 +890,15 @@ pub fn write_at(path: &str, offset: usize, input: &[u8]) -> Result<usize, FsErro
     Ok(input.len())
 }
 
-// Function to write a file with the given contents, creating it if it doesn't exist
+/// Writes a whole file, creating it when absent.
+///
+/// This used to be a second, near-identical copy of [`write_file_as`] with a
+/// different size ceiling (`MAX_OVERLAY_FILE_SIZE` here versus
+/// `MAX_WRITE_FILE_SIZE` there), so the same call could succeed or fail
+/// depending on which one the caller happened to reach. It now routes through
+/// the VFS like every other mutation, which gives it one consistent limit.
 pub fn write_file(path: &str, contents: &[u8]) -> Result<(), FsError> {
-    if contents.len() > MAX_OVERLAY_FILE_SIZE {
-        return Err(FsError::NoSpace);
-    }
-    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
-    if path.is_empty() {
-        return Err(FsError::IsDirectory);
-    }
-    if path.len() > 256 || is_directory(path) {
-        return Err(if path.len() > 256 {
-            FsError::InvalidPath
-        } else {
-            FsError::IsDirectory
-        });
-    }
-    ensure_parent_directory(path)?;
-
-    let fs = unsafe { &mut *MOUNTED_RAMFS.0.get() };
-    let existing_slot = fs
-        .overlay
-        .iter()
-        .position(|node| node.kind == NodeKind::File && node.path() == path);
-    let old_capacity = existing_slot.map_or(0, |slot| fs.overlay[slot].data_capacity);
-    let reusable = existing_slot.is_some() && contents.len() <= old_capacity;
-    let data_capacity = if reusable {
-        old_capacity
-    } else if contents.is_empty() {
-        0
-    } else {
-        old_capacity
-            .saturating_mul(2)
-            .max(contents.len())
-            .max(4096)
-            .min(MAX_OVERLAY_FILE_SIZE)
-    };
-    if data_capacity < contents.len()
-        || data_capacity > OVERLAY_DATA_CAPACITY - fs.file_data_used
-    {
-        return Err(FsError::NoSpace);
-    }
-    let slot = existing_slot
-        .or_else(|| {
-            fs.overlay
-                .iter()
-                .position(|node| node.kind != NodeKind::Empty && node.path() == path)
-        })
-        .or_else(|| {
-            fs.overlay
-                .iter()
-                .position(|node| node.kind == NodeKind::Empty)
-        })
-        .ok_or(FsError::NoSpace)?;
-
-    let data_start = if reusable {
-        fs.overlay[slot].data_start
-    } else {
-        let start = fs.file_data_used;
-        let end = start + data_capacity;
-        fs.file_data[start..start + contents.len()].copy_from_slice(contents);
-        fs.file_data_used = end;
-        start
-    };
-    if reusable {
-        fs.file_data[data_start..data_start + contents.len()].copy_from_slice(contents);
-    }
-    let mut node = fs.overlay[slot];
-    node.path[..path.len()].copy_from_slice(path.as_bytes());
-    node.path_length = path.len();
-    node.kind = NodeKind::File;
-    node.data_start = data_start;
-    node.data_length = contents.len();
-    node.data_capacity = data_capacity;
-    fs.overlay[slot] = node;
-    Ok(())
+    write_file_as(path, contents, 0, 0)
 }
 
 pub fn create_directory(path: &str) -> Result<(), FsError> {
@@ -932,14 +906,9 @@ pub fn create_directory(path: &str) -> Result<(), FsError> {
 }
 
 pub fn create_directory_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
-    let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
-    if crate::dfs::is_mounted() {
-        return crate::dfs::create_directory_as(path, 0o755, uid, gid).map_err(map_dfs_error);
-    }
-    if path.is_empty() {
-        return Err(FsError::AlreadyExists);
-    }
-    create_directory_one_as(path, uid, gid)
+    // A single-level directory is just the `parents = false` case of the routed
+    // entry point, so it goes through the VFS like every other mutation.
+    create_directory_with_parents_as(path, false, uid, gid)
 }
 
 pub fn create_directory_with_parents(path: &str, parents: bool) -> Result<(), FsError> {
@@ -952,10 +921,18 @@ pub fn create_directory_with_parents_as(
     uid: u32,
     gid: u32,
 ) -> Result<(), FsError> {
-    if crate::dfs::is_mounted() {
-        return crate::dfs::create_directory_with_parents_as(path, parents, uid, gid)
-            .map_err(map_dfs_error);
-    }
+    crate::vfs::Vfs::current()
+        .create_directory_with_parents_as(path, parents, uid, gid)
+        .map_err(map_vfs_error)
+}
+
+/// Backend-specific directory creation over the USTAR archive and overlay only.
+pub fn create_directory_with_parents_overlay(
+    path: &str,
+    parents: bool,
+    uid: u32,
+    gid: u32,
+) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() {
         return Err(FsError::AlreadyExists);
@@ -976,10 +953,10 @@ pub fn create_directory_with_parents_as(
             current_length += component.len();
             let current_path = core::str::from_utf8(&current[..current_length])
                 .map_err(|_| FsError::InvalidPath)?;
-            if is_directory(current_path) {
+            if is_directory_overlay(current_path) {
                 continue;
             }
-            if is_file(current_path) {
+            if is_file_overlay(current_path) {
                 return Err(FsError::AlreadyExists);
             }
             create_directory_one_as(current_path, uid, gid)?;
@@ -994,7 +971,7 @@ fn create_directory_one(path: &str) -> Result<(), FsError> {
 }
 
 fn create_directory_one_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError> {
-    if is_file(path) || is_directory(path) {
+    if is_file_overlay(path) || is_directory_overlay(path) {
         return Err(FsError::AlreadyExists);
     }
     ensure_parent_directory(path)?;
@@ -1017,20 +994,24 @@ fn create_directory_one_as(path: &str, uid: u32, gid: u32) -> Result<(), FsError
 }
 
 pub fn remove(path: &str, recursive: bool) -> Result<(), FsError> {
-    if crate::dfs::is_mounted() {
-        return crate::dfs::remove(path, recursive).map_err(map_dfs_error);
-    }
+    crate::vfs::Vfs::current()
+        .remove(path, recursive)
+        .map_err(map_vfs_error)
+}
+
+/// Backend-specific removal over the USTAR archive and overlay only.
+pub fn remove_overlay(path: &str, recursive: bool) -> Result<(), FsError> {
     let path = canonical_path(path).ok_or(FsError::InvalidPath)?;
     if path.is_empty() || path == "dev" || path == "dev/hda" {
         return Err(FsError::InvalidPath);
     }
 
-    if !is_file(path) && !is_directory(path) {
+    if !is_file_overlay(path) && !is_directory_overlay(path) {
         return Err(FsError::NotFound);
     }
-    if is_directory(path) {
+    if is_directory_overlay(path) {
         let mut children = [0u8; 4096];
-        if list_directory(path, &mut children).unwrap_or(0) != 0 && !recursive {
+        if list_directory_overlay(path, false, &mut children).unwrap_or(0) != 0 && !recursive {
             return Err(FsError::DirectoryNotEmpty);
         }
     }
@@ -1053,19 +1034,20 @@ pub fn remove(path: &str, recursive: bool) -> Result<(), FsError> {
     Ok(())
 }
 
-fn map_dfs_error(error: crate::dfs::DfsError) -> FsError {
-    use crate::dfs::DfsError;
+fn map_vfs_error(error: crate::vfs::VfsError) -> FsError {
+    use crate::vfs::VfsError;
     match error {
-        DfsError::InvalidPath => FsError::InvalidPath,
-        DfsError::NotFound => FsError::NotFound,
-        DfsError::NotDirectory => FsError::NotDirectory,
-        DfsError::IsDirectory => FsError::IsDirectory,
-        DfsError::AlreadyExists => FsError::AlreadyExists,
-        DfsError::DirectoryNotEmpty => FsError::DirectoryNotEmpty,
-        DfsError::NoSpace | DfsError::JournalFull => FsError::NoSpace,
-        DfsError::Block(_) | DfsError::InvalidFilesystem | DfsError::CorruptMetadata => {
-            FsError::NoSpace
-        }
+        VfsError::InvalidPath => FsError::InvalidPath,
+        VfsError::NotFound => FsError::NotFound,
+        VfsError::NotDirectory => FsError::NotDirectory,
+        VfsError::IsDirectory => FsError::IsDirectory,
+        VfsError::AlreadyExists => FsError::AlreadyExists,
+        VfsError::DirectoryNotEmpty => FsError::DirectoryNotEmpty,
+        VfsError::NoSpace => FsError::NoSpace,
+        // Read-only and I/O failures have no dedicated FsError variant; the
+        // facade reports them as capacity errors, matching the previous DFS
+        // mapping behaviour.
+        VfsError::Io => FsError::NoSpace,
     }
 }
 
@@ -1113,7 +1095,7 @@ fn canonical_path(path: &str) -> Option<&str> {
 
 fn ensure_parent_directory(path: &str) -> Result<(), FsError> {
     let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
-    if is_directory(parent) {
+    if is_directory_overlay(parent) {
         Ok(())
     } else {
         Err(FsError::NotDirectory)
@@ -1340,9 +1322,11 @@ mod tests {
             super::read("/var/log/app/empty.txt"),
             Some(&b"replacement!"[..])
         );
+        // Seeking far past the end of the file is an invalid position, not a
+        // capacity problem: only growth beyond the overlay limit is NoSpace.
         assert_eq!(
             super::write_at("/var/log/app/empty.txt", 4096, b"x"),
-            Err(super::FsError::NoSpace)
+            Err(super::FsError::InvalidPath)
         );
         assert_eq!(
             super::write_file(

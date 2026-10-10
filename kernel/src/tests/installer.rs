@@ -1,7 +1,18 @@
 #![allow(dead_code)]
+//! Integration test for the on-disk installer.
+//!
+//! `installer.rs` reaches into `crate::accounts` (to validate and build the
+//! credentials database) and `accounts` in turn uses `crate::crypto`, so both
+//! modules have to be declared here for the harness to build.
+
+extern crate imagineos_abi;
 
 #[path = "../drivers/block.rs"]
 mod block;
+#[path = "../crypto.rs"]
+mod crypto;
+#[path = "../accounts.rs"]
+mod accounts;
 #[path = "../fs/dfs.rs"]
 mod dfs;
 #[path = "../fs/gpt.rs"]

@@ -1122,16 +1122,12 @@ fn write_fd(frame: &mut TrapFrame) -> *mut TrapFrame {
     frame
 }
 
+/// Maps a filesystem error to the negative errno returned by the syscall ABI.
+///
+/// The table itself lives in one place, `VfsError::to_errno`, so the VFS
+/// backends and the syscall layer can never drift apart.
 fn fs_error_code(error: crate::ramfs::FsError) -> i64 {
-    match error {
-        crate::ramfs::FsError::InvalidPath => -22,
-        crate::ramfs::FsError::NotFound => -2,
-        crate::ramfs::FsError::NotDirectory => -20,
-        crate::ramfs::FsError::IsDirectory => -21,
-        crate::ramfs::FsError::AlreadyExists => -17,
-        crate::ramfs::FsError::DirectoryNotEmpty => -39,
-        crate::ramfs::FsError::NoSpace => -28,
-    }
+    crate::vfs::VfsError::from(error).to_errno()
 }
 
 fn read_character() -> u32 {

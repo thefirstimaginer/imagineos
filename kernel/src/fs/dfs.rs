@@ -937,6 +937,11 @@ pub fn is_mounted() -> bool {
     unsafe { (*MOUNTED_DFS.0.get()).is_some() }
 }
 
+/// Returns the mounted DFS instance, if a persistent root is active.
+pub fn mounted() -> Option<Dfs> {
+    unsafe { *MOUNTED_DFS.0.get() }
+}
+
 pub fn read_static(path: &str) -> Option<&'static [u8]> {
     let fs = unsafe { (*MOUNTED_DFS.0.get())? };
     let device = crate::ata::PrimaryMaster;

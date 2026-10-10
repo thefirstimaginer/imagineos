@@ -313,7 +313,10 @@ fn load_elf(
             rax: 0,
             rip: elf.entry,
             cs: gdt::USER_CODE_SELECTOR,
-            rflags: 0x2,
+            // IF = 1 so the iretq itself enables interrupts exactly when the CPU
+            // lands in ring 3. This is the only safe place to arm the timer: the
+            // kernel path that sets up this frame must stay uninterruptible.
+            rflags: 0x202,
             rsp: user_stack,
             ss: gdt::USER_DATA_SELECTOR,
             rdi: arguments.len() as u64,
@@ -480,6 +483,9 @@ pub fn start() -> ! {
             "pop r15", "pop r14", "pop r13", "pop r12", "pop r11",
             "pop r10", "pop r9", "pop r8", "pop rbp", "pop rdi",
             "pop rsi", "pop rdx", "pop rcx", "pop rbx", "pop rax",
+            // The saved RFLAGS has IF=1, so this iretq atomically enables
+            // interrupts while entering ring 3, with a user frame already on the
+            // stack for the timer handler to preempt.
             "iretq",
             frame = in(reg) process.frame,
             options(noreturn)
@@ -527,6 +533,34 @@ pub fn current_credentials() -> (u32, u32, bool) {
 }
 
 pub fn yield_current(frame: *mut TrapFrame) -> *mut TrapFrame {
+    schedule(frame, false)
+}
+
+/// Preempts the running process in response to a timer tick.
+///
+/// Called from the IRQ0 handler with the interrupt frame of the process that was
+/// interrupted. When another runnable process exists, this switches address
+/// spaces, kernel stack and FPU/SSE state (via [`schedule`]) and returns the
+/// frame of the process that should resume. When nothing else is runnable it
+/// returns `frame` unchanged, so the current process continues without noticing
+/// the tick beyond the lost time slice.
+pub fn timer_tick(frame: *mut TrapFrame) -> *mut TrapFrame {
+    if frame.is_null() {
+        return frame;
+    }
+    let scheduler = unsafe { &*SCHEDULER.0.get() };
+    let current = scheduler.current;
+    if !scheduler.processes[current].active {
+        return frame;
+    }
+    let has_other_runnable = scheduler
+        .processes
+        .iter()
+        .enumerate()
+        .any(|(index, process)| index != current && process.active && !process.stopped);
+    if !has_other_runnable {
+        return frame;
+    }
     schedule(frame, false)
 }
 

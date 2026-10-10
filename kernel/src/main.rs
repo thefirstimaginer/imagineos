@@ -6,6 +6,8 @@ use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 mod accounts;
+#[path = "arch/mod.rs"]
+mod arch;
 #[path = "drivers/ata.rs"]
 pub mod ata;
 #[path = "drivers/block.rs"]
@@ -49,6 +51,8 @@ mod power;
 mod process;
 #[path = "fs/ramfs.rs"]
 mod ramfs;
+#[path = "fs/vfs.rs"]
+mod vfs;
 #[path = "abi/syscall.rs"]
 mod syscall;
 #[path = "time.rs"]
@@ -62,7 +66,7 @@ static EMBEDDED_FONT: &[u8] = include_bytes!("../../tools/assets/zap-vga16.psf")
 #[no_mangle]
 pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
     unsafe {
-        asm!("cli", options(nomem, nostack, preserves_flags));
+        asm!("cli", options(nomem, nostack));
     }
     fpu::init();
 
@@ -182,6 +186,11 @@ pub extern "C" fn kernel_entry(boot_info: *const boot_info::BootInfo) -> ! {
         console_write("ELF loader failed; stopping safely\n");
         halt();
     }
+    time::configure_timer_interrupt();
+    console_write("Timer configured; preemption activates on the first ring-3 entry\n");
+    // Interrupts stay disabled here on purpose. `process::start` enters ring 3
+    // through an iretq whose saved RFLAGS has IF=1, so the timer can only fire
+    // once a valid user trap frame is on the stack.
     process::start()
 }
 
@@ -286,7 +295,7 @@ fn mask_legacy_pic() {
     }
 }
 
-fn serial_write(bytes: &[u8]) {
+pub(crate) fn serial_write(bytes: &[u8]) {
     let mut previous_was_cr = false;
     for &byte in bytes {
         if byte == b'\n' && !previous_was_cr {
